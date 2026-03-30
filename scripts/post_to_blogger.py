@@ -136,28 +136,70 @@ def parse_front_matter(content: str):
     return meta, body
 
 
-def build_json_ld(title: str, meta_desc: str, labels: list, faqs: list = None) -> str:
+def estimate_read_time(html: str) -> int:
+    """평균 읽기 속도 200wpm 기준 읽기 시간(분) 계산"""
+    text = re.sub(r'<[^>]+>', '', html)
+    words = len(text.split())
+    return max(1, round(words / 200))
+
+
+def count_words(html: str) -> int:
+    text = re.sub(r'<[^>]+>', '', html)
+    return len(text.split())
+
+
+def build_json_ld(title: str, meta_desc: str, labels: list,
+                  faqs: list = None, hero_image_url: str = "",
+                  word_count: int = 0, read_time: int = 0) -> str:
     pub_date = datetime.date.today().isoformat()
     keywords = ", ".join(labels)
 
+    # ── 1. BlogPosting (구글 Article 권장 필드 모두 포함) ──
     blogposting = {
         "@context": "https://schema.org",
         "@type": "BlogPosting",
-        "headline": title,
-        "description": meta_desc,
+        "headline": title[:110],          # 구글 권장: 110자 이내
+        "description": meta_desc[:300],
         "keywords": keywords,
         "datePublished": pub_date,
         "dateModified": pub_date,
-        "author": {"@type": "Organization", "name": BLOG_NAME, "url": BLOG_URL},
-        "publisher": {"@type": "Organization", "name": BLOG_NAME, "url": BLOG_URL},
-        "mainEntityOfPage": {"@type": "WebPage", "@id": BLOG_URL}
+        "author": {
+            "@type": "Organization",
+            "name": BLOG_NAME,
+            "url": BLOG_URL
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": BLOG_NAME,
+            "url": BLOG_URL,
+            "logo": {
+                "@type": "ImageObject",
+                "url": f"{BLOG_URL}/favicon.ico"
+            }
+        },
+        "mainEntityOfPage": {
+            "@type": "WebPage",
+            "@id": BLOG_URL
+        },
+        "inLanguage": "ko-KR",
     }
+    if hero_image_url:
+        blogposting["image"] = {
+            "@type": "ImageObject",
+            "url": hero_image_url,
+            "width": 1200,
+            "height": 630
+        }
+    if word_count:
+        blogposting["wordCount"] = word_count
+    if read_time:
+        blogposting["timeRequired"] = f"PT{read_time}M"
 
     scripts = f"""<script type="application/ld+json">
 {json.dumps(blogposting, ensure_ascii=False, indent=2)}
 </script>"""
 
-    # FAQ 스키마 (구글 검색 결과에 FAQ 리치 스니펫 표시)
+    # ── 2. FAQPage (리치 스니펫 — 검색결과에 FAQ 펼침 표시) ──
     if faqs:
         faq_schema = {
             "@context": "https://schema.org",
@@ -175,6 +217,42 @@ def build_json_ld(title: str, meta_desc: str, labels: list, faqs: list = None) -
             scripts += f"""
 <script type="application/ld+json">
 {json.dumps(faq_schema, ensure_ascii=False, indent=2)}
+</script>"""
+
+    # ── 3. BreadcrumbList (사이트 구조 명확화) ──
+    breadcrumb = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": 1,
+             "name": "홈", "item": BLOG_URL},
+            {"@type": "ListItem", "position": 2,
+             "name": "AI 블로그", "item": f"{BLOG_URL}/"},
+            {"@type": "ListItem", "position": 3,
+             "name": title[:50], "item": BLOG_URL}
+        ]
+    }
+    scripts += f"""
+<script type="application/ld+json">
+{json.dumps(breadcrumb, ensure_ascii=False, indent=2)}
+</script>"""
+
+    # ── 4. WebSite (사이트 전체 스키마) ──
+    website = {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": BLOG_NAME,
+        "url": BLOG_URL,
+        "inLanguage": "ko-KR",
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": f"{BLOG_URL}/search?q={{search_term_string}}",
+            "query-input": "required name=search_term_string"
+        }
+    }
+    scripts += f"""
+<script type="application/ld+json">
+{json.dumps(website, ensure_ascii=False, indent=2)}
 </script>"""
 
     return scripts
@@ -242,28 +320,77 @@ def post_process_html(html: str) -> str:
     return html
 
 
+def extract_hero_image(html: str) -> str:
+    """본문에서 첫 번째 이미지 URL 추출 (OG image용)"""
+    m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', html)
+    return m.group(1) if m else ""
+
+
 def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, faqs: list = None) -> str:
     keywords = ", ".join(labels)
-    json_ld = build_json_ld(title, meta_desc, labels, faqs)
+
+    # 본문 통계
+    word_count = count_words(html_body)
+    read_time = estimate_read_time(html_body)
+    hero_img = extract_hero_image(html_body)
+
+    json_ld = build_json_ld(title, meta_desc, labels, faqs,
+                            hero_image_url=hero_img,
+                            word_count=word_count,
+                            read_time=read_time)
     processed = post_process_html(html_body)
+
+    # 제목 앞에 h1 삽입 (구글: 페이지당 h1 1개 권장)
+    h1_tag = f'<h1 style="font-size:1.9em;font-weight:800;color:#0d1b4b;line-height:1.4;margin:0 0 0.5em;word-break:keep-all;">{title}</h1>\n'
+
+    # 읽기 시간 배지
+    read_badge = (
+        f'<p style="font-size:0.82em;color:#888;margin:0 0 2em;">'
+        f'⏱ 읽기 약 {read_time}분 &nbsp;|&nbsp; 📝 {word_count:,}자'
+        f'</p>\n'
+    )
+
+    og_image = hero_img or f"{BLOG_URL}/favicon.ico"
+    safe_title = title.replace('"', '&quot;')
+    safe_meta = meta_desc.replace('"', '&quot;')
 
     return f"""{json_ld}
 
-<!-- SEO -->
-<meta name="description" content="{meta_desc}">
+<!-- ── 기술 SEO ── -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="content-language" content="ko">
+<link rel="canonical" href="{BLOG_URL}/">
+
+<!-- ── 검색엔진 메타 ── -->
+<meta name="description" content="{safe_meta}">
 <meta name="keywords" content="{keywords}">
-<meta property="og:title" content="{title} | {BLOG_NAME}">
-<meta property="og:description" content="{meta_desc}">
+<meta name="robots" content="index, follow">
+<meta name="author" content="{BLOG_NAME}">
+
+<!-- ── Open Graph (SNS 공유 최적화) ── -->
+<meta property="og:title" content="{safe_title} | {BLOG_NAME}">
+<meta property="og:description" content="{safe_meta}">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="{BLOG_NAME}">
+<meta property="og:url" content="{BLOG_URL}/">
+<meta property="og:image" content="{og_image}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="ko_KR">
+<meta property="article:author" content="{BLOG_NAME}">
+<meta property="article:published_time" content="{datetime.date.today().isoformat()}">
+
+<!-- ── Twitter Card ── -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="{title}">
-<meta name="twitter:description" content="{meta_desc}">
+<meta name="twitter:title" content="{safe_title}">
+<meta name="twitter:description" content="{safe_meta}">
+<meta name="twitter:image" content="{og_image}">
 
 {PREMIUM_CSS}
 
-<div class="ak-post">
-{processed}
+<div class="ak-post" lang="ko">
+{h1_tag}{read_badge}{processed}
 </div>
 """
 
