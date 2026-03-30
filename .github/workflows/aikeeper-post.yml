@@ -1,9 +1,25 @@
 name: AI Auto Post to Blogger
 
+# ── 스케줄 전략 ──────────────────────────────────────────────────
+# 하루 7~8번 트리거 → 각 실행 시 랜덤 딜레이(0~55분) 적용
+# → 실제 포스팅 시각이 매일 달라짐 (자연스러운 사람 패턴)
+#
+# KST 기준 트리거 시각 (UTC):
+#   00:30 (KST 09:30) / 02:00 (KST 11:00) / 03:30 (KST 12:30)
+#   05:00 (KST 14:00) / 06:30 (KST 15:30) / 08:00 (KST 17:00)
+#   10:00 (KST 19:00) / 12:30 (KST 21:30)
+# → 랜덤 딜레이 후 실제 포스팅 → 하루 5~8개 자연스러운 간격
+
 on:
   schedule:
-    - cron: '0 0 * * *'   # KST 09:00
-    - cron: '0 6 * * *'   # KST 15:00
+    - cron: '30 0 * * *'    # KST 09:30
+    - cron: '0 2 * * *'     # KST 11:00
+    - cron: '30 3 * * *'    # KST 12:30
+    - cron: '0 5 * * *'     # KST 14:00
+    - cron: '30 6 * * *'    # KST 15:30
+    - cron: '0 8 * * *'     # KST 17:00
+    - cron: '0 10 * * *'    # KST 19:00
+    - cron: '30 12 * * *'   # KST 21:30
   workflow_dispatch:
     inputs:
       topic:
@@ -14,6 +30,10 @@ on:
         description: '키워드 (쉼표 구분)'
         required: false
         default: ''
+      skip_delay:
+        description: '랜덤 딜레이 스킵 (테스트용)'
+        required: false
+        default: 'false'
 
 jobs:
   auto-post:
@@ -24,6 +44,25 @@ jobs:
 
       - name: Install dependencies
         run: pip3 install -r requirements.txt -q
+
+      # ── 랜덤 딜레이 (구글 자동화 탐지 우회) ──────────────────
+      # workflow_dispatch + skip_delay=true면 즉시 실행
+      - name: Random delay (human-like posting pattern)
+        if: github.event.inputs.skip_delay != 'true'
+        run: |
+          python3 -c "
+          import random, time, datetime
+          # 0~55분 랜덤 대기 (schedule 실행 시에만)
+          delay = random.randint(0, 55 * 60)
+          mins = delay // 60
+          secs = delay % 60
+          now = datetime.datetime.utcnow()
+          wake = now + datetime.timedelta(seconds=delay)
+          print(f'⏱  랜덤 딜레이: {mins}분 {secs}초 후 포스팅')
+          print(f'   예상 포스팅 시각: {wake.strftime(\"%H:%M UTC\")} ({wake.hour+9 if wake.hour+9<24 else wake.hour+9-24:02d}:{wake.minute:02d} KST)')
+          time.sleep(delay)
+          print('⏰ 딜레이 완료 — 포스팅 시작')
+          "
 
       - name: Find or use topic
         id: topic
