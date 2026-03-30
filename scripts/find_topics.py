@@ -12,6 +12,8 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import datetime
 
+import anthropic as _anthropic
+
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ANTHROPIC_BASE_URL = os.environ.get(
     "ANTHROPIC_BASE_URL",
@@ -111,26 +113,20 @@ def select_best_topic(trends: list, ai_news: list) -> dict:
 차별화된 글쓰기 각도
 ===END==="""
 
-    data = json.dumps({
-        "model": ANTHROPIC_MODEL,
-        "max_tokens": 512,
-        "messages": [{"role": "user", "content": prompt}]
-    }).encode()
-
-    req = urllib.request.Request(
-        f"{ANTHROPIC_BASE_URL.rstrip('/')}/messages",
-        data=data,
-        headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
-        }
+    client = _anthropic.Anthropic(
+        api_key=ANTHROPIC_API_KEY,
+        base_url=ANTHROPIC_BASE_URL,
+        timeout=120,
+        max_retries=2,
     )
 
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        result = json.loads(resp.read())
+    response = client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=512,
+        messages=[{"role": "user", "content": prompt}]
+    )
 
-    text = result["content"][0]["text"]
+    text = response.content[0].text
 
     def extract(t, key):
         tags = ["===TOPIC===","===KEYWORDS===","===REASON===","===ANGLE===","===END==="]

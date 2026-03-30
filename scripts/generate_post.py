@@ -9,7 +9,8 @@ import os
 import sys
 import json
 import datetime
-import urllib.request
+
+import anthropic as _anthropic
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ANTHROPIC_BASE_URL = os.environ.get(
@@ -110,27 +111,21 @@ def generate_post(topic: str, keywords: list = None, angle: str = "") -> dict:
 완성된 마크다운 본문 (2500자 이상, 여기서부터 끝까지)
 ===END==="""
 
-    data = json.dumps({
-        "model": ANTHROPIC_MODEL,
-        "max_tokens": 8192,
-        "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": prompt}]
-    }).encode()
-
-    req = urllib.request.Request(
-        f"{ANTHROPIC_BASE_URL.rstrip('/')}/messages",
-        data=data,
-        headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
-        }
+    client = _anthropic.Anthropic(
+        api_key=ANTHROPIC_API_KEY,
+        base_url=ANTHROPIC_BASE_URL,
+        timeout=300,
+        max_retries=2,
     )
 
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        result = json.loads(resp.read())
+    response = client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=8192,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}]
+    )
 
-    text = result["content"][0]["text"]
+    text = response.content[0].text
 
     def extract_section(t, key):
         start_tag = f"==={key}==="
