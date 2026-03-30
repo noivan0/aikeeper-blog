@@ -11,7 +11,7 @@ import urllib.request
 import urllib.parse
 from pathlib import Path
 
-UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "").strip()
 
 
 def search_image(query: str, count: int = 3) -> list:
@@ -90,5 +90,10 @@ def inject_images(file_path: str) -> str:
 
 
 if __name__ == "__main__":
-    file_path = sys.argv[1]
-    inject_images(file_path)
+    if len(sys.argv) < 2:
+        print("Usage: python add_images.py <markdown_file>")
+        sys.exit(0)
+    if not UNSPLASH_ACCESS_KEY:
+        print("⚠️  UNSPLASH_ACCESS_KEY 없음 — 종료")
+        sys.exit(0)
+    inject_images(sys.argv[1])

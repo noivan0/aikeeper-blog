@@ -75,10 +75,15 @@ jobs:
           echo "생성된 파일: $FILE"
 
       - name: Add images
+        continue-on-error: true
         env:
           UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
         run: |
-          python scripts/add_images.py "${{ steps.gen.outputs.file }}"
+          if [ -z "$UNSPLASH_ACCESS_KEY" ]; then
+            echo "⚠️  UNSPLASH_ACCESS_KEY 없음 — 이미지 삽입 스킵"
+            exit 0
+          fi
+          python scripts/add_images.py "${{ steps.gen.outputs.file }}" || echo "이미지 삽입 실패 — 계속 진행"
 
       - name: Post to Blogger
         env:
