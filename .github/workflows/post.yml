@@ -115,7 +115,14 @@ jobs:
 
       - name: Get new markdown files
         run: |
-          git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'posts/*.md' > changed_files.txt
+          # fetch-depth:2 로 이전 커밋이 없을 경우 대비
+          if git rev-parse HEAD~1 > /dev/null 2>&1; then
+            git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'posts/*.md' > changed_files.txt
+          else
+            # 첫 커밋인 경우 전체 posts/ 파일 대상
+            git show --name-only --diff-filter=A HEAD -- 'posts/*.md' | grep '\.md$' > changed_files.txt
+          fi
+          echo "대상 파일:"
           cat changed_files.txt
 
       - name: Add images & Post
@@ -125,11 +132,15 @@ jobs:
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
           UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
         run: |
+          count=0
           while IFS= read -r file; do
-            if [ -n "$file" ]; then
+            if [ -n "$file" ] && [ -f "$file" ]; then
               echo "🖼️  이미지 삽입: $file"
-              python scripts/add_images.py "$file"
+              python scripts/add_images.py "$file" || true
               echo "📝 포스팅: $file"
               python scripts/post_to_blogger.py "$file"
+              count=$((count+1))
             fi
           done < changed_files.txt
+          echo "총 ${count}개 포스팅 완료"
+          [ $count -eq 0 ] && echo "포스팅할 새 파일 없음 (정상)" && exit 0
