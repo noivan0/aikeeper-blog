@@ -2,8 +2,8 @@ name: AI Auto Post to Blogger
 
 on:
   schedule:
-    - cron: '0 0 * * *'   # KST 09:00
-    - cron: '0 6 * * *'   # KST 15:00
+    - cron: '0 0 * * *'
+    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       topic:
@@ -19,11 +19,7 @@ on:
     paths:
       - 'posts/**.md'
 
-# self-hosted runner: 환경변수는 /home/ghrunner/runner/.env 에서 자동 로드됨
-# (runner 시작 스크립트 start.sh가 set -a; source .env로 주입)
-
 jobs:
-  # ── AI 자동 생성 포스팅 (schedule + workflow_dispatch) ──
   auto-post:
     runs-on: self-hosted
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -36,61 +32,18 @@ jobs:
 
       - name: Find or use topic
         id: topic
-        run: |
-          MANUAL_TOPIC="${{ github.event.inputs.topic }}"
-          if [ -n "$MANUAL_TOPIC" ]; then
-            echo "TOPIC:$MANUAL_TOPIC" > /tmp/topic_result.txt
-            echo "KEYWORDS:${{ github.event.inputs.keywords }}" >> /tmp/topic_result.txt
-            echo "ANGLE:" >> /tmp/topic_result.txt
-          else
-            python3 scripts/find_topics.py 2>&1 | tee /tmp/topic_result.txt || true
-          fi
-          # 파일에서 안전하게 파싱 (bash 특수문자 이슈 방지)
-          python3 - << 'PYEOF'
-import sys, os
-with open('/tmp/topic_result.txt', encoding='utf-8', errors='replace') as f:
-    lines = f.read().splitlines()
-topic = next((l[6:] for l in lines if l.startswith('TOPIC:')), '')
-keywords = next((l[9:] for l in lines if l.startswith('KEYWORDS:')), '')
-angle = next((l[6:] for l in lines if l.startswith('ANGLE:')), '')
-with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
-    out.write(f'topic={topic}\n')
-    out.write(f'keywords={keywords}\n')
-    out.write(f'angle={angle}\n')
-print(f'주제: {topic[:60]}')
-PYEOF
+        run: python3 scripts/ci_find_topic.py "${{ github.event.inputs.topic }}" "${{ github.event.inputs.keywords }}"
 
       - name: Generate post
         id: gen
-        run: |
-          python3 scripts/generate_post.py \
-            "${{ steps.topic.outputs.topic }}" \
-            "${{ steps.topic.outputs.keywords }}" \
-            "${{ steps.topic.outputs.angle }}" 2>&1 | tee /tmp/gen_result.txt || true
-          python3 - << 'PYEOF'
-import os
-with open('/tmp/gen_result.txt', encoding='utf-8', errors='replace') as f:
-    lines = f.read().splitlines()
-file = next((l for l in reversed(lines) if l.startswith('posts/')), '')
-with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
-    out.write(f'file={file}\n')
-print(f'생성 파일: [{file}]')
-if file and not os.path.exists(file):
-    print('❌ 파일 없음')
-    raise SystemExit(1)
-elif not file:
-    print('❌ 파일명 파싱 실패')
-    raise SystemExit(1)
-PYEOF
+        run: python3 scripts/ci_generate.py "${{ steps.topic.outputs.topic }}" "${{ steps.topic.outputs.keywords }}" "${{ steps.topic.outputs.angle }}"
 
       - name: Add images
         continue-on-error: true
-        run: |
-          python3 scripts/add_images.py "${{ steps.gen.outputs.file }}" || true
+        run: python3 scripts/add_images.py "${{ steps.gen.outputs.file }}" || true
 
       - name: Post to Blogger
-        run: |
-          python3 scripts/post_to_blogger.py "${{ steps.gen.outputs.file }}"
+        run: python3 scripts/post_to_blogger.py "${{ steps.gen.outputs.file }}"
 
       - name: Commit post
         run: |
@@ -100,7 +53,6 @@ PYEOF
           git diff --staged --quiet || git commit -m "auto: AI 포스트 $(date +'%Y-%m-%d %H:%M KST')"
           git push || true
 
-  # ── 수동 .md push 시 포스팅 ──
   manual-post:
     runs-on: self-hosted
     if: github.event_name == 'push'
@@ -117,14 +69,12 @@ PYEOF
         id: files
         run: |
           if git rev-parse HEAD~1 > /dev/null 2>&1; then
-            git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'posts/*.md' > changed_files.txt
+            git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'posts/*.md' > /tmp/changed_files.txt
           else
-            git show --name-only --diff-filter=A HEAD -- 'posts/*.md' | grep '\.md$' > changed_files.txt || true
+            git show --name-only --diff-filter=A HEAD -- 'posts/*.md' | grep '\.md$' > /tmp/changed_files.txt || true
           fi
-          COUNT=$(grep -c . changed_files.txt 2>/dev/null || echo 0)
-          printf 'count=%s\n' "$COUNT" >> $GITHUB_OUTPUT
-          echo "새 파일 수: $COUNT"
-          cat changed_files.txt
+          COUNT=$(grep -c . /tmp/changed_files.txt 2>/dev/null || echo 0)
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
 
       - name: Post to Blogger
         if: steps.files.outputs.count > 0
@@ -133,7 +83,7 @@ PYEOF
             [ -z "$file" ] || [ ! -f "$file" ] && continue
             python3 scripts/add_images.py "$file" || true
             python3 scripts/post_to_blogger.py "$file"
-          done < changed_files.txt
+          done < /tmp/changed_files.txt
 
       - name: Skip
         if: steps.files.outputs.count == 0
