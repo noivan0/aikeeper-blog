@@ -96,20 +96,24 @@ def select_best_topic(trends: list, ai_news: list) -> dict:
 선택 기준:
 1. AI/기술과 연관성이 높을 것
 2. 한국 독자들이 관심 가질 주제
-3. 아직 많이 다뤄지지 않은 신선한 각도
+3. 신선한 각도
 4. SEO 검색량이 높을 것으로 예상되는 주제
 
-반드시 아래 JSON 형식으로만 응답하세요:
-{{
-  "topic": "블로그 주제 (한국어, 구체적으로)",
-  "keywords": ["키워드1", "키워드2", "키워드3"],
-  "reason": "선택 이유 (1줄)",
-  "angle": "차별화된 글쓰기 각도"
-}}"""
+아래 형식으로 정확히 응답하세요:
+
+===TOPIC===
+블로그 주제 (한국어, 구체적으로)
+===KEYWORDS===
+키워드1,키워드2,키워드3
+===REASON===
+선택 이유 한 줄
+===ANGLE===
+차별화된 글쓰기 각도
+===END==="""
 
     data = json.dumps({
         "model": ANTHROPIC_MODEL,
-        "max_tokens": 1024,
+        "max_tokens": 512,
         "messages": [{"role": "user", "content": prompt}]
     }).encode()
 
@@ -123,14 +127,30 @@ def select_best_topic(trends: list, ai_news: list) -> dict:
         }
     )
 
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req, timeout=60) as resp:
         result = json.loads(resp.read())
 
     text = result["content"][0]["text"]
-    start = text.find("{")
-    end = text.rfind("}") + 1
-    topic_data = json.loads(text[start:end])
-    return topic_data
+
+    def extract(t, key):
+        tags = ["===TOPIC===","===KEYWORDS===","===REASON===","===ANGLE===","===END==="]
+        tag = f"==={key}==="
+        s = t.find(tag)
+        if s == -1: return ""
+        s += len(tag)
+        e = len(t)
+        for other in tags:
+            if other == tag: continue
+            pos = t.find(other, s)
+            if 0 < pos < e: e = pos
+        return t[s:e].strip()
+
+    return {
+        "topic": extract(text, "TOPIC"),
+        "keywords": [k.strip() for k in extract(text, "KEYWORDS").split(",") if k.strip()],
+        "reason": extract(text, "REASON"),
+        "angle": extract(text, "ANGLE"),
+    }
 
 
 if __name__ == "__main__":
