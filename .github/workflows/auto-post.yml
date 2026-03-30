@@ -33,7 +33,10 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install scrapling playwright
+          scrapling install-pw --browsers chromium
 
       - name: Find or use topic
         id: topic
@@ -89,8 +92,6 @@ jobs:
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
         run: |
-          echo "CLIENT_ID 길이: ${#BLOGGER_CLIENT_ID}"
-          echo "REFRESH_TOKEN 길이: ${#BLOGGER_REFRESH_TOKEN}"
           python scripts/post_to_blogger.py "${{ steps.gen.outputs.file }}"
 
       - name: Commit post
@@ -126,7 +127,7 @@ jobs:
           else
             git show --name-only --diff-filter=A HEAD -- 'posts/*.md' | grep '\.md$' > changed_files.txt || true
           fi
-          COUNT=$(grep -c . changed_files.txt || echo 0)
+          COUNT=$(grep -c . changed_files.txt 2>/dev/null || echo 0)
           echo "count=$COUNT" >> $GITHUB_OUTPUT
           echo "새 파일 수: $COUNT"
           cat changed_files.txt
@@ -141,12 +142,10 @@ jobs:
         run: |
           while IFS= read -r file; do
             [ -z "$file" ] || [ ! -f "$file" ] && continue
-            echo "🖼️  이미지 삽입: $file"
             [ -n "$UNSPLASH_ACCESS_KEY" ] && python scripts/add_images.py "$file" || true
-            echo "📝 포스팅: $file"
             python scripts/post_to_blogger.py "$file"
           done < changed_files.txt
 
-      - name: Skip (no new posts)
+      - name: Skip
         if: steps.files.outputs.count == 0
-        run: echo "새 포스트 없음 — 정상 종료"
+        run: echo "새 포스트 없음"
