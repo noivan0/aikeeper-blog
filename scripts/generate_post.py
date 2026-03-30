@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Claude API로 고퀄리티 블로그 글 자동 생성
-- 상위 블로그 포맷 적용 (네이버/브런치/MIT Tech Review 스타일)
-- SEO 최적화
-- 가독성 극대화 구조
+고퀄리티 블로그 포스트 자동 생성
+- 실제 상위 블로그 분석 기반 (요즘IT, 브런치 스타일)
+- 구어체, 스토리텔링, 실용 정보 균형
+- SEO + 가독성 동시 최적화
 """
 import os
 import sys
@@ -18,69 +18,97 @@ ANTHROPIC_BASE_URL = os.environ.get(
 )
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
+# ── 실제 상위 블로그 분석 기반 시스템 프롬프트 ──────────────────
+SYSTEM_PROMPT = """당신은 요즘IT, 브런치 인기 작가 수준의 AI/기술 전문 블로거입니다.
 
-SYSTEM_PROMPT = """당신은 월 100만 PV를 달성한 대한민국 최고의 AI/기술 블로거입니다.
+## 실제 상위 블로그 포맷 (반드시 준수)
 
-## 당신의 글쓰기 철학
-- 독자가 3초 안에 "이 글 읽어야겠다"고 느끼게 만든다
-- 어려운 개념을 누구나 이해할 수 있게 풀어쓴다
-- 실용적 정보와 인사이트를 함께 제공한다
-- 읽는 내내 지루하지 않게 흐름을 유지한다
+### 제목 공식 (클릭률 최적화)
+- 호기심 자극형: "생각만으로 글 쓰는 시대 올까? 뇌-컴퓨터 인터페이스 혁명"
+- 숫자+혜택형: "ChatGPT로 업무 자동화하는 7가지 방법 (2025 최신)"
+- 반전형: "개발자가 사라진다고? AI 시대 프로그래머의 생존법"
+- 공감형: "나만 모르는 건가요? 요즘 뜨는 AI 도구 총정리"
 
-## 상위 블로그 포맷 (반드시 준수)
+### 글 구조 (요즘IT/브런치 상위 포맷)
 
-### 제목 공식
-- [숫자] + [핵심키워드] + [독자 혜택] 형식
-- 예: "ChatGPT로 하루 2시간 아끼는 5가지 방법"
-- 예: "2025년 AI 트렌드 완벽 정리 - 지금 알아야 할 것들"
+**1. 훅 (3~5문장)**
+- 독자가 공감할 일상적 상황이나 질문으로 시작
+- 영화, 뉴스, 실제 경험 사례 인용
+- "혹시 여러분도 이런 경험 있으신가요?" 식의 공감 유도
 
-### 글 구조 (반드시 이 순서로)
-1. **훅(Hook)**: 독자의 고통/궁금증을 건드리는 첫 문단 (3~4문장)
-2. **목차**: 이 글에서 다룰 내용 미리보기 (3~5개 항목)
-3. **본론**: 소제목별 핵심 내용 (각 섹션 300~400자)
-4. **핵심 요약 박스**: 전체 내용 3줄 요약
-5. **CTA**: 독자 행동 유도 마무리
+**2. 핵심 정의 박스 (인용구)**
+> 이 글의 핵심 주제를 한 문장으로 정의
 
-### 가독성 규칙
-- 한 문단 = 최대 3문장
-- 소제목마다 핵심 포인트 1개 강조 (굵게)
-- 숫자/통계 적극 활용
-- 전문용어는 반드시 쉬운 말로 부연
-- 이모지 적절히 활용 (과하지 않게, 소제목당 1개)"""
+**3. 본론 섹션 (3~5개)**
+각 섹션 구조:
+- ## 🔍 소제목 (이모지 1개)
+- 핵심 개념 설명 (쉬운 비유 포함)
+- 실제 사례/데이터 인용
+- ### 세부 소제목으로 심화
+- > 팁 또는 주의사항
+
+**4. 핵심 요약 테이블**
+| 항목 | 내용 |
+형식의 표로 핵심 정보 정리
+
+**5. 마무리 + CTA**
+- 미래 전망 1~2문장
+- "여러분은 어떻게 생각하시나요?" 식 댓글 유도
+- 관련 글 추천 언급
+
+### 글쓰기 톤 (매우 중요)
+- **구어체**: "~이죠", "~해요", "~거든요", "~인데요"
+- **독자에게 말 걸기**: "여러분", "혹시", "이런 경험 있으신가요?"
+- **감탄/공감**: "놀랍게도", "사실은", "그런데 말이죠"
+- **전문용어 즉시 설명**: 어려운 단어 → 괄호로 쉬운 말 부연
+- **문단 길이**: 최대 3~4문장, 한 줄 띄어쓰기로 호흡 유지
+
+### 분량
+- 2000~3000자 (10분 읽기 분량)
+- 섹션당 400~600자
+- 소제목 3~5개"""
 
 
 def generate_post(topic: str, keywords: list = None, angle: str = "") -> dict:
     keywords_str = ", ".join(keywords) if keywords else topic
 
-    prompt = f"""아래 주제로 고퀄리티 블로그 글을 작성해주세요.
+    prompt = f"""아래 주제로 상위 블로그 수준의 완성도 높은 글을 작성해주세요.
 
-주제: {topic}
-핵심 키워드: {keywords_str}
-{f'글쓰기 각도: {angle}' if angle else ''}
+**주제**: {topic}
+**핵심 키워드**: {keywords_str}
+{f'**글쓰기 각도**: {angle}' if angle else ''}
 
-## 반드시 포함할 요소
+## 필수 포함 요소
 
-1. **훅 문단**: 독자가 공감할 질문이나 상황으로 시작
-2. **목차 섹션**: "## 📋 이 글에서 다루는 내용" 형식
-3. **본론 3~5개 섹션**: 각각 ## 소제목 사용
-4. **핵심 요약**: "## ✅ 핵심 요약" 섹션으로 3줄 bullet
-5. **마무리 CTA**: 댓글/공유 유도
+1. **훅 문단**: 영화/뉴스/실제 사례로 독자 몰입 유도 (구어체)
+2. **핵심 정의**: `>` 인용구로 주제 한 줄 정의
+3. **본론 3~5 섹션**: 각 `## 이모지 소제목` 형식
+   - 쉬운 비유로 개념 설명
+   - 실제 데이터/사례 포함
+   - `>` 팁 박스 최소 1개
+4. **비교 표**: 핵심 정보를 마크다운 표로 정리
+5. **핵심 요약**: `## ✅ 이것만 기억하세요` 섹션 (bullet 3~5개)
+6. **마무리 CTA**: 독자 질문 + 댓글 유도
 
-## 마크다운 스타일 규칙
-- 중요 개념은 **굵게** 표시
-- 팁/주의사항은 > 인용구 블록 사용
-- 비교할 때는 표(table) 사용
-- 단계별 설명은 번호 목록 사용
-- 핵심 문장은 별도 줄로 강조
+## 절대 금지
+- 딱딱한 문어체 (보고서 느낌 X)
+- 한 문단 5문장 이상
+- 근거 없는 주장 (데이터/사례 없이)
+- 뻔한 결론 ("AI는 중요합니다" 식)
 
-반드시 아래 JSON 형식으로만 응답:
-{{
-  "title": "SEO 최적화 제목 (50자 이내, 숫자 포함)",
-  "labels": ["라벨1", "라벨2", "라벨3"],
-  "content": "완성된 마크다운 본문 (2000자 이상)",
-  "meta_description": "검색결과 설명 (150자 이내, 키워드 포함)",
-  "image_query": "대표 이미지 검색어 (영문 2~3단어)"
-}}"""
+아래 형식으로 정확히 응답하세요. 각 섹션은 구분자로 구분합니다:
+
+===TITLE===
+클릭 유발 제목 (50자 이내, 이모지 가능)
+===LABELS===
+라벨1,라벨2,라벨3
+===META===
+검색결과 설명 (150자 이내, 키워드+혜택 포함)
+===IMAGE===
+대표 이미지 영문 검색어 (2~3단어)
+===CONTENT===
+완성된 마크다운 본문 (2500자 이상, 여기서부터 끝까지)
+===END==="""
 
     data = json.dumps({
         "model": ANTHROPIC_MODEL,
@@ -99,31 +127,59 @@ def generate_post(topic: str, keywords: list = None, angle: str = "") -> dict:
         }
     )
 
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req, timeout=120) as resp:
         result = json.loads(resp.read())
 
     text = result["content"][0]["text"]
-    start = text.find("{")
-    end = text.rfind("}") + 1
-    return json.loads(text[start:end])
+
+    def extract_section(t, key):
+        start_tag = f"==={key}==="
+        end_candidates = ["===LABELS===", "===META===", "===IMAGE===", "===CONTENT===", "===END===", "===TITLE==="]
+        s = t.find(start_tag)
+        if s == -1:
+            return ""
+        s += len(start_tag)
+        e = len(t)
+        for tag in end_candidates:
+            if tag == start_tag:
+                continue
+            pos = t.find(tag, s)
+            if pos != -1 and pos < e:
+                e = pos
+        return t[s:e].strip()
+
+    title = extract_section(text, "TITLE")
+    labels_raw = extract_section(text, "LABELS")
+    labels = [l.strip() for l in labels_raw.split(",") if l.strip()]
+    meta_desc = extract_section(text, "META")
+    image_query = extract_section(text, "IMAGE")
+    content = extract_section(text, "CONTENT")
+
+    return {
+        "title": title or "AI 블로그 포스트",
+        "labels": labels or ["AI", "기술"],
+        "content": content,
+        "meta_description": meta_desc,
+        "image_query": image_query or "artificial intelligence technology"
+    }
 
 
 def save_as_markdown(post_data: dict, topic: str) -> str:
     today = datetime.date.today().strftime("%Y-%m-%d")
-    slug = topic.lower().replace(" ", "-")[:30]
-    # 한글 제거
-    slug = "".join(c for c in slug if c.isascii())
-    slug = slug.strip("-") or "post"
+    # 슬러그: ASCII만
+    slug = "".join(c if c.isascii() and (c.isalnum() or c == "-") else "-" for c in topic.lower().replace(" ", "-"))
+    slug = "-".join(filter(None, slug.split("-")))[:40] or "post"
     filename = f"posts/{today}-{slug}.md"
 
-    labels = post_data["labels"]
-    labels_yaml = json.dumps(labels, ensure_ascii=False)
-
+    labels_yaml = json.dumps(post_data["labels"], ensure_ascii=False)
+    # 제목/메타의 큰따옴표 이스케이프
+    safe_title = post_data['title'].replace('"', '\\"')
+    safe_meta = post_data.get('meta_description', '').replace('"', '\\"')
     content = f"""---
-title: "{post_data['title']}"
+title: "{safe_title}"
 labels: {labels_yaml}
 draft: false
-meta_description: "{post_data.get('meta_description', '')}"
+meta_description: "{safe_meta}"
 image_query: "{post_data.get('image_query', 'technology AI')}"
 ---
 
@@ -134,7 +190,7 @@ image_query: "{post_data.get('image_query', 'technology AI')}"
     with open(filename, "w", encoding="utf-8") as f:
         f.write(content)
 
-    print(f"✅ 글 생성 완료: {filename}")
+    print(f"✅ 글 생성: {filename}")
     print(f"   제목: {post_data['title']}")
     return filename
 
