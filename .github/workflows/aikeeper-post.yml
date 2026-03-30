@@ -2,8 +2,8 @@ name: AI Auto Post to Blogger
 
 on:
   schedule:
-    - cron: '0 0 * * *'
-    - cron: '0 6 * * *'
+    - cron: '0 0 * * *'   # KST 09:00
+    - cron: '0 6 * * *'   # KST 15:00
   workflow_dispatch:
     inputs:
       topic:
@@ -14,15 +14,10 @@ on:
         description: '키워드 (쉼표 구분)'
         required: false
         default: ''
-  push:
-    branches: [main]
-    paths:
-      - 'posts/**.md'
 
 jobs:
   auto-post:
     runs-on: self-hosted
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v4
@@ -52,39 +47,3 @@ jobs:
           git add posts/
           git diff --staged --quiet || git commit -m "auto: AI 포스트 $(date +'%Y-%m-%d %H:%M KST')"
           git push || true
-
-  manual-post:
-    runs-on: self-hosted
-    if: github.event_name == 'push'
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Install dependencies
-        run: pip3 install -r requirements.txt -q
-
-      - name: Get new markdown files
-        id: files
-        run: |
-          if git rev-parse HEAD~1 > /dev/null 2>&1; then
-            git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'posts/*.md' > /tmp/changed_files.txt
-          else
-            git show --name-only --diff-filter=A HEAD -- 'posts/*.md' | grep '\.md$' > /tmp/changed_files.txt || true
-          fi
-          COUNT=$(grep -c . /tmp/changed_files.txt 2>/dev/null || echo 0)
-          echo "count=$COUNT" >> $GITHUB_OUTPUT
-
-      - name: Post to Blogger
-        if: steps.files.outputs.count > 0
-        run: |
-          while IFS= read -r file; do
-            [ -z "$file" ] || [ ! -f "$file" ] && continue
-            python3 scripts/add_images.py "$file" || true
-            python3 scripts/post_to_blogger.py "$file"
-          done < /tmp/changed_files.txt
-
-      - name: Skip
-        if: steps.files.outputs.count == 0
-        run: echo "새 포스트 없음"
