@@ -394,9 +394,33 @@ def check_duplicate(service, title: str) -> bool:
 
 
 def post_to_blogger(file_path: str):
-    creds = get_credentials()
-    service = build("blogger", "v3", credentials=creds)
-    post_data = parse_post(file_path)
+    import traceback
+
+    print(f"[INFO] 파일: {file_path}")
+    print(f"[INFO] BLOG_ID: {BLOG_ID}")
+
+    try:
+        creds = get_credentials()
+        print(f"[INFO] 토큰 갱신 성공: {creds.valid}")
+    except Exception as e:
+        print(f"[ERROR] 토큰 갱신 실패: {e}")
+        traceback.print_exc()
+        sys.exit(1)
+
+    try:
+        service = build("blogger", "v3", credentials=creds)
+    except Exception as e:
+        print(f"[ERROR] Blogger 서비스 생성 실패: {e}")
+        traceback.print_exc()
+        sys.exit(1)
+
+    try:
+        post_data = parse_post(file_path)
+        print(f"[INFO] 파싱 완료: {post_data['title'][:50]}")
+    except Exception as e:
+        print(f"[ERROR] 마크다운 파싱 실패: {e}")
+        traceback.print_exc()
+        sys.exit(1)
 
     if check_duplicate(service, post_data["title"]):
         print(f"⚠️  중복 건너뜀: {post_data['title']}")
@@ -406,15 +430,19 @@ def post_to_blogger(file_path: str):
     if post_data["labels"]:
         body["labels"] = post_data["labels"]
 
-    result = service.posts().insert(
-        blogId=BLOG_ID,
-        body=body,
-        isDraft=post_data["is_draft"],
-    ).execute()
-
-    print(f"✅ 포스팅 완료: {result['title']}")
-    print(f"   URL: {result['url']}")
-    return result
+    try:
+        result = service.posts().insert(
+            blogId=BLOG_ID,
+            body=body,
+            isDraft=post_data["is_draft"],
+        ).execute()
+        print(f"✅ 포스팅 완료: {result['title']}")
+        print(f"   URL: {result['url']}")
+        return result
+    except Exception as e:
+        print(f"[ERROR] Blogger API 실패: {e}")
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

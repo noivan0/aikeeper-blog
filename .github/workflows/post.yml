@@ -70,9 +70,19 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
         run: |
-          FILE=$(python scripts/generate_post.py "${{ steps.topic.outputs.topic }}" "${{ steps.topic.outputs.keywords }}" "${{ steps.topic.outputs.angle }}" | tail -1)
+          OUTPUT=$(python scripts/generate_post.py "${{ steps.topic.outputs.topic }}" "${{ steps.topic.outputs.keywords }}" "${{ steps.topic.outputs.angle }}" 2>&1)
+          echo "$OUTPUT"
+          FILE=$(echo "$OUTPUT" | tail -1)
+          echo "생성된 파일: [$FILE]"
           echo "file=$FILE" >> $GITHUB_OUTPUT
-          echo "생성된 파일: $FILE"
+          # 파일 존재 확인
+          if [ ! -f "$FILE" ]; then
+            echo "❌ 파일이 존재하지 않음: $FILE"
+            ls posts/ || echo "posts/ 디렉토리 없음"
+            exit 1
+          fi
+          echo "✅ 파일 확인됨: $FILE"
+          wc -c "$FILE"
 
       - name: Add images
         continue-on-error: true
