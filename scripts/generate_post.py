@@ -10,6 +10,11 @@ import urllib.request
 import urllib.parse
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+ANTHROPIC_BASE_URL = os.environ.get(
+    "ANTHROPIC_BASE_URL",
+    "https://internal-apigw-kr.hmg-corp.io/hchat-in/api/v3/claude"
+)
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
 
 def generate_post(topic: str, keywords: list = None) -> dict:
@@ -40,13 +45,13 @@ def generate_post(topic: str, keywords: list = None) -> dict:
 }}"""
 
     data = json.dumps({
-        "model": "claude-opus-4-5",
+        "model": ANTHROPIC_MODEL,
         "max_tokens": 4096,
         "messages": [{"role": "user", "content": prompt}]
     }).encode()
 
     req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
+        f"{ANTHROPIC_BASE_URL.rstrip('/')}/messages",
         data=data,
         headers={
             "x-api-key": ANTHROPIC_API_KEY,
