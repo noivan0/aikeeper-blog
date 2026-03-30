@@ -39,32 +39,49 @@ jobs:
         run: |
           MANUAL_TOPIC="${{ github.event.inputs.topic }}"
           if [ -n "$MANUAL_TOPIC" ]; then
-            printf 'topic=%s\n' "$MANUAL_TOPIC" >> $GITHUB_OUTPUT
-            printf 'keywords=%s\n' "${{ github.event.inputs.keywords }}" >> $GITHUB_OUTPUT
-            printf 'angle=\n' >> $GITHUB_OUTPUT
+            echo "TOPIC:$MANUAL_TOPIC" > /tmp/topic_result.txt
+            echo "KEYWORDS:${{ github.event.inputs.keywords }}" >> /tmp/topic_result.txt
+            echo "ANGLE:" >> /tmp/topic_result.txt
           else
-            OUTPUT=$(python3 scripts/find_topics.py 2>&1) || true
-            echo "$OUTPUT"
-            TOPIC=$(printf '%s\n' "$OUTPUT" | grep "^TOPIC:" | sed 's/^TOPIC://')
-            KEYWORDS=$(printf '%s\n' "$OUTPUT" | grep "^KEYWORDS:" | sed 's/^KEYWORDS://')
-            ANGLE=$(printf '%s\n' "$OUTPUT" | grep "^ANGLE:" | sed 's/^ANGLE://')
-            printf 'topic=%s\n' "$TOPIC" >> $GITHUB_OUTPUT
-            printf 'keywords=%s\n' "$KEYWORDS" >> $GITHUB_OUTPUT
-            printf 'angle=%s\n' "$ANGLE" >> $GITHUB_OUTPUT
+            python3 scripts/find_topics.py 2>&1 | tee /tmp/topic_result.txt || true
           fi
+          # 파일에서 안전하게 파싱 (bash 특수문자 이슈 방지)
+          python3 - << 'PYEOF'
+import sys, os
+with open('/tmp/topic_result.txt', encoding='utf-8', errors='replace') as f:
+    lines = f.read().splitlines()
+topic = next((l[6:] for l in lines if l.startswith('TOPIC:')), '')
+keywords = next((l[9:] for l in lines if l.startswith('KEYWORDS:')), '')
+angle = next((l[6:] for l in lines if l.startswith('ANGLE:')), '')
+with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+    out.write(f'topic={topic}\n')
+    out.write(f'keywords={keywords}\n')
+    out.write(f'angle={angle}\n')
+print(f'주제: {topic[:60]}')
+PYEOF
 
       - name: Generate post
         id: gen
         run: |
-          OUTPUT=$(python3 scripts/generate_post.py \
+          python3 scripts/generate_post.py \
             "${{ steps.topic.outputs.topic }}" \
             "${{ steps.topic.outputs.keywords }}" \
-            "${{ steps.topic.outputs.angle }}" 2>&1) || true
-          echo "$OUTPUT"
-          FILE=$(printf '%s\n' "$OUTPUT" | grep "^posts/" | tail -1)
-          printf 'file=%s\n' "$FILE" >> $GITHUB_OUTPUT
-          echo "생성된 파일: [$FILE]"
-          [ -f "$FILE" ] || (echo "❌ 파일 없음" && exit 1)
+            "${{ steps.topic.outputs.angle }}" 2>&1 | tee /tmp/gen_result.txt || true
+          python3 - << 'PYEOF'
+import os
+with open('/tmp/gen_result.txt', encoding='utf-8', errors='replace') as f:
+    lines = f.read().splitlines()
+file = next((l for l in reversed(lines) if l.startswith('posts/')), '')
+with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+    out.write(f'file={file}\n')
+print(f'생성 파일: [{file}]')
+if file and not os.path.exists(file):
+    print('❌ 파일 없음')
+    raise SystemExit(1)
+elif not file:
+    print('❌ 파일명 파싱 실패')
+    raise SystemExit(1)
+PYEOF
 
       - name: Add images
         continue-on-error: true
