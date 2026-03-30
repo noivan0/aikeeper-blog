@@ -57,8 +57,10 @@ jobs:
             echo "$OUTPUT"
             TOPIC=$(echo "$OUTPUT" | grep "^TOPIC:" | sed 's/^TOPIC://')
             KEYWORDS=$(echo "$OUTPUT" | grep "^KEYWORDS:" | sed 's/^KEYWORDS://')
+            ANGLE=$(echo "$OUTPUT" | grep "^ANGLE:" | sed 's/^ANGLE://')
             echo "topic=$TOPIC" >> $GITHUB_OUTPUT
             echo "keywords=$KEYWORDS" >> $GITHUB_OUTPUT
+            echo "angle=$ANGLE" >> $GITHUB_OUTPUT
           fi
 
       - name: Generate post with Claude
@@ -68,7 +70,7 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
         run: |
-          FILE=$(python scripts/generate_post.py "${{ steps.topic.outputs.topic }}" "${{ steps.topic.outputs.keywords }}" | tail -1)
+          FILE=$(python scripts/generate_post.py "${{ steps.topic.outputs.topic }}" "${{ steps.topic.outputs.keywords }}" "${{ steps.topic.outputs.angle }}" | tail -1)
           echo "file=$FILE" >> $GITHUB_OUTPUT
           echo "생성된 파일: $FILE"
 

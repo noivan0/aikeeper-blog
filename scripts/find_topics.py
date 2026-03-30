@@ -152,3 +152,5 @@ if __name__ == "__main__":
     # generate_post.py에서 사용할 수 있도록 출력
     print(f"\nTOPIC:{topic_data['topic']}")
     print(f"KEYWORDS:{','.join(topic_data['keywords'])}")
+    print(f"ANGLE:{topic_data.get('angle', '')}")
+    print(f"ANGLE:{topic_data.get('angle', '')}")
