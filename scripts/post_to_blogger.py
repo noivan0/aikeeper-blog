@@ -21,6 +21,37 @@ BLOG_ID = "3598676904202320050"  # AI키퍼
 BLOG_URL = "https://aikeeper.allsweep.xyz"
 BLOG_NAME = "AI키퍼"
 
+# ── Google AdSense 광고 코드 ──────────────────────────────────────
+ADSENSE_PUB = "ca-pub-2597570939533872"
+
+# 인아티클 광고 — 본문 섹션 사이 삽입 (클릭률 가장 높음)
+AD_IN_ARTICLE = """
+<div style="margin:2.5em 0;text-align:center;">
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2597570939533872" crossorigin="anonymous"></script>
+<ins class="adsbygoogle"
+ style="display:block;text-align:center;"
+ data-ad-layout="in-article"
+ data-ad-format="fluid"
+ data-ad-client="ca-pub-2597570939533872"
+ data-ad-slot="6675974233"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</div>
+"""
+
+# 디스플레이 광고 — 본문 하단 삽입
+AD_DISPLAY = """
+<div style="margin:2.5em 0;">
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2597570939533872" crossorigin="anonymous"></script>
+<ins class="adsbygoogle"
+ style="display:block"
+ data-ad-client="ca-pub-2597570939533872"
+ data-ad-slot="8117048415"
+ data-ad-format="auto"
+ data-full-width-responsive="true"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</div>
+"""
+
 # ── 요즘IT/브런치 분석 기반 프리미엄 CSS ──────────────────────────
 PREMIUM_CSS = """
 <style>
@@ -149,8 +180,51 @@ def build_json_ld(title: str, meta_desc: str, labels: list, faqs: list = None) -
     return scripts
 
 
+def inject_ads(html: str) -> str:
+    """본문 HTML에 AdSense 광고 자동 삽입
+    
+    배치 전략:
+      - 인아티클 ①: 전체 h2 섹션 중 1/3 지점 (독자 몰입 직후)
+      - 인아티클 ②: 2/3 지점 (본문 후반부 진입 시)  
+      - 디스플레이:  본문 최하단 (읽기 완료 후)
+    """
+    # h2 태그 위치 모두 수집
+    h2_positions = [(m.start(), m.end()) for m in re.finditer(r'<h2[^>]*>.*?</h2>', html, re.DOTALL)]
+    total = len(h2_positions)
+
+    if total < 2:
+        # 섹션이 너무 적으면 중간 + 하단에만 삽입
+        mid = len(html) // 2
+        html = html[:mid] + AD_IN_ARTICLE + html[mid:]
+        html = html + AD_DISPLAY
+        return html
+
+    # 1/3 지점 h2 앞에 인아티클 ①
+    idx1 = max(1, total // 3)
+    pos1 = h2_positions[idx1][0]
+
+    # 2/3 지점 h2 앞에 인아티클 ②
+    idx2 = max(idx1 + 1, (total * 2) // 3)
+    idx2 = min(idx2, total - 1)
+
+    # 역순으로 삽입 (앞 삽입이 뒤 위치에 영향 주지 않도록)
+    pos2 = h2_positions[idx2][0]
+
+    # pos2 > pos1 보장
+    if pos2 > pos1:
+        html = html[:pos2] + AD_IN_ARTICLE + html[pos2:]
+        html = html[:pos1] + AD_IN_ARTICLE + html[pos1:]
+    else:
+        html = html[:pos1] + AD_IN_ARTICLE + html[pos1:]
+
+    # 디스플레이 광고: 본문 마지막에 추가
+    html = html + AD_DISPLAY
+
+    return html
+
+
 def post_process_html(html: str) -> str:
-    """HTML 후처리 — 가독성 강화"""
+    """HTML 후처리 — 가독성 강화 + 광고 삽입"""
     # 이미지 lazy loading
     html = html.replace('<img ', '<img loading="lazy" ')
 
@@ -161,6 +235,9 @@ def post_process_html(html: str) -> str:
         html,
         flags=re.IGNORECASE
     )
+
+    # 광고 삽입
+    html = inject_ads(html)
 
     return html
 
