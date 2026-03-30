@@ -52,10 +52,51 @@ AD_DISPLAY = """
 </div>
 """
 
-# ── 요즘IT/브런치 분석 기반 프리미엄 CSS ──────────────────────────
+# ── 성능 최적화: Google Fonts preconnect (렌더 블로킹 제거) ──────
+# @import → preconnect + link rel=stylesheet 방식으로 교체
+# AdSense script는 본문 하단 1회만 삽입 (중복 제거)
+FONT_PRECONNECT = """<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap"></noscript>"""
+
+# AdSense 초기화 스크립트 — 포스트당 1회만 (async, 중복 방지)
+ADSENSE_INIT = """<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2597570939533872" crossorigin="anonymous"></script>"""
+
+# 인아티클 광고 — script 태그 없이 ins + push만 (init은 위에서 1회)
+AD_IN_ARTICLE_INS = """
+<div style="margin:2.5em 0;text-align:center;min-height:200px;">
+<ins class="adsbygoogle"
+ style="display:block;text-align:center;"
+ data-ad-layout="in-article"
+ data-ad-format="fluid"
+ data-ad-client="ca-pub-2597570939533872"
+ data-ad-slot="6675974233"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</div>
+"""
+
+# 디스플레이 광고 — 하단
+AD_DISPLAY_INS = """
+<div style="margin:2.5em 0;min-height:100px;">
+<ins class="adsbygoogle"
+ style="display:block"
+ data-ad-client="ca-pub-2597570939533872"
+ data-ad-slot="8117048415"
+ data-ad-format="auto"
+ data-full-width-responsive="true"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</div>
+"""
+
+# 하위 호환: 기존 변수명 유지
+AD_IN_ARTICLE = AD_IN_ARTICLE_INS
+AD_DISPLAY = AD_DISPLAY_INS
+
+# ── 프리미엄 CSS — @import 제거, 시스템폰트 fallback 우선 ─────────
 PREMIUM_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');.ak-post{font-family:'Noto Sans KR',-apple-system,BlinkMacSystemFont,sans-serif;font-size:17px;line-height:1.9;color:#1a1a2e;max-width:760px;margin:0 auto;padding:0 4px;word-break:keep-all;overflow-wrap:break-word;}
+.ak-post{font-family:'Noto Sans KR',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',sans-serif;font-size:17px;line-height:1.9;color:#1a1a2e;max-width:760px;margin:0 auto;padding:0 4px;word-break:keep-all;overflow-wrap:break-word;content-visibility:auto;}
 .ak-post > p:first-of-type{font-size:1.08em;color:#2c3e70;line-height:2;padding:20px 24px;background:linear-gradient(135deg,#f0f4ff 0%,#e8f4f8 100%);border-radius:12px;border-left:4px solid #4f6ef7;margin-bottom:2em;}
 .ak-post h2{font-size:1.5em;font-weight:700;color:#0d1b4b;margin:2.5em 0 0.9em;padding:0 0 0.5em;border-bottom:2px solid #e8ecf4;position:relative;}
 .ak-post h2::before{content:'';position:absolute;bottom:-2px;left:0;width:60px;height:2px;background:#4f6ef7;}
@@ -301,10 +342,46 @@ def inject_ads(html: str) -> str:
     return html
 
 
+def fix_images_for_cls(html: str) -> str:
+    """CLS(누적 레이아웃 이동) 방지 — 이미지에 width/height/lazy/decoding 추가
+    
+    - width/height: 브라우저가 공간 미리 확보 → CLS 제거
+    - loading=lazy: 뷰포트 밖 이미지 지연 로드 → LCP 개선
+    - decoding=async: 메인스레드 블로킹 제거
+    - fetchpriority=high: 첫 번째 이미지(LCP 후보)만 우선 로드
+    """
+    first_img = True
+
+    def fix_img(m):
+        nonlocal first_img
+        tag = m.group(0)
+
+        # loading 설정
+        if 'loading=' not in tag:
+            if first_img:
+                # LCP 후보: 첫 이미지는 eager + fetchpriority=high
+                tag = tag.rstrip('>').rstrip('/') + ' loading="eager" fetchpriority="high" decoding="async">'
+                first_img = False
+            else:
+                tag = tag.rstrip('>').rstrip('/') + ' loading="lazy" decoding="async">'
+        else:
+            if 'decoding=' not in tag:
+                tag = tag.rstrip('>').rstrip('/') + ' decoding="async">'
+            first_img = False
+
+        # width/height 없으면 기본값 추가 → CLS 방지
+        if 'width=' not in tag and 'height=' not in tag:
+            tag = tag.replace('<img ', '<img width="800" height="450" style="aspect-ratio:16/9;" ')
+
+        return tag
+
+    return re.sub(r'<img[^>]+>', fix_img, html)
+
+
 def post_process_html(html: str) -> str:
-    """HTML 후처리 — 가독성 강화 + 광고 삽입"""
-    # 이미지 lazy loading
-    html = html.replace('<img ', '<img loading="lazy" ')
+    """HTML 후처리 — 가독성 강화 + CLS 수정 + 광고 삽입"""
+    # 이미지 CLS/LCP/lazy 최적화
+    html = fix_images_for_cls(html)
 
     # 핵심 요약 섹션 div 래핑
     html = re.sub(
@@ -386,6 +463,15 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 <meta name="twitter:title" content="{safe_title}">
 <meta name="twitter:description" content="{safe_meta}">
 <meta name="twitter:image" content="{og_image}">
+
+<!-- ── Google Search Console 사이트맵 힌트 ── -->
+<link rel="alternate" type="application/atom+xml" title="{BLOG_NAME} Feed" href="{BLOG_URL}/feeds/posts/default">
+
+<!-- ── 성능: Fonts preconnect (렌더 블로킹 제거) ── -->
+{FONT_PRECONNECT}
+
+<!-- ── 성능: AdSense 초기화 1회만 (중복 script 제거) ── -->
+{ADSENSE_INIT}
 
 {PREMIUM_CSS}
 
