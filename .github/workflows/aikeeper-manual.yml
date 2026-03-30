@@ -21,14 +21,15 @@ jobs:
       - name: Get new markdown files
         id: files
         run: |
-          if git rev-parse HEAD~1 > /dev/null 2>&1; then
-            git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'posts/*.md' > /tmp/changed_files.txt
-          else
-            git show --name-only --diff-filter=A HEAD -- 'posts/*.md' | grep '\.md$' > /tmp/changed_files.txt || true
+          # 새로 추가된 파일만 (diff-filter=A)
+          git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'posts/*.md' > /tmp/changed_files.txt 2>/dev/null || true
+          # 파일 없으면 빈 파일로 초기화
+          touch /tmp/changed_files.txt
+          COUNT=0
+          if [ -s /tmp/changed_files.txt ]; then
+            COUNT=$(grep -c . /tmp/changed_files.txt)
           fi
-          COUNT=$(grep -c . /tmp/changed_files.txt 2>/dev/null || true)
-          COUNT=${COUNT:-0}
-          echo "count=${COUNT}" >> $GITHUB_OUTPUT
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
           echo "새 포스트 수: $COUNT"
           cat /tmp/changed_files.txt
 
@@ -43,4 +44,4 @@ jobs:
 
       - name: No new posts
         if: steps.files.outputs.count == 0
-        run: echo "새 포스트 없음 — 정상 종료"
+        run: echo "새로 추가된 포스트 없음 (수정된 파일은 자동 제외)"
