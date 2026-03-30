@@ -33,11 +33,20 @@ jobs:
 
       - name: Find or use topic
         id: topic
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
         run: |
+          # self-hosted runner: .env 파일에서 환경변수 로드
+          set -a
+          [ -f "$HOME/.env" ] && source "$HOME/.env" || true
+          [ -f "/home/ghrunner/runner/.env" ] && source "/home/ghrunner/runner/.env" || true
+          set +a
+
+          # Secrets 우선 적용 (등록된 경우)
+          [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ] && export ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}"
+          [ -n "${{ secrets.ANTHROPIC_BASE_URL }}" ] && export ANTHROPIC_BASE_URL="${{ secrets.ANTHROPIC_BASE_URL }}"
+          [ -n "${{ secrets.ANTHROPIC_MODEL }}" ] && export ANTHROPIC_MODEL="${{ secrets.ANTHROPIC_MODEL }}"
+
+          echo "API KEY 설정 여부: $([ -n "$ANTHROPIC_API_KEY" ] && echo '✅' || echo '❌')"
+
           MANUAL_TOPIC="${{ github.event.inputs.topic }}"
           if [ -n "$MANUAL_TOPIC" ]; then
             echo "topic=$MANUAL_TOPIC" >> $GITHUB_OUTPUT
