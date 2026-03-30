@@ -26,8 +26,9 @@ jobs:
           else
             git show --name-only --diff-filter=A HEAD -- 'posts/*.md' | grep '\.md$' > /tmp/changed_files.txt || true
           fi
-          COUNT=$(grep -c . /tmp/changed_files.txt 2>/dev/null || echo 0)
-          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          COUNT=$(grep -c . /tmp/changed_files.txt 2>/dev/null || true)
+          COUNT=${COUNT:-0}
+          echo "count=${COUNT}" >> $GITHUB_OUTPUT
           echo "새 포스트 수: $COUNT"
           cat /tmp/changed_files.txt
 
