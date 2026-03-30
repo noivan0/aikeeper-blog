@@ -63,6 +63,16 @@ FONT_PRECONNECT = """<link rel="preconnect" href="https://fonts.googleapis.com">
 # AdSense 초기화 스크립트 — 포스트당 1회만 (async, 중복 방지)
 ADSENSE_INIT = """<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2597570939533872" crossorigin="anonymous"></script>"""
 
+# ── Google Analytics 4 + Google Tag Manager ──────────────────────
+GA4_TAG = """<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-R80Z7SLS7F"></script>
+<script>
+ window.dataLayer = window.dataLayer || [];
+ function gtag(){dataLayer.push(arguments);}
+ gtag('js', new Date());
+ gtag('config', 'G-R80Z7SLS7F');
+</script>"""
+
 # 인아티클 광고 — script 태그 없이 ins + push만 (init은 위에서 1회)
 AD_IN_ARTICLE_INS = """
 <div style="margin:2.5em 0;text-align:center;min-height:200px;">
@@ -432,6 +442,8 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
     safe_meta = meta_desc.replace('"', '&quot;')
 
     return f"""{json_ld}
+
+{GA4_TAG}
 
 <!-- ── 기술 SEO ── -->
 <meta charset="UTF-8">
