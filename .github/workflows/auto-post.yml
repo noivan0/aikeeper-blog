@@ -19,6 +19,9 @@ on:
     paths:
       - 'posts/**.md'
 
+# self-hosted runner: 환경변수는 /home/ghrunner/runner/.env 에서 자동 로드됨
+# (runner 시작 스크립트 start.sh가 set -a; source .env로 주입)
+
 jobs:
   # ── AI 자동 생성 포스팅 (schedule + workflow_dispatch) ──
   auto-post:
@@ -34,65 +37,41 @@ jobs:
       - name: Find or use topic
         id: topic
         run: |
-          # self-hosted runner: .env 파일에서 환경변수 로드
-          set -a
-          [ -f "$HOME/.env" ] && source "$HOME/.env" || true
-          [ -f "/home/ghrunner/runner/.env" ] && source "/home/ghrunner/runner/.env" || true
-          set +a
-
-          # Secrets 우선 적용 (등록된 경우)
-          [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ] && export ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}"
-          [ -n "${{ secrets.ANTHROPIC_BASE_URL }}" ] && export ANTHROPIC_BASE_URL="${{ secrets.ANTHROPIC_BASE_URL }}"
-          [ -n "${{ secrets.ANTHROPIC_MODEL }}" ] && export ANTHROPIC_MODEL="${{ secrets.ANTHROPIC_MODEL }}"
-
-          echo "API KEY 설정 여부: $([ -n "$ANTHROPIC_API_KEY" ] && echo '✅' || echo '❌')"
-
           MANUAL_TOPIC="${{ github.event.inputs.topic }}"
           if [ -n "$MANUAL_TOPIC" ]; then
-            echo "topic=$MANUAL_TOPIC" >> $GITHUB_OUTPUT
-            echo "keywords=${{ github.event.inputs.keywords }}" >> $GITHUB_OUTPUT
-            echo "angle=" >> $GITHUB_OUTPUT
+            printf 'topic=%s\n' "$MANUAL_TOPIC" >> $GITHUB_OUTPUT
+            printf 'keywords=%s\n' "${{ github.event.inputs.keywords }}" >> $GITHUB_OUTPUT
+            printf 'angle=\n' >> $GITHUB_OUTPUT
           else
-            OUTPUT=$(python3 scripts/find_topics.py 2>&1)
+            OUTPUT=$(python3 scripts/find_topics.py 2>&1) || true
             echo "$OUTPUT"
-            TOPIC=$(echo "$OUTPUT" | grep "^TOPIC:" | sed 's/^TOPIC://')
-            KEYWORDS=$(echo "$OUTPUT" | grep "^KEYWORDS:" | sed 's/^KEYWORDS://')
-            ANGLE=$(echo "$OUTPUT" | grep "^ANGLE:" | sed 's/^ANGLE://')
-            echo "topic=$TOPIC" >> $GITHUB_OUTPUT
-            echo "keywords=$KEYWORDS" >> $GITHUB_OUTPUT
-            echo "angle=$ANGLE" >> $GITHUB_OUTPUT
+            TOPIC=$(printf '%s\n' "$OUTPUT" | grep "^TOPIC:" | sed 's/^TOPIC://')
+            KEYWORDS=$(printf '%s\n' "$OUTPUT" | grep "^KEYWORDS:" | sed 's/^KEYWORDS://')
+            ANGLE=$(printf '%s\n' "$OUTPUT" | grep "^ANGLE:" | sed 's/^ANGLE://')
+            printf 'topic=%s\n' "$TOPIC" >> $GITHUB_OUTPUT
+            printf 'keywords=%s\n' "$KEYWORDS" >> $GITHUB_OUTPUT
+            printf 'angle=%s\n' "$ANGLE" >> $GITHUB_OUTPUT
           fi
 
       - name: Generate post
         id: gen
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
         run: |
           OUTPUT=$(python3 scripts/generate_post.py \
             "${{ steps.topic.outputs.topic }}" \
             "${{ steps.topic.outputs.keywords }}" \
-            "${{ steps.topic.outputs.angle }}" 2>&1)
+            "${{ steps.topic.outputs.angle }}" 2>&1) || true
           echo "$OUTPUT"
-          FILE=$(echo "$OUTPUT" | grep "^posts/" | tail -1)
-          echo "file=$FILE" >> $GITHUB_OUTPUT
+          FILE=$(printf '%s\n' "$OUTPUT" | grep "^posts/" | tail -1)
+          printf 'file=%s\n' "$FILE" >> $GITHUB_OUTPUT
           echo "생성된 파일: [$FILE]"
           [ -f "$FILE" ] || (echo "❌ 파일 없음" && exit 1)
 
       - name: Add images
         continue-on-error: true
-        env:
-          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
         run: |
-          [ -z "$UNSPLASH_ACCESS_KEY" ] && echo "이미지 스킵" && exit 0
           python3 scripts/add_images.py "${{ steps.gen.outputs.file }}" || true
 
       - name: Post to Blogger
-        env:
-          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
-          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
-          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
         run: |
           python3 scripts/post_to_blogger.py "${{ steps.gen.outputs.file }}"
 
@@ -126,21 +105,16 @@ jobs:
             git show --name-only --diff-filter=A HEAD -- 'posts/*.md' | grep '\.md$' > changed_files.txt || true
           fi
           COUNT=$(grep -c . changed_files.txt 2>/dev/null || echo 0)
-          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          printf 'count=%s\n' "$COUNT" >> $GITHUB_OUTPUT
           echo "새 파일 수: $COUNT"
           cat changed_files.txt
 
       - name: Post to Blogger
         if: steps.files.outputs.count > 0
-        env:
-          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
-          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
-          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
         run: |
           while IFS= read -r file; do
             [ -z "$file" ] || [ ! -f "$file" ] && continue
-            [ -n "$UNSPLASH_ACCESS_KEY" ] && python3 scripts/add_images.py "$file" || true
+            python3 scripts/add_images.py "$file" || true
             python3 scripts/post_to_blogger.py "$file"
           done < changed_files.txt
 
