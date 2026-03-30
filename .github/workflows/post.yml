@@ -1,11 +1,9 @@
-name: AI Auto Post to Blogger (AI키퍼)
+name: AI Auto Post to Blogger
 
 on:
-  # 매일 오전 9시, 오후 3시 자동 실행 (KST = UTC+9)
   schedule:
     - cron: '0 0 * * *'   # KST 09:00
     - cron: '0 6 * * *'   # KST 15:00
-  # 수동 실행 (주제 직접 입력 가능)
   workflow_dispatch:
     inputs:
       topic:
@@ -13,17 +11,16 @@ on:
         required: false
         default: ''
       keywords:
-        description: '키워드 (쉼표 구분, 비워두면 자동)'
+        description: '키워드 (쉼표 구분)'
         required: false
         default: ''
-  # posts/ 폴더에 직접 .md 추가 시
   push:
     branches: [main]
     paths:
       - 'posts/**.md'
 
 jobs:
-  # ── Job 1: AI 자동 포스팅 (스케줄 or 수동) ──
+  # ── AI 자동 생성 포스팅 (schedule + workflow_dispatch) ──
   auto-post:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -38,7 +35,6 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # 주제 결정: 입력값 있으면 사용, 없으면 자동 발굴
       - name: Find or use topic
         id: topic
         env:
@@ -48,12 +44,11 @@ jobs:
         run: |
           MANUAL_TOPIC="${{ github.event.inputs.topic }}"
           if [ -n "$MANUAL_TOPIC" ]; then
-            echo "📌 수동 입력 주제: $MANUAL_TOPIC"
             echo "topic=$MANUAL_TOPIC" >> $GITHUB_OUTPUT
             echo "keywords=${{ github.event.inputs.keywords }}" >> $GITHUB_OUTPUT
+            echo "angle=" >> $GITHUB_OUTPUT
           else
-            echo "🔍 트렌드 기반 주제 자동 발굴..."
-            OUTPUT=$(python scripts/find_topics.py)
+            OUTPUT=$(python scripts/find_topics.py 2>&1)
             echo "$OUTPUT"
             TOPIC=$(echo "$OUTPUT" | grep "^TOPIC:" | sed 's/^TOPIC://')
             KEYWORDS=$(echo "$OUTPUT" | grep "^KEYWORDS:" | sed 's/^KEYWORDS://')
@@ -63,37 +58,30 @@ jobs:
             echo "angle=$ANGLE" >> $GITHUB_OUTPUT
           fi
 
-      - name: Generate post with Claude
+      - name: Generate post
         id: gen
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
         run: |
-          OUTPUT=$(python scripts/generate_post.py "${{ steps.topic.outputs.topic }}" "${{ steps.topic.outputs.keywords }}" "${{ steps.topic.outputs.angle }}" 2>&1)
+          OUTPUT=$(python scripts/generate_post.py \
+            "${{ steps.topic.outputs.topic }}" \
+            "${{ steps.topic.outputs.keywords }}" \
+            "${{ steps.topic.outputs.angle }}" 2>&1)
           echo "$OUTPUT"
-          FILE=$(echo "$OUTPUT" | tail -1)
-          echo "생성된 파일: [$FILE]"
+          FILE=$(echo "$OUTPUT" | grep "^posts/" | tail -1)
           echo "file=$FILE" >> $GITHUB_OUTPUT
-          # 파일 존재 확인
-          if [ ! -f "$FILE" ]; then
-            echo "❌ 파일이 존재하지 않음: $FILE"
-            ls posts/ || echo "posts/ 디렉토리 없음"
-            exit 1
-          fi
-          echo "✅ 파일 확인됨: $FILE"
-          wc -c "$FILE"
+          echo "생성된 파일: [$FILE]"
+          [ -f "$FILE" ] || (echo "❌ 파일 없음" && exit 1)
 
       - name: Add images
         continue-on-error: true
         env:
           UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
         run: |
-          if [ -z "$UNSPLASH_ACCESS_KEY" ]; then
-            echo "⚠️  UNSPLASH_ACCESS_KEY 없음 — 이미지 삽입 스킵"
-            exit 0
-          fi
-          python scripts/add_images.py "${{ steps.gen.outputs.file }}" || echo "이미지 삽입 실패 — 계속 진행"
+          [ -z "$UNSPLASH_ACCESS_KEY" ] && echo "이미지 스킵" && exit 0
+          python scripts/add_images.py "${{ steps.gen.outputs.file }}" || true
 
       - name: Post to Blogger
         env:
@@ -103,33 +91,17 @@ jobs:
         run: |
           echo "CLIENT_ID 길이: ${#BLOGGER_CLIENT_ID}"
           echo "REFRESH_TOKEN 길이: ${#BLOGGER_REFRESH_TOKEN}"
-          echo "CLIENT_SECRET 길이: ${#BLOGGER_CLIENT_SECRET}"
-          python -c "
-import os, json
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-creds = Credentials(
-    token=None,
-    refresh_token=os.environ['BLOGGER_REFRESH_TOKEN'],
-    client_id=os.environ['BLOGGER_CLIENT_ID'],
-    client_secret=os.environ['BLOGGER_CLIENT_SECRET'],
-    token_uri='https://oauth2.googleapis.com/token',
-    scopes=['https://www.googleapis.com/auth/blogger']
-)
-creds.refresh(Request())
-print('토큰 갱신 성공:', creds.valid)
-"
           python scripts/post_to_blogger.py "${{ steps.gen.outputs.file }}"
 
-      - name: Commit generated post
+      - name: Commit post
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add posts/
-          git diff --staged --quiet || git commit -m "auto: 트렌드 기반 AI 포스트 자동 생성 $(date +'%Y-%m-%d %H:%M')"
-          git push
+          git diff --staged --quiet || git commit -m "auto: AI 포스트 $(date +'%Y-%m-%d %H:%M KST')"
+          git push || true
 
-  # ── Job 2: 수동 .md push 시 포스팅 ──
+  # ── 수동 .md push 시 포스팅 ──
   manual-post:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
@@ -147,33 +119,34 @@ print('토큰 갱신 성공:', creds.valid)
         run: pip install -r requirements.txt
 
       - name: Get new markdown files
+        id: files
         run: |
-          # fetch-depth:2 로 이전 커밋이 없을 경우 대비
           if git rev-parse HEAD~1 > /dev/null 2>&1; then
             git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'posts/*.md' > changed_files.txt
           else
-            # 첫 커밋인 경우 전체 posts/ 파일 대상
-            git show --name-only --diff-filter=A HEAD -- 'posts/*.md' | grep '\.md$' > changed_files.txt
+            git show --name-only --diff-filter=A HEAD -- 'posts/*.md' | grep '\.md$' > changed_files.txt || true
           fi
-          echo "대상 파일:"
+          COUNT=$(grep -c . changed_files.txt || echo 0)
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          echo "새 파일 수: $COUNT"
           cat changed_files.txt
 
-      - name: Add images & Post
+      - name: Post to Blogger
+        if: steps.files.outputs.count > 0
         env:
           BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
           UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
         run: |
-          count=0
           while IFS= read -r file; do
-            if [ -n "$file" ] && [ -f "$file" ]; then
-              echo "🖼️  이미지 삽입: $file"
-              python scripts/add_images.py "$file" || true
-              echo "📝 포스팅: $file"
-              python scripts/post_to_blogger.py "$file"
-              count=$((count+1))
-            fi
+            [ -z "$file" ] || [ ! -f "$file" ] && continue
+            echo "🖼️  이미지 삽입: $file"
+            [ -n "$UNSPLASH_ACCESS_KEY" ] && python scripts/add_images.py "$file" || true
+            echo "📝 포스팅: $file"
+            python scripts/post_to_blogger.py "$file"
           done < changed_files.txt
-          echo "총 ${count}개 포스팅 완료"
-          [ $count -eq 0 ] && echo "포스팅할 새 파일 없음 (정상)" && exit 0
+
+      - name: Skip (no new posts)
+        if: steps.files.outputs.count == 0
+        run: echo "새 포스트 없음 — 정상 종료"

@@ -190,8 +190,9 @@ image_query: "{post_data.get('image_query', 'technology AI')}"
     with open(filename, "w", encoding="utf-8") as f:
         f.write(content)
 
-    print(f"✅ 글 생성: {filename}")
+    print(f"✅ 글 생성 완료")
     print(f"   제목: {post_data['title']}")
+    print(filename)   # 마지막 줄: posts/YYYY-MM-DD-slug.md
     return filename
 
 
