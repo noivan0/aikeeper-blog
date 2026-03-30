@@ -443,8 +443,6 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 
     return f"""{json_ld}
 
-{GA4_TAG}
-
 <!-- ── 기술 SEO ── -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
