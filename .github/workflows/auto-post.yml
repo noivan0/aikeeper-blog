@@ -22,21 +22,14 @@ on:
 jobs:
   # ── AI 자동 생성 포스팅 (schedule + workflow_dispatch) ──
   auto-post:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install scrapling playwright
-          python -m playwright install chromium --with-deps 2>/dev/null || true
+        run: pip3 install -r requirements.txt -q
 
       - name: Find or use topic
         id: topic
@@ -104,7 +97,7 @@ jobs:
 
   # ── 수동 .md push 시 포스팅 ──
   manual-post:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: github.event_name == 'push'
 
     steps:
@@ -112,12 +105,8 @@ jobs:
         with:
           fetch-depth: 2
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip3 install -r requirements.txt -q
 
       - name: Get new markdown files
         id: files
