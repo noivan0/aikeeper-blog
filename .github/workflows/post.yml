@@ -1,0 +1,49 @@
+name: Auto Post to Blogger (AI키퍼)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'posts/**.md'
+  workflow_dispatch:  # 수동 실행
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Get newly added markdown files
+        id: changed
+        run: |
+          git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'posts/*.md' > changed_files.txt
+          echo "변경된 파일:"
+          cat changed_files.txt
+
+      - name: Post to Blogger
+        env:
+          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+        run: |
+          count=0
+          while IFS= read -r file; do
+            if [ -n "$file" ]; then
+              echo "📝 포스팅 중: $file"
+              python scripts/post_to_blogger.py "$file"
+              count=$((count + 1))
+            fi
+          done < changed_files.txt
+          echo "총 ${count}개 포스팅 완료"
