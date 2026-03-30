@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Blogger 자동 포스팅 스크립트
-- 마크다운 파일을 HTML로 변환 후 Blogger API로 포스팅
-- Front Matter(YAML) 지원: title, labels, draft
+Blogger 자동 포스팅 스크립트 (SEO 최적화 버전)
+- 마크다운 → HTML 변환
+- SEO 메타태그 자동 삽입
+- 중복 포스팅 방지
 """
 import os
 import sys
@@ -31,10 +32,8 @@ def get_credentials():
 
 
 def parse_front_matter(content: str):
-    """YAML Front Matter 파싱"""
     meta = {}
     body = content
-
     if content.startswith("---"):
         parts = content.split("---", 2)
         if len(parts) >= 3:
@@ -42,24 +41,46 @@ def parse_front_matter(content: str):
                 import yaml
                 meta = yaml.safe_load(parts[1]) or {}
             except ImportError:
-                # yaml 없으면 간단 파싱
                 for line in parts[1].strip().splitlines():
                     if ":" in line:
                         k, v = line.split(":", 1)
                         meta[k.strip()] = v.strip().strip('"')
             body = parts[2].strip()
-
     return meta, body
+
+
+def build_seo_html(title: str, meta_desc: str, html_body: str, labels: list) -> str:
+    """SEO 메타태그 포함 HTML 생성"""
+    keywords = ", ".join(labels) if labels else title
+
+    seo_head = f"""<!-- SEO Meta -->
+<meta name="description" content="{meta_desc}">
+<meta name="keywords" content="{keywords}">
+<meta property="og:title" content="{title}">
+<meta property="og:description" content="{meta_desc}">
+<meta property="og:type" content="article">
+
+<!-- 스타일 -->
+<style>
+  .post-body img {{ max-width: 100%; height: auto; border-radius: 8px; margin: 16px 0; }}
+  .post-body pre {{ background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; }}
+  .post-body code {{ background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }}
+  .post-body table {{ border-collapse: collapse; width: 100%; }}
+  .post-body th, .post-body td {{ border: 1px solid #ddd; padding: 8px; }}
+  .post-body th {{ background: #f2f2f2; }}
+</style>
+
+"""
+    return seo_head + html_body
 
 
 def parse_post(file_path: str):
     content = Path(file_path).read_text(encoding="utf-8")
     meta, body = parse_front_matter(content)
 
-    # 마크다운 → HTML
     html_body = md_lib.markdown(
         body,
-        extensions=["tables", "fenced_code", "nl2br"]
+        extensions=["tables", "fenced_code", "nl2br", "toc"]
     )
 
     title = meta.get("title") or Path(file_path).stem.replace("-", " ")
@@ -67,21 +88,32 @@ def parse_post(file_path: str):
     if isinstance(labels, str):
         labels = [l.strip() for l in labels.split(",")]
     is_draft = str(meta.get("draft", "false")).lower() == "true"
+    meta_desc = meta.get("meta_description", "")
+
+    # meta_description 없으면 본문 첫 150자
+    if not meta_desc:
+        plain = re.sub(r'<[^>]+>', '', html_body)
+        meta_desc = plain[:150].strip()
+
+    final_html = build_seo_html(title, meta_desc, html_body, labels)
 
     return {
         "title": title,
-        "content": html_body,
+        "content": final_html,
         "labels": labels,
         "is_draft": is_draft,
+        "meta_description": meta_desc,
     }
 
 
 def check_duplicate(service, title: str) -> bool:
-    """같은 제목의 포스트가 이미 있는지 확인"""
-    result = service.posts().search(blogId=BLOG_ID, q=title).execute()
-    for item in result.get("items", []):
-        if item["title"] == title:
-            return True
+    try:
+        result = service.posts().search(blogId=BLOG_ID, q=title).execute()
+        for item in result.get("items", []):
+            if item["title"] == title:
+                return True
+    except Exception:
+        pass
     return False
 
 
@@ -91,9 +123,8 @@ def post_to_blogger(file_path: str):
 
     post_data = parse_post(file_path)
 
-    # 중복 확인
     if check_duplicate(service, post_data["title"]):
-        print(f"⚠️  이미 존재하는 포스트 건너뜀: {post_data['title']}")
+        print(f"⚠️  중복 포스트 건너뜀: {post_data['title']}")
         return None
 
     body = {

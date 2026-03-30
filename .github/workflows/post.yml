@@ -1,36 +1,54 @@
-name: Auto Post to Blogger (AI키퍼)
+name: AI Auto Post to Blogger (AI키퍼)
 
 on:
   push:
     branches: [main]
     paths:
       - 'posts/**.md'
-  workflow_dispatch:  # 수동 실행
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: '블로그 주제 (예: ChatGPT 활용법)'
+        required: false
+        default: ''
+      keywords:
+        description: '키워드 (쉼표 구분, 예: AI,ChatGPT,자동화)'
+        required: false
+        default: ''
 
 jobs:
-  post:
+  # ── Job 1: AI 글 자동생성 (수동 실행 시) ──
+  generate:
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.topic != ''
+    outputs:
+      generated_file: ${{ steps.gen.outputs.file }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Get newly added markdown files
-        id: changed
+      - name: Generate post with Claude
+        id: gen
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
         run: |
-          git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'posts/*.md' > changed_files.txt
-          echo "변경된 파일:"
-          cat changed_files.txt
+          FILE=$(python scripts/generate_post.py "${{ github.event.inputs.topic }}" "${{ github.event.inputs.keywords }}" | tail -1)
+          echo "file=$FILE" >> $GITHUB_OUTPUT
+          echo "생성된 파일: $FILE"
+
+      - name: Add images
+        env:
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+        run: |
+          python scripts/add_images.py "${{ steps.gen.outputs.generated_file }}"
 
       - name: Post to Blogger
         env:
@@ -38,12 +56,51 @@ jobs:
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
         run: |
-          count=0
+          python scripts/post_to_blogger.py "${{ steps.gen.outputs.generated_file }}"
+
+      - name: Commit generated post
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add posts/
+          git diff --staged --quiet || git commit -m "auto: AI 생성 포스트 추가"
+          git push
+
+  # ── Job 2: 수동 .md 파일 push 시 포스팅 ──
+  post:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Get new markdown files
+        id: changed
+        run: |
+          git diff --name-only --diff-filter=A HEAD~1 HEAD -- 'posts/*.md' > changed_files.txt
+          cat changed_files.txt
+
+      - name: Add images & Post to Blogger
+        env:
+          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+        run: |
           while IFS= read -r file; do
             if [ -n "$file" ]; then
-              echo "📝 포스팅 중: $file"
+              echo "🖼️  이미지 삽입: $file"
+              python scripts/add_images.py "$file"
+              echo "📝 포스팅: $file"
               python scripts/post_to_blogger.py "$file"
-              count=$((count + 1))
             fi
           done < changed_files.txt
-          echo "총 ${count}개 포스팅 완료"
