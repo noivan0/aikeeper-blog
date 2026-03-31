@@ -180,11 +180,11 @@ A5: 상세 답변
         client_kwargs["api_key"] = ANTHROPIC_API_KEY
     client = _anthropic.Anthropic(**client_kwargs)
 
-    # 스트리밍으로 504 timeout 방지 (max_tokens=16000 비스트리밍 시 Anthropic 서버 timeout 발생)
+    # 스트리밍으로 504 timeout 방지 (비스트리밍 시 Anthropic 서버 504 발생 — 스트리밍은 16000도 안전)
     text = ""
     with client.messages.stream(
         model=ANTHROPIC_MODEL,
-        max_tokens=8000,
+        max_tokens=16000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}]
     ) as stream:
