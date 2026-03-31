@@ -182,7 +182,7 @@ A5: 상세 답변
 
     response = client.messages.create(
         model=ANTHROPIC_MODEL,
-        max_tokens=8192,       # 504 방지: API 서버 한계 내로 유지
+        max_tokens=16000,      # 10,000자+ 본문 생성 지원 (게이트웨이 한계 확인됨)
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}]
     )
