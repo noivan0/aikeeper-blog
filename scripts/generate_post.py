@@ -180,14 +180,16 @@ A5: 상세 답변
         client_kwargs["api_key"] = ANTHROPIC_API_KEY
     client = _anthropic.Anthropic(**client_kwargs)
 
-    response = client.messages.create(
+    # 스트리밍으로 504 timeout 방지 (max_tokens=16000 비스트리밍 시 Anthropic 서버 timeout 발생)
+    text = ""
+    with client.messages.stream(
         model=ANTHROPIC_MODEL,
-        max_tokens=16000,      # 10,000자+ 본문 생성 지원 (게이트웨이 한계 확인됨)
+        max_tokens=8000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}]
-    )
-
-    text = response.content[0].text
+    ) as stream:
+        for chunk in stream.text_stream:
+            text += chunk
 
     def extract_section(t, key):
         all_tags = ["===TITLE===", "===LABELS===", "===META===", "===KEYWORDS_SEO===",
