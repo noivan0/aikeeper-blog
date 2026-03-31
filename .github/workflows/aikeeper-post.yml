@@ -39,11 +39,33 @@ jobs:
   auto-post:
     runs-on: self-hosted
 
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+      ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
+      BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+      BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+      BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+      BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+      UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: pip3 install -r requirements.txt -q
+
+      - name: Weekly angle refresh (Monday or missing)
+        run: |
+          WEEKDAY=$(date +%u)
+          YEAR_WW=$(date +%Y-W%V)
+          ANGLE_FILE="output/angles/topic_angles_${YEAR_WW}.json"
+          if [ "$WEEKDAY" = "1" ] || [ ! -f "$ANGLE_FILE" ]; then
+            echo "앵글 갱신 실행 (요일=$WEEKDAY)"
+            python3 scripts/angle_refresher.py || echo "앵글 갱신 실패 (비치명적, 계속 진행)"
+          else
+            echo "앵글 갱신 스킵 (파일 존재: $ANGLE_FILE)"
+          fi
 
       # ── 랜덤 딜레이 (구글 자동화 탐지 우회) ──────────────────
       # workflow_dispatch + skip_delay=true면 즉시 실행

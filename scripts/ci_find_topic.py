@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """CI용 주제 발굴 래퍼 — GITHUB_OUTPUT에 안전하게 출력"""
-import os, sys
+import os, sys, subprocess
 
 GITHUB_OUTPUT = os.environ.get("GITHUB_OUTPUT", "/tmp/gh_output.txt")
 
-manual_topic = sys.argv[1] if len(sys.argv) > 1 else ""
+manual_topic    = sys.argv[1] if len(sys.argv) > 1 else ""
 manual_keywords = sys.argv[2] if len(sys.argv) > 2 else ""
 
 def write_output(key, value):
-    # 멀티라인 값 처리 (EOF 구분자)
     safe = str(value).replace('\r', '').replace('\n', ' ')
     with open(GITHUB_OUTPUT, "a", encoding="utf-8") as f:
         f.write(f"{key}={safe}\n")
@@ -19,21 +18,12 @@ if manual_topic.strip():
     write_output("angle", "")
     print(f"수동 주제: {manual_topic[:60]}")
 else:
-    # find_topics.py 실행
-    import subprocess, tempfile
-    result = subprocess.run(
-        [sys.executable, "scripts/find_topics.py"],
-        capture_output=False,
-        text=True,
-        timeout=180,
-    )
-    # 출력에서 파싱은 find_topics.py가 stdout에 직접 씀
-    # stdout 재캡처
-    r2 = subprocess.run(
+    # find_topics.py 한 번만 실행 (stdout 캡처)
+    r = subprocess.run(
         [sys.executable, "scripts/find_topics.py"],
         capture_output=True, text=True, timeout=180,
     )
-    output = r2.stdout + r2.stderr
+    output = r.stdout + r.stderr
     print(output)
 
     topic = ""
@@ -46,6 +36,12 @@ else:
             keywords = line[9:].strip()
         elif line.startswith("ANGLE:"):
             angle = line[6:].strip()
+
+    if not topic:
+        print("❌ 주제 추출 실패 — fallback 사용", file=sys.stderr)
+        topic = "AI 최신 트렌드 2026"
+        keywords = "AI,트렌드,2026"
+        angle = "트렌드분석"
 
     write_output("topic", topic)
     write_output("keywords", keywords)
