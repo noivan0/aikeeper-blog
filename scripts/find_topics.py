@@ -9,7 +9,7 @@ import anthropic as _anthropic
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-ANTHROPIC_API_KEY  = os.environ["ANTHROPIC_API_KEY"]
+ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_BASE_URL = os.environ.get(
     "ANTHROPIC_BASE_URL",
     "https://internal-apigw-kr.hmg-corp.io/hchat-in/api/v3/claude"
@@ -1694,12 +1694,10 @@ AI키퍼 블로그(한국어 AI 전문)에 가장 적합한 주제 1개를 선�
 참고한 원본 후보 제목
 ===END==="""
 
-    client = _anthropic.Anthropic(
-        api_key=ANTHROPIC_API_KEY,
-        base_url=ANTHROPIC_BASE_URL,
-        timeout=120,
-        max_retries=2,
-    )
+    _ck = dict(base_url=ANTHROPIC_BASE_URL, timeout=120, max_retries=2)
+    if ANTHROPIC_API_KEY:
+        _ck["api_key"] = ANTHROPIC_API_KEY
+    client = _anthropic.Anthropic(**_ck)
     response = client.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=800,

@@ -14,7 +14,7 @@ import datetime
 
 import anthropic as _anthropic
 
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_BASE_URL = os.environ.get(
     "ANTHROPIC_BASE_URL",
     "https://internal-apigw-kr.hmg-corp.io/hchat-in/api/v3/claude"
@@ -175,12 +175,10 @@ A5: 상세 답변
 완성된 마크다운 본문 (10,000자 이상)
 ===END==="""
 
-    client = _anthropic.Anthropic(
-        api_key=ANTHROPIC_API_KEY,
-        base_url=ANTHROPIC_BASE_URL,
-        timeout=600,
-        max_retries=2,
-    )
+    client_kwargs = dict(base_url=ANTHROPIC_BASE_URL, timeout=600, max_retries=2)
+    if ANTHROPIC_API_KEY:
+        client_kwargs["api_key"] = ANTHROPIC_API_KEY
+    client = _anthropic.Anthropic(**client_kwargs)
 
     response = client.messages.create(
         model=ANTHROPIC_MODEL,
