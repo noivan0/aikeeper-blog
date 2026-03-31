@@ -10,7 +10,7 @@ angle = sys.argv[3] if len(sys.argv) > 3 else ""
 
 r = subprocess.run(
     [sys.executable, "scripts/generate_post.py", topic, keywords, angle],
-    capture_output=True, text=True, timeout=300,
+    capture_output=True, text=True, timeout=600,
 )
 print(r.stdout)
 if r.stderr:
