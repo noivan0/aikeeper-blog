@@ -42,7 +42,12 @@ jobs:
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-      ANTHROPIC_MODEL: claude-sonnet-4-6
+      ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
+      BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+      BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+      BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+      BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+      UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
 
     steps:
       - uses: actions/checkout@v4
