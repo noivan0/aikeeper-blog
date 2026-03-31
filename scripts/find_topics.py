@@ -1388,9 +1388,31 @@ AD_FILTER = {"buy","sale","discount","구매","할인","무료체험","지금신
 def get_words(text):
     return set(re.findall(r"[\w가-힣]{2,}", text.lower()))
 
+def get_words_list(text):
+    """순서 보존 단어 리스트 (bigram용)"""
+    return re.findall(r"[\w가-힣]{2,}", text.lower())
+
 def bigrams(text):
-    words = list(get_words(text))
+    words = get_words_list(text)  # 순서 보존
     return {(words[i], words[i+1]) for i in range(len(words)-1)}
+
+# 핵심 주제 키워드 그룹 — 같은 그룹 키워드가 양쪽 주제에 겹치면 유사 주제로 판단
+TOPIC_KEY_GROUPS = [
+    {"claude", "클로드", "anthropic", "앤트로픽"},
+    {"chatgpt", "gpt", "openai", "오픈ai"},
+    {"gemini", "구글", "google"},
+    {"llm", "llama", "라마", "mistral"},
+    {"자율주행", "autonomous", "tesla", "테슬라"},
+    {"반도체", "gpu", "nvidia", "엔비디아"},
+]
+
+def topic_key_overlap(a, b):
+    """두 주제가 같은 핵심 키워드 그룹의 단어를 공유하면 True"""
+    wa, wb = get_words(a), get_words(b)
+    for group in TOPIC_KEY_GROUPS:
+        if (group & wa) and (group & wb) and (group & wa) & (group & wb):
+            return True
+    return False
 
 def similarity(a, b):
     wa, wb = get_words(a), get_words(b)
@@ -1399,12 +1421,14 @@ def similarity(a, b):
     bs = len(ba & bb) / len(ba | bb) if ba and bb else 0.0
     return (ws + bs) / 2.0
 
-def is_duplicate(query, used, threshold=0.35):
+def is_duplicate(query, used, threshold=0.30):
     q = query.lower()
     for u in used:
         if similarity(q, u) >= threshold:
             return True
         if len(get_words(q) & get_words(u)) >= 3:
+            return True
+        if topic_key_overlap(q, u):
             return True
     return False
 
