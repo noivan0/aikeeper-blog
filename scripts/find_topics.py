@@ -2,7 +2,7 @@
 """AI키퍼 블로그 — 주제 자동 발굴 v3
 도메인 116개, 앵글 875개, 중복방지, 도메인 로테이션
 """
-import os, sys, re, subprocess, tempfile, datetime, hashlib, json, time
+import os, sys, re, subprocess, tempfile, datetime, hashlib, json, time, math
 import urllib.request, urllib.parse
 
 import anthropic as _anthropic
@@ -1430,6 +1430,45 @@ def is_duplicate(query, used, threshold=0.30):
             return True
         if topic_key_overlap(q, u):
             return True
+    # 코사인 유사도 추가 검증
+    if is_duplicate_cosine(query, used, threshold=0.35):
+        return True
+    return False
+
+def tfidf_vector(text, corpus):
+    """간단한 TF-IDF 코사인 유사도용 벡터 (외부 라이브러리 없이)"""
+    words = get_words_list(text)
+    tf = {}
+    for w in words:
+        tf[w] = tf.get(w, 0) + 1
+    total = len(words) or 1
+    # IDF: 전체 corpus 중 몇 문서에 등장하는지
+    idf = {}
+    N = len(corpus) + 1
+    for w in tf:
+        df = sum(1 for doc in corpus if w in get_words(doc)) + 1
+        idf[w] = math.log(N / df)
+    return {w: (c / total) * idf[w] for w, c in tf.items()}
+
+def cosine_similarity(a, b, corpus):
+    """두 텍스트의 TF-IDF 코사인 유사도"""
+    va = tfidf_vector(a, corpus)
+    vb = tfidf_vector(b, corpus)
+    keys = set(va) | set(vb)
+    dot = sum(va.get(k, 0) * vb.get(k, 0) for k in keys)
+    na = math.sqrt(sum(v**2 for v in va.values())) or 1e-9
+    nb = math.sqrt(sum(v**2 for v in vb.values())) or 1e-9
+    return dot / (na * nb)
+
+def is_duplicate_cosine(query, used, threshold=0.35):
+    """코사인 유사도 기반 중복 체크"""
+    if not used:
+        return False
+    corpus = list(used) + [query]
+    q = query.lower()
+    for u in used:
+        if cosine_similarity(q, u.lower(), corpus) >= threshold:
+            return True
     return False
 
 def has_ad(text):
@@ -1691,6 +1730,9 @@ def select_best_topic(news_items, used_history):
         for item in merged[:35]
     ])
 
+    # 기존 발행 제목 목록을 프롬프트에 주입
+    used_titles_text = "\n".join(f"- {t}" for t in sorted(used_history)) if used_history else "없음"
+
     prompt = f"""오늘은 {today_str}입니다.
 
 아래는 수집한 최신 AI/기술 뉴스 및 주제 후보입니다.
@@ -1698,12 +1740,16 @@ def select_best_topic(news_items, used_history):
 [주제 후보]
 {news_text}
 
+[이미 발행된 포스트 제목 — 절대 중복 금지]
+{used_titles_text}
+
 AI키퍼 블로그(한국어 AI 전문)에 가장 적합한 주제 1개를 선정해주세요.
 
 요구사항:
 1. 위 목록 기반의 실제 소식/주제
-2. 단순 뉴스 요약 X → "왜 중요한가", "어떻게 활용하나" 각도
-3. 한국 독자가 궁금해할 주제 (실용적, 구체적)
+2. 이미 발행된 포스트와 주제·키워드가 겹치지 않는 완전히 새로운 주제 (같은 제품/기업이라도 각도가 완전히 다르면 허용)
+3. 단순 뉴스 요약 X → "왜 중요한가", "어떻게 활용하나" 각도
+4. 한국 독자가 궁금해할 주제 (실용적, 구체적)
 
 형식:
 ===TOPIC===
