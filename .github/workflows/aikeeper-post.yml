@@ -5,10 +5,11 @@ name: AI Auto Post to Blogger
 # → 실제 포스팅 시각이 매일 달라짐 (자연스러운 사람 패턴)
 #
 # KST 기준 트리거 시각 (UTC):
-#   00:30 (KST 09:30) / 02:00 (KST 11:00) / 03:30 (KST 12:30)
-#   05:00 (KST 14:00) / 06:30 (KST 15:30) / 08:00 (KST 17:00)
-#   10:00 (KST 19:00) / 12:30 (KST 21:30)
-# → 랜덤 딜레이 후 실제 포스팅 → 하루 5~8개 자연스러운 간격
+#   22:00(전날) → KST 07:00 / 00:30 → KST 09:30 / 02:00 → KST 11:00
+#   03:30 → KST 12:30 / 05:00 → KST 14:00 / 06:30 → KST 15:30
+#   08:00 → KST 17:00 / 10:00 → KST 19:00 / 12:30 → KST 21:30
+# → 랜덤 딜레이 후 실제 포스팅 → 하루 9회 분산
+# GSC 주간 리포트: 매주 일요일 22:00 UTC(월요일 KST 07:00) 실행
 
 on:
   schedule:
@@ -111,4 +112,15 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add posts/
           git diff --staged --quiet || git commit -m "auto: AI 포스트 $(date +'%Y-%m-%d %H:%M KST')"
+          git push || true
+
+      - name: GSC 주간 리포트 (매주 월요일)
+        if: format('{0}', github.event.schedule) == '0 22 * * 0' || github.event.inputs.skip_delay == 'gsc'
+        continue-on-error: true
+        run: |
+          python3 scripts/gsc_report.py || echo "GSC 리포트 실패 (비치명적)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/reports/ || true
+          git diff --staged --quiet || git commit -m "report: GSC 주간 리포트 $(date +'%Y-W%V')"
           git push || true
