@@ -156,7 +156,10 @@ def get_credentials():
         client_id=os.environ["BLOGGER_CLIENT_ID"],
         client_secret=os.environ["BLOGGER_CLIENT_SECRET"],
         token_uri="https://oauth2.googleapis.com/token",
-        scopes=["https://www.googleapis.com/auth/blogger"],
+        scopes=[
+            "https://www.googleapis.com/auth/blogger",
+            "https://www.googleapis.com/auth/webmasters",
+        ],
     )
     creds.refresh(Request())
     return creds
@@ -570,6 +573,24 @@ def blogger_request(method: str, path: str, token: str, body=None, params=None):
     return resp
 
 
+
+
+def submit_sitemap_gsc(token: str, post_url: str = "") -> None:
+    """포스팅 후 Search Console에 Sitemap 제출 (색인 촉진)"""
+    site_url = requests.utils.quote(BLOG_URL + "/", safe="")
+    sitemap_url = requests.utils.quote(f"{BLOG_URL}/sitemap.xml", safe="")
+    endpoint = (
+        f"https://www.googleapis.com/webmasters/v3/sites/{site_url}/sitemaps/{sitemap_url}"
+    )
+    try:
+        r = requests.put(endpoint, headers={"Authorization": f"Bearer {token}"}, timeout=10)
+        if r.status_code in (200, 204):
+            print(f"  ✅ GSC Sitemap 제출 완료")
+        else:
+            print(f"  ⚠️  GSC Sitemap 제출 [{r.status_code}]: {r.text[:80]}")
+    except Exception as e:
+        print(f"  ⚠️  GSC Sitemap 제출 실패 (비치명적): {e}")
+
 def check_duplicate(token: str, title: str) -> bool:
     try:
         r = blogger_request("GET", f"/blogs/{BLOG_ID}/posts/search",
@@ -629,6 +650,11 @@ def post_to_blogger(file_path: str):
         result = r.json()
         print(f"✅ 포스팅 완료: {result['title']}")
         print(f"   URL: {result.get('url', '(url pending)')}")
+        # Search Console Sitemap 제출 (색인 촉진)
+        try:
+            submit_sitemap_gsc(token, result.get('url', ''))
+        except Exception:
+            pass
         return result
     except Exception as e:
         print(f"[ERROR] Blogger API 실패: {e}")
