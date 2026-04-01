@@ -648,13 +648,24 @@ def post_to_blogger(file_path: str):
             print(f"[ERROR] Blogger API HTTP {r.status_code}: {r.text[:300]}")
             sys.exit(1)
         result = r.json()
+        post_url = result.get('url', '')
         print(f"✅ 포스팅 완료: {result['title']}")
-        print(f"   URL: {result.get('url', '(url pending)')}")
-        # Search Console Sitemap 제출 (색인 촉진)
+        print(f"   URL: {post_url}")
+        # 1. Search Console Sitemap 제출
         try:
-            submit_sitemap_gsc(token, result.get('url', ''))
+            submit_sitemap_gsc(token, post_url)
         except Exception:
             pass
+        # 2. Indexing API — 즉시 색인 요청 (서비스 계정)
+        if post_url:
+            try:
+                import subprocess as _sp
+                _sp.run(
+                    ["python3", "scripts/indexing_api.py", post_url],
+                    timeout=20, capture_output=False
+                )
+            except Exception as _ie:
+                print(f"  ⚠️  Indexing API 호출 실패 (비치명적): {_ie}")
         return result
     except Exception as e:
         print(f"[ERROR] Blogger API 실패: {e}")
