@@ -153,7 +153,11 @@ def generate_post(topic: str, keywords: list = None, angle: str = "") -> dict:
 ===TITLE===
 클릭 유발 제목 (50자 이내, 이모지 최대 1개만, 제목 맨 앞에 위치)
 ===LABELS===
-라벨1,라벨2,라벨3,라벨4
+아래 표준 라벨 목록에서만 선택 (3~5개, 쉼표 구분):
+AI기초, ChatGPT, Claude, Gemini, LLM, 프롬프트엔지니어링, AI코딩, AI에이전트, RAG, 파인튜닝,
+이미지생성AI, 영상생성AI, AI음성, 로컬LLM, AI보안, AI의료, AI교육, AI금융, AI마케팅, AI법률,
+자율주행, AI로봇, AI반도체, 딥러닝, 머신러닝, 오픈소스AI, 한국AI, AI정책규제, AI트렌드, AI생산성,
+AI스타트업, AI윤리, AI일자리, 멀티모달AI, AI검색, 스마트팩토리
 ===META===
 구글 검색결과 설명 (150~160자, 핵심키워드+혜택+연도)
 ===KEYWORDS_SEO===
