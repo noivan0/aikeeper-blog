@@ -150,16 +150,16 @@ PREMIUM_CSS = """
 
 
 def get_credentials():
+    # ⚠️ webmasters scope 제거 — refresh token이 blogger scope만으로 발급됐으면
+    # webmasters 추가 시 invalid_scope 에러 발생 → 0.74초 즉시 실패
+    # GSC Sitemap 제출은 별도 service account(indexing_api.py)가 담당
     creds = Credentials(
         token=None,
         refresh_token=os.environ["BLOGGER_REFRESH_TOKEN"],
         client_id=os.environ["BLOGGER_CLIENT_ID"],
         client_secret=os.environ["BLOGGER_CLIENT_SECRET"],
         token_uri="https://oauth2.googleapis.com/token",
-        scopes=[
-            "https://www.googleapis.com/auth/blogger",
-            "https://www.googleapis.com/auth/webmasters",
-        ],
+        scopes=["https://www.googleapis.com/auth/blogger"],
     )
     creds.refresh(Request())
     return creds
@@ -576,7 +576,12 @@ def blogger_request(method: str, path: str, token: str, body=None, params=None):
 
 
 def submit_sitemap_gsc(token: str, post_url: str = "") -> None:
-    """포스팅 후 Search Console에 Sitemap 제출 (색인 촉진)"""
+    """포스팅 후 Search Console에 Sitemap 제출 (색인 촉진)
+    
+    ⚠️ blogger token은 blogger scope만 보유 → webmasters API 403 예상
+    실제 GSC 색인은 indexing_api.py (service account)가 담당
+    이 함수는 best-effort로만 시도, 실패해도 무시
+    """
     site_url = requests.utils.quote(BLOG_URL + "/", safe="")
     sitemap_url = requests.utils.quote(f"{BLOG_URL}/sitemap.xml", safe="")
     endpoint = (
@@ -587,9 +592,10 @@ def submit_sitemap_gsc(token: str, post_url: str = "") -> None:
         if r.status_code in (200, 204):
             print(f"  ✅ GSC Sitemap 제출 완료")
         else:
-            print(f"  ⚠️  GSC Sitemap 제출 [{r.status_code}]: {r.text[:80]}")
+            # 403 = scope 없음 (정상, 무시)
+            print(f"  ℹ️  GSC Sitemap 스킵 [{r.status_code}] — indexing_api.py가 색인 처리")
     except Exception as e:
-        print(f"  ⚠️  GSC Sitemap 제출 실패 (비치명적): {e}")
+        print(f"  ℹ️  GSC Sitemap 스킵 (비치명적): {e}")
 
 def check_duplicate(token: str, title: str) -> bool:
     try:
@@ -660,12 +666,18 @@ def post_to_blogger(file_path: str):
         if post_url:
             try:
                 import subprocess as _sp
+                import os as _os
+                # cwd를 스크립트 디렉토리 기준으로 명시 (runner cwd 의존 제거)
+                _script_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
                 _sp.run(
                     ["python3", "scripts/indexing_api.py", post_url],
-                    timeout=20, capture_output=False
+                    timeout=30,
+                    capture_output=True,  # stdout/stderr 캡처 (터미널 오염 방지)
+                    cwd=_script_dir,
                 )
+                print(f"  ✅ Indexing API 색인 요청 완료")
             except Exception as _ie:
-                print(f"  ⚠️  Indexing API 호출 실패 (비치명적): {_ie}")
+                print(f"  ℹ️  Indexing API 스킵 (비치명적): {_ie}")
         return result
     except Exception as e:
         print(f"[ERROR] Blogger API 실패: {e}")
