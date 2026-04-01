@@ -151,7 +151,7 @@ def generate_post(topic: str, keywords: list = None, angle: str = "") -> dict:
 아래 형식으로 정확히 응답:
 
 ===TITLE===
-클릭 유발 제목 (50자 이내, 이모지 포함)
+클릭 유발 제목 (50자 이내, 이모지 최대 1개만, 제목 맨 앞에 위치)
 ===LABELS===
 라벨1,라벨2,라벨3,라벨4
 ===META===
@@ -241,13 +241,58 @@ A5: 상세 답변
     }
 
 
+def make_seo_slug(title: str, topic: str) -> str:
+    """SEO 최적화 슬러그 생성 — 제목 기반, 영문 키워드 추출"""
+    import unicodedata
+
+    # 이모지/특수문자 제거
+    clean = re.sub(r'[^\w\s가-힣a-zA-Z0-9-]', ' ', title)
+
+    # 영문 단어 우선 추출 (SEO에 유리)
+    en_words = re.findall(r'[a-zA-Z]{2,}', clean)
+    ko_words = re.findall(r'[가-힣]{2,}', clean)
+
+    slug_parts = []
+
+    # 영문 키워드가 있으면 우선 사용 (최대 4개)
+    if en_words:
+        slug_parts.extend([w.lower() for w in en_words[:4]])
+
+    # 한글 키워드에서 로마자 변환 가능한 브랜드명 매핑
+    ko_brand_map = {
+        '인공지능': 'ai', '머신러닝': 'machine-learning', '딥러닝': 'deep-learning',
+        '챗지피티': 'chatgpt', '클로드': 'claude', '제미나이': 'gemini',
+        '오픈에이아이': 'openai', '앤트로픽': 'anthropic', '구글': 'google',
+        '마이크로소프트': 'microsoft', '메타': 'meta', '삼성': 'samsung',
+        '네이버': 'naver', '카카오': 'kakao', '자율주행': 'autonomous',
+        '양자화': 'quantization', '파인튜닝': 'finetuning', '에이전트': 'agent',
+        '보안': 'security', '의료': 'medical', '교육': 'education',
+        '금융': 'finance', '스타트업': 'startup', '투자': 'investment',
+        '로봇': 'robot', '반도체': 'semiconductor', '언어모델': 'llm',
+    }
+    for ko, en in ko_brand_map.items():
+        if ko in clean and en not in slug_parts:
+            slug_parts.append(en)
+            if len(slug_parts) >= 5:
+                break
+
+    # 슬러그 조합
+    if slug_parts:
+        slug = '-'.join(slug_parts)[:50]
+    else:
+        # 완전 폴백: topic ascii
+        slug = "".join(
+            c if c.isascii() and (c.isalnum() or c == "-") else "-"
+            for c in topic.lower().replace(" ", "-")
+        )
+        slug = "-".join(filter(None, slug.split("-")))[:40] or "post"
+
+    return slug or "ai-post"
+
+
 def save_as_markdown(post_data: dict, topic: str) -> str:
     today = datetime.date.today().strftime("%Y-%m-%d")
-    slug = "".join(
-        c if c.isascii() and (c.isalnum() or c == "-") else "-"
-        for c in topic.lower().replace(" ", "-")
-    )
-    slug = "-".join(filter(None, slug.split("-")))[:40] or "post"
+    slug = make_seo_slug(post_data.get("title", topic), topic)
     filename = f"posts/{today}-{slug}.md"
 
     safe_title = post_data['title'].replace('"', '\\"')
