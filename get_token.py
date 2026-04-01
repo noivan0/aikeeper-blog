@@ -18,7 +18,7 @@ AUTH_URI = creds_data["auth_uri"]
 TOKEN_URI = creds_data["token_uri"]
 REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"  # 코드 화면에 표시되는 방식
 
-SCOPE = "https://www.googleapis.com/auth/blogger"
+SCOPE = "https://www.googleapis.com/auth/blogger https://www.googleapis.com/auth/webmasters"
 
 # 인증 URL 생성
 params = {

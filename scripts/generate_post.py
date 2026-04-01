@@ -273,7 +273,24 @@ def make_seo_slug(title: str, topic: str) -> str:
         '보안': 'security', '의료': 'medical', '교육': 'education',
         '금융': 'finance', '스타트업': 'startup', '투자': 'investment',
         '로봇': 'robot', '반도체': 'semiconductor', '언어모델': 'llm',
+        '가이드': 'guide', '방법': 'how-to', '비교': 'comparison', '추천': 'recommended',
+        '완전정복': 'complete-guide', '입문': 'beginner', '튜토리얼': 'tutorial',
+        '차이': 'difference', '장단점': 'pros-cons', '분석': 'analysis',
+        '트렌드': 'trends', '활용': 'usage', '실전': 'practical',
+        '최신': 'latest', '무료': 'free', '유료': 'premium', '설치': 'install',
+        '프롬프트': 'prompt', '에이전트': 'agent', '자동화': 'automation',
+        '한국어': 'korean', '국내': 'korea', '기업': 'enterprise', '스타트업': 'startup',
+        '윤리': 'ethics', '규제': 'regulation', '정책': 'policy',
+        '성능': 'performance', '속도': 'speed', '비용': 'cost', '가격': 'price',
+        '파인튜닝': 'finetuning', '양자화': 'quantization',
+        '검색': 'search', '요약': 'summary', '번역': 'translation',
+        '이미지': 'image', '영상': 'video', '음성': 'voice',
+        '챗봇': 'chatbot', '어시스턴트': 'assistant',
     }
+
+    # 순수 숫자만으로 이루어진 슬러그 파트 제거
+    slug_parts = [p for p in slug_parts if not re.match(r'^\d+$', p)]
+
     for ko, en in ko_brand_map.items():
         if ko in clean and en not in slug_parts:
             slug_parts.append(en)
@@ -290,6 +307,13 @@ def make_seo_slug(title: str, topic: str) -> str:
             for c in topic.lower().replace(" ", "-")
         )
         slug = "-".join(filter(None, slug.split("-")))[:40] or "post"
+
+    # 슬러그 끝에 연도 추가 (제목에 2025/2026 등 포함 시)
+    year_match = re.search(r'\b(202[0-9])\b', title)
+    if year_match:
+        year = year_match.group(1)
+        if year not in slug:
+            slug = (slug + '-' + year)[:55]
 
     return slug or "ai-post"
 

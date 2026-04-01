@@ -107,6 +107,31 @@ jobs:
       - name: Post to Blogger
         run: python3 scripts/post_to_blogger.py "${{ steps.gen.outputs.file }}"
 
+      - name: Request Google Indexing (Sitemap batch)
+        continue-on-error: true
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          python3 -c "
+import urllib.request, re, sys, os
+sys.path.insert(0, 'scripts')
+try:
+    import indexing_api as idx
+    token = idx.get_indexing_token()
+    with urllib.request.urlopen('https://aikeeper.allsweep.xyz/atom.xml', timeout=10) as r:
+        content = r.read().decode()
+    urls = re.findall(r\"<link rel='alternate' type='text/html' href='(https://aikeeper\.allsweep\.xyz/\d{4}/[^']+)'\", content)
+    for url in urls[:5]:
+        result = idx.request_indexing(url, token)
+        if 'error' in result:
+            print(f'  WARNING: {url[:60]} [{result[\"error\"]}]')
+        else:
+            print(f'  OK: {url[:60]}')
+    print(f'색인 요청 완료: {min(5, len(urls))}개')
+except Exception as e:
+    print(f'Indexing API 스킵 (비치명적): {e}')
+"
+
       - name: Commit post
         run: |
           git config user.name "github-actions[bot]"

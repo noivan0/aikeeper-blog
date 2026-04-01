@@ -139,13 +139,16 @@ def index_recent_posts(count: int = 3):
         urls = get_recent_post_urls(blogger_token, count=count)
 
     if not urls:
-        # fallback: sitemap.xml에서 URL 파싱
-        print("  → Blogger API 실패, sitemap 파싱 시도")
+        # fallback: atom.xml에서 URL 파싱
+        print("  → Blogger API 실패, atom.xml 파싱 시도")
         try:
-            with urllib.request.urlopen(f"{BLOG_URL}/sitemap.xml", timeout=10) as r:
+            with urllib.request.urlopen(f"{BLOG_URL}/atom.xml", timeout=10) as r:
                 content = r.read().decode()
             import re
-            urls_raw = re.findall(r'<loc>(https://[^<]+)</loc>', content)
+            urls_raw = re.findall(
+                r"<link rel='alternate' type='text/html' href='(https://aikeeper\.allsweep\.xyz/\d{4}/[^']+)'",
+                content
+            )
             urls = [(u, "") for u in urls_raw[:count]]
         except Exception:
             pass
