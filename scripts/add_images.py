@@ -23,9 +23,24 @@ import subprocess
 import tempfile
 import urllib.request
 import urllib.parse
+import hashlib
+import datetime
 from pathlib import Path
 
 UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "").strip()
+
+FALLBACK_IMAGES = [
+    {"url": "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=1200&h=630&fit=crop", "alt": "인공지능 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1676299081847-824916de030a?w=1200&h=630&fit=crop", "alt": "AI 머신러닝", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1655720828018-edd2daec9349?w=1200&h=630&fit=crop", "alt": "AI 데이터 분석", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=1200&h=630&fit=crop", "alt": "AI 로봇 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&h=630&fit=crop", "alt": "데이터 코드 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1509228627152-72ae9ae6848d?w=1200&h=630&fit=crop", "alt": "네트워크 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&h=630&fit=crop", "alt": "미래 기술 혁신", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1593642632559-0c6d3fc62b89?w=1200&h=630&fit=crop", "alt": "컴퓨터 기술 개발", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&h=630&fit=crop", "alt": "반도체 칩 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&h=630&fit=crop", "alt": "디지털 지구 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+]
 
 # ── 신뢰 뉴스 소스 화이트리스트 ─────────────────────────────────
 TRUSTED_SOURCES = [
@@ -229,9 +244,11 @@ def search_from_reddit(query: str) -> list:
                     img_url = img_url.replace("&amp;", "&")
                     if img_url and is_valid_image_url(img_url):
                         post_url = f"https://reddit.com{pd.get('permalink', '')}"
+                        # URL 정규화: 서명 파라미터 제거
+                        img_url = re.sub(r'&s=[^&]+', '', img_url)
                         results.append({
                             "url": img_url,
-                            "alt": pd.get("title", query)[:80],
+                            "alt": query[:80],  # 블로그 주제로 교체
                             "credit": f"Reddit r/{sub}",
                             "credit_url": post_url,
                             "source": "reddit",
@@ -435,6 +452,13 @@ def collect_images(query: str, labels: list = None) -> list:
         unsplash_imgs = search_unsplash(query)
         all_images.extend(unsplash_imgs)
 
+    # 폴백: 이미지 없으면 날짜 seed로 안정적 fallback 이미지 선택 (반드시 img 태그 보장)
+    if not all_images:
+        seed = int(hashlib.md5(datetime.date.today().isoformat().encode()).hexdigest(), 16)
+        fallback = FALLBACK_IMAGES[seed % len(FALLBACK_IMAGES)]
+        all_images.append(fallback)
+        print(f"  🔄 Fallback 이미지 사용: {fallback['url'][:60]}...")
+
     return all_images[:3]  # 최대 3개
 
 
@@ -453,12 +477,9 @@ def inject_images(file_path: str) -> str:
     images = collect_images(query, labels)
 
     # ── 대표 이미지 (hero) ──
-    if images:
-        hero_html = build_image_html(images[0], is_hero=True)
-        print(f"  ✅ 대표 이미지 확보 ({images[0]['source']})")
-    else:
-        hero_html = make_emoji_banner(query, title) + "\n\n"
-        print(f"  → 이모지 배너로 대체")
+    # collect_images()가 항상 최소 1개 반환하므로 else 불필요
+    hero_html = build_image_html(images[0], is_hero=True)
+    print(f"  ✅ 대표 이미지 확보 ({images[0]['source']})")
 
     # ── 본문 중간 이미지 (2번째 h2 앞에 삽입) ──
     h2_positions = [m.start() for m in re.finditer(r'^## ', body, re.MULTILINE)]
