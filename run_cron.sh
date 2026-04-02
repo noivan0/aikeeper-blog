@@ -8,8 +8,9 @@ cd /root/.openclaw/workspace/paperclip-company/projects/p004-blogger
 # .env 로드
 export $(grep -v '^#' .env | xargs)
 
-# GITHUB_OUTPUT 임시 파일
-export GITHUB_OUTPUT=/tmp/aikeeper_gh_output_$$.txt
+# GITHUB_OUTPUT 임시 파일 (Step 1용)
+GH_OUTPUT_TOPIC=/tmp/aikeeper_gh_topic_$$.txt
+export GITHUB_OUTPUT="$GH_OUTPUT_TOPIC"
 touch "$GITHUB_OUTPUT"
 
 LOG_FILE="/var/log/aikeeper_cron.log"
@@ -24,25 +25,29 @@ sleep "$DELAY"
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] Step 1: 주제 발굴" | tee -a "$LOG_FILE"
 python3 scripts/ci_find_topic.py "" "" 2>&1 | tee -a "$LOG_FILE"
 
-TOPIC=$(grep '^TOPIC=' "$GITHUB_OUTPUT" | cut -d= -f2- | head -1)
-KEYWORDS=$(grep '^KEYWORDS=' "$GITHUB_OUTPUT" | cut -d= -f2- | head -1)
-ANGLE=$(grep '^ANGLE=' "$GITHUB_OUTPUT" | cut -d= -f2- | head -1)
+# ci_find_topic.py는 소문자 키(topic=, keywords=, angle=)로 출력함
+TOPIC=$(grep '^topic=' "$GH_OUTPUT_TOPIC" | cut -d= -f2- | head -1)
+KEYWORDS=$(grep '^keywords=' "$GH_OUTPUT_TOPIC" | cut -d= -f2- | head -1)
+ANGLE=$(grep '^angle=' "$GH_OUTPUT_TOPIC" | cut -d= -f2- | head -1)
+
+rm -f "$GH_OUTPUT_TOPIC"
 
 if [ -z "$TOPIC" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 주제 발굴 실패 — 종료" | tee -a "$LOG_FILE"
-    rm -f "$GITHUB_OUTPUT"
     exit 1
 fi
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 주제: $TOPIC" | tee -a "$LOG_FILE"
 
-# Step 2: 포스트 생성
+# Step 2: 포스트 생성 (별도 출력 파일 사용)
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] Step 2: 포스트 생성" | tee -a "$LOG_FILE"
-export GITHUB_OUTPUT=/tmp/aikeeper_gh_output2_$$.txt
+GH_OUTPUT_GEN=/tmp/aikeeper_gh_gen_$$.txt
+export GITHUB_OUTPUT="$GH_OUTPUT_GEN"
 touch "$GITHUB_OUTPUT"
 python3 scripts/ci_generate.py "$TOPIC" "$KEYWORDS" "$ANGLE" 2>&1 | tee -a "$LOG_FILE"
 
-POST_FILE=$(grep '^file=' "$GITHUB_OUTPUT" | cut -d= -f2- | head -1)
+POST_FILE=$(grep '^file=' "$GH_OUTPUT_GEN" | cut -d= -f2- | head -1)
+rm -f "$GH_OUTPUT_GEN"
 
 if [ -z "$POST_FILE" ] || [ ! -f "$POST_FILE" ]; then
     # 오늘 날짜 파일 자동 탐지
@@ -51,7 +56,6 @@ fi
 
 if [ -z "$POST_FILE" ] || [ ! -f "$POST_FILE" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 포스트 파일 없음 — 종료" | tee -a "$LOG_FILE"
-    rm -f "$GITHUB_OUTPUT"
     exit 1
 fi
 
@@ -73,5 +77,4 @@ git add posts/
 git diff --staged --quiet || git commit -m "auto: AI 포스트 $(date '+%Y-%m-%d %H:%M KST')"
 git push https://${GITHUB_PAT}@github.com/noivan0/aikeeper-blog.git main 2>&1 | tee -a "$LOG_FILE" || true
 
-rm -f "$GITHUB_OUTPUT"
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] ===== 완료 =====" | tee -a "$LOG_FILE"
