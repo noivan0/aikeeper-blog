@@ -143,18 +143,24 @@ except Exception as e:
           git diff --staged --quiet || git commit -m "auto: AI 포스트 $(date +'%Y-%m-%d %H:%M KST')"
           git push || true
 
-      - name: Generate & Deploy RSS 2.0 (네이버 서치어드바이저용)
+      - name: Generate & Deploy RSS 2.0 + sitemap.xml (네이버 서치어드바이저)
         continue-on-error: true
+        env:
+          NAVER_INDEXNOW_KEY: ${{ secrets.NAVER_INDEXNOW_KEY }}
         run: |
+          # RSS 2.0 생성
           python3 scripts/generate_rss.py /tmp/rss.xml
-          # gh-pages 브랜치에 rss.xml 배포
+          # sitemap.xml 생성
+          python3 scripts/generate_sitemap.py /tmp/sitemap.xml
+          # gh-pages 브랜치에 배포
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin gh-pages:gh-pages 2>/dev/null || git checkout --orphan gh-pages-tmp
+          git fetch origin gh-pages:gh-pages 2>/dev/null || true
           git checkout gh-pages
           cp /tmp/rss.xml rss.xml
-          git add rss.xml
-          git diff --staged --quiet || git commit -m "chore: RSS 2.0 업데이트 $(date +'%Y-%m-%d %H:%M KST')"
+          cp /tmp/sitemap.xml sitemap.xml
+          git add rss.xml sitemap.xml
+          git diff --staged --quiet || git commit -m "chore: RSS/sitemap 업데이트 $(date +'%Y-%m-%d %H:%M KST')"
           git push origin gh-pages || true
           git checkout main
 
