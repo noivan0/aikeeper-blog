@@ -406,6 +406,10 @@ def remove_body_images(html: str) -> str:
 
 def post_process_html(html: str) -> str:
     """HTML 후처리 — 가독성 강화 + CLS 수정 + 광고 삽입"""
+    # 마크다운 # 제목이 h1으로 변환된 경우 제거
+    # (Blogger 테마가 h3.post-title로 제목을 이미 표시하므로 본문 h1은 중복)
+    html = re.sub(r'<h1[^>]*>.*?</h1>\s*', '', html, count=1, flags=re.S)
+
     # 본문 내 이미지 제거 (hero는 build_full_html에서 단 1개 삽입)
     html = remove_body_images(html)
 
@@ -435,7 +439,8 @@ def extract_hero_image(html: str) -> str:
 def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, faqs: list = None,
                     hero_image_url: str = "", hero_image_alt: str = "",
                     hero_credit: str = "", hero_credit_url: str = "",
-                    hero_source_label: str = "", post_url: str = "") -> str:
+                    hero_source_label: str = "", post_url: str = "",
+                    naver_summary: str = "") -> str:
     keywords = ", ".join(labels)
 
     # 본문 통계
@@ -450,8 +455,9 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
                             post_url=post_url)
     processed = post_process_html(html_body)
 
-    # 제목 앞에 h1 삽입 (구글: 페이지당 h1 1개 권장)
-    h1_tag = f'<h1 style="font-size:1.9em;font-weight:800;color:#0d1b4b;line-height:1.4;margin:0 0 0.5em;word-break:keep-all;">{title}</h1>\n'
+    # h1은 Blogger 테마의 h3.post-title이 이미 제목을 표시하므로 본문에 중복 삽입 안 함
+    # → 독자 화면에서 제목이 두 번 보이는 문제 방지
+    # (구글은 페이지당 h1 1개 권장 — Blogger 테마 h3가 실질적 제목 역할)
 
     # 읽기 시간 배지
     read_badge = (
@@ -493,6 +499,9 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
     og_image = hero_img or f"{BLOG_URL}/favicon.ico"
     safe_title = title.replace('"', '&quot;')
     safe_meta = meta_desc.replace('"', '&quot;')
+    # 네이버 요약박스: Claude가 생성한 별도 요약 (META와 다른 내용)
+    _summary_text = naver_summary or meta_desc
+    safe_summary = _summary_text.replace('"', '&quot;')
 
     return f"""{json_ld}
 
@@ -531,10 +540,11 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 {PREMIUM_CSS}
 
 <div class="ak-post" lang="ko">
-{h1_tag}{read_badge}
+{read_badge}
 <!-- 네이버 웹문서 스마트블록: 요약 박스 — 크롤러가 미리보기 텍스트로 우선 사용 -->
+<!-- META(구글 검색결과 설명)와 다른 내용으로 채워 네이버 중복 패널티 방지 -->
 <div class="post-summary" style="background:#f0f4ff;border-left:4px solid #4361ee;border-radius:0 10px 10px 0;padding:1em 1.4em;margin:0 0 1.8em;font-size:0.97em;line-height:1.7;color:#333;">
-<strong>📌 이 글 핵심 요약</strong><br>{safe_meta}
+<strong>📌 이 글 핵심 요약</strong><br>{safe_summary}
 </div>
 {hero_figure}{processed}
 </div>
@@ -560,6 +570,9 @@ def parse_post(file_path: str):
     if not meta_desc:
         plain = re.sub(r'<[^>]+>', '', html_body)
         meta_desc = plain[:150].strip()
+
+    # 네이버 스마트블록 요약박스 (Claude가 META와 별도로 생성)
+    naver_summary = meta.get("naver_summary", "")
 
     # FAQ 파싱 (JSON 또는 리스트)
     faqs_raw = meta.get("faqs", [])
@@ -590,6 +603,7 @@ def parse_post(file_path: str):
             hero_credit_url=hero_credit_url,
             hero_source_label=hero_source_label,
             post_url=meta.get("post_url", ""),  # 재발행 시 기존 URL 전달 가능
+            naver_summary=naver_summary,
         ),
         "labels": labels,
         "is_draft": is_draft,
@@ -732,7 +746,7 @@ def post_to_blogger(file_path: str):
                     def _replace(m):
                         try:
                             d = _json.loads(m.group(1))
-                            if d.get('@type') == 'BlogPosting' and d.get('author', {}).get('name') == BLOG_NAME:
+                            if d.get('@type') == 'BlogPosting' and 'AI키퍼' in d.get('author', {}).get('name', ''):
                                 mid = d.get('mainEntityOfPage', {})
                                 if mid.get('@id', '') == BLOG_URL:
                                     d['mainEntityOfPage']['@id'] = purl

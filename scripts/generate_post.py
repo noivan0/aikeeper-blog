@@ -178,6 +178,13 @@ AI스타트업, AI윤리, AI일자리, 멀티모달AI, AI검색, 스마트팩토
 - 1~2문장, 콘텐츠 내용을 간결하게 설명
 - 키워드 나열 금지, 자연스러운 문장으로 작성
 - 형식: "[핵심 키워드]를 [독자]를 위해 [혜택]을 [연도] 기준으로 정리했습니다."
+===SUMMARY===
+네이버 스마트블록 요약박스 (80~120자, 본문 최상단에 노출)
+[작성 규칙]
+- 독자가 얻는 것을 구체적으로 1~2문장으로 설명
+- 핵심 키워드 자연스럽게 포함 (단, 반복 금지)
+- 형식: "이 글에서는 [핵심 키워드]를 [구체적 방법/단계]로 정리합니다. [독자 혜택]."
+- META와 내용이 달라야 함 (중복 금지)
 ===KEYWORDS_SEO===
 SEO 롱테일 키워드 5개 (쉼표 구분)
 ===FAQ===
@@ -214,8 +221,8 @@ A5: 상세 답변
             text += chunk
 
     def extract_section(t, key):
-        all_tags = ["===TITLE===", "===LABELS===", "===META===", "===KEYWORDS_SEO===",
-                    "===FAQ===", "===IMAGE===", "===CONTENT===", "===END==="]
+        all_tags = ["===TITLE===", "===LABELS===", "===META===", "===SUMMARY===",
+                    "===KEYWORDS_SEO===", "===FAQ===", "===IMAGE===", "===CONTENT===", "===END==="]
         tag = f"==={key}==="
         s = t.find(tag)
         if s == -1:
@@ -233,6 +240,7 @@ A5: 상세 답변
     title = extract_section(text, "TITLE")
     labels = [l.strip() for l in extract_section(text, "LABELS").split(",") if l.strip()]
     meta_desc = extract_section(text, "META")
+    naver_summary = extract_section(text, "SUMMARY")  # 네이버 스마트블록 요약박스
     seo_keywords = extract_section(text, "KEYWORDS_SEO")
     faq_raw = extract_section(text, "FAQ")
     image_query = extract_section(text, "IMAGE")
@@ -257,6 +265,7 @@ A5: 상세 답변
         "labels": labels or ["AI", "기술"],
         "content": content,
         "meta_description": meta_desc,
+        "naver_summary": naver_summary or meta_desc,  # 없으면 meta_desc 폴백
         "seo_keywords": seo_keywords,
         "faqs": faqs,
         "image_query": image_query or "artificial intelligence technology 2026"
@@ -341,16 +350,18 @@ def save_as_markdown(post_data: dict, topic: str) -> str:
     slug = make_seo_slug(post_data.get("title", topic), topic)
     filename = f"posts/{today}-{slug}.md"
 
-    safe_title = post_data['title'].replace('"', '\\"')
-    safe_meta = post_data.get('meta_description', '').replace('"', '\\"')
-    labels_yaml = json.dumps(post_data["labels"], ensure_ascii=False)
-    faq_yaml = json.dumps(post_data.get("faqs", []), ensure_ascii=False)
+    safe_title   = post_data['title'].replace('"', '\\"')
+    safe_meta    = post_data.get('meta_description', '').replace('"', '\\"')
+    safe_summary = post_data.get('naver_summary', '').replace('"', '\\"')
+    labels_yaml  = json.dumps(post_data["labels"], ensure_ascii=False)
+    faq_yaml     = json.dumps(post_data.get("faqs", []), ensure_ascii=False)
 
     content = f"""---
 title: "{safe_title}"
 labels: {labels_yaml}
 draft: false
 meta_description: "{safe_meta}"
+naver_summary: "{safe_summary}"
 seo_keywords: "{post_data.get('seo_keywords', '').replace('"', '')}"
 faqs: {faq_yaml}
 image_query: "{post_data.get('image_query', 'technology AI')}"
