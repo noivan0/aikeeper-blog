@@ -235,6 +235,12 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
             "@id": BLOG_URL
         },
         "inLanguage": "ko-KR",
+        # 네이버 스마트블록: articleSection + speakable 추가
+        "articleSection": "AI 기술 블로그",
+        "speakable": {
+            "@type": "SpeakableSpecification",
+            "cssSelector": ["h1", "h2", ".post-summary"]
+        },
     }
     if hero_image_url:
         blogposting["image"] = {
@@ -243,6 +249,8 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
             "width": 1200,
             "height": 630
         }
+        # 네이버 웹문서 썸네일: thumbnailUrl 명시
+        blogposting["thumbnailUrl"] = hero_image_url
     if word_count:
         blogposting["wordCount"] = word_count
     if read_time:
@@ -512,7 +520,12 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 {PREMIUM_CSS}
 
 <div class="ak-post" lang="ko">
-{h1_tag}{read_badge}{hero_figure}{processed}
+{h1_tag}{read_badge}
+<!-- 네이버 웹문서 스마트블록: 요약 박스 — 크롤러가 미리보기 텍스트로 우선 사용 -->
+<div class="post-summary" style="background:#f0f4ff;border-left:4px solid #4361ee;border-radius:0 10px 10px 0;padding:1em 1.4em;margin:0 0 1.8em;font-size:0.97em;line-height:1.7;color:#333;">
+<strong>📌 이 글 핵심 요약</strong><br>{safe_meta}
+</div>
+{hero_figure}{processed}
 </div>
 """
 
