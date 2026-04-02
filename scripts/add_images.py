@@ -96,14 +96,14 @@ def parse_front_matter(content: str):
 # ── scrapling 헬퍼 ───────────────────────────────────────────────
 
 def scrapling_fetch(url: str, timeout: int = 25) -> str:
-    """scrapling으로 URL 가져오기 — 봇 차단 우회"""
-    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+    """scrapling으로 URL 가져오기 — .html 확장자로 저장해 raw HTML 구조 보존"""
+    with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
         tmp = f.name
     try:
         result = subprocess.run(
             ["scrapling", "extract", "get", url, tmp,
-             "--impersonate", "chrome", "--no-verify"],
-            capture_output=True, text=True, timeout=timeout
+             "--impersonate", "chrome", "--no-verify", "--timeout", str(timeout)],
+            capture_output=True, text=True, timeout=timeout + 5
         )
         with open(tmp, encoding="utf-8", errors="ignore") as f:
             return f.read()
@@ -255,59 +255,146 @@ def search_wikimedia(query: str) -> list:
         return []
 
 
-# ── 3순위: 뉴스/블로그 소스 scrapling ───────────────────────────
+# ── 뉴스 소스 RSS 피드 목록 ─────────────────────────────────────
+NEWS_RSS_FEEDS = [
+    # 글로벌 AI/테크 뉴스 — RSS 직접 구독 (Google News 중간단계 제거)
+    {"name": "VentureBeat AI",  "url": "https://venturebeat.com/category/ai/feed/",                       "domain": "venturebeat.com"},
+    {"name": "The Verge AI",    "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml","domain": "theverge.com"},
+    {"name": "Ars Technica",    "url": "https://feeds.arstechnica.com/arstechnica/technology-lab",         "domain": "arstechnica.com"},
+    {"name": "TechCrunch AI",   "url": "https://techcrunch.com/category/artificial-intelligence/feed/",   "domain": "techcrunch.com"},
+    {"name": "Wired AI",        "url": "https://www.wired.com/feed/tag/ai/latest/rss",                     "domain": "wired.com"},
+    {"name": "MIT Tech Review", "url": "https://www.technologyreview.com/feed/",                           "domain": "technologyreview.com"},
+]
+
+def _fetch_rss_curl(url: str, timeout: int = 12) -> str:
+    """RSS XML을 curl로 직접 수집 — scrapling은 RSS 구조를 깨뜨림"""
+    try:
+        result = subprocess.run(
+            ["curl", "-sL", "--max-time", str(timeout),
+             "-H", "User-Agent: Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+             "-H", "Accept: application/rss+xml, application/xml, text/xml, */*",
+             url],
+            capture_output=True, text=True, timeout=timeout + 5
+        )
+        return result.stdout
+    except Exception:
+        return ""
+
+def _extract_rss_items(xml: str) -> list:
+    """RSS XML에서 (title, link, image_url) 튜플 목록 추출"""
+    items = []
+    raw_items = re.findall(r'<(?:item|entry)>(.*?)</(?:item|entry)>', xml, re.S)
+    for raw in raw_items:
+        # 제목
+        t = re.search(r'<title[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', raw, re.S)
+        title = re.sub(r'<[^>]+>', '', t.group(1)).strip() if t else ""
+
+        # 링크
+        l = re.search(r'<link[^>]*>(?:<!\[CDATA\[)?(https?://[^\s<]+)(?:\]\]>)?</link>', raw, re.S)
+        if not l:
+            l = re.search(r'<link[^>]+href=["\']?(https?://[^\s"\'<>]+)', raw)
+        link = l.group(1).strip() if l else ""
+
+        # 이미지 — media:content, enclosure, img src, 본문 내 URL 순서로 탐색
+        img = None
+        # media:content
+        m = re.search(r'<media:content[^>]+url=["\']?(https?://[^\s"\'<>]+\.(?:jpg|jpeg|png|webp)[^\s"\'<>]*)', raw, re.I)
+        if m:
+            img = m.group(1)
+        # enclosure
+        if not img:
+            m = re.search(r'<enclosure[^>]+url=["\']?(https?://[^\s"\'<>]+\.(?:jpg|jpeg|png|webp)[^\s"\'<>]*)', raw, re.I)
+            if m:
+                img = m.group(1)
+        # img src
+        if not img:
+            m = re.search(r'<img[^>]+src=["\']?(https?://[^\s"\'<>]+\.(?:jpg|jpeg|png|webp)[^\s"\'<>]*)', raw, re.I)
+            if m:
+                img = m.group(1)
+        # 본문 내 plain URL
+        if not img:
+            candidates = re.findall(r'(https?://[^\s"<>]+\.(?:jpg|jpeg|png|webp))(?:[?&][^\s"<>]*)?', raw, re.I)
+            for c in candidates:
+                if not any(x in c.lower() for x in ['logo','icon','avatar','favicon','1x1','sprite','banner']):
+                    img = c
+                    break
+
+        if link:
+            items.append((title.lower(), link, img))
+    return items
+
+# ── 3순위: 뉴스/블로그 소스 RSS 직접 구독 ─────────────────────────
 
 def search_from_news_sources(query: str, labels: list = None) -> list:
-    """신뢰 뉴스 소스에서 관련 이미지 수집"""
+    """신뢰 뉴스 RSS 직접 구독 → 쿼리 키워드 매칭 → 이미지 추출
+    
+    이전 방식(Google News RSS → 리다이렉트 URL → 기사 scrapling)을 폐기.
+    각 소스 RSS를 직접 가져와 제목에서 키워드 매칭 후 이미지를 즉시 추출.
+    실패 시 og:image 개별 기사 scrapling으로 보완.
+    """
     results = []
 
-    # 1-1. Google News 검색으로 관련 기사 URL 수집
-    search_queries = [
-        query,
-        " ".join((labels or [])[:3]),
-    ]
+    # 쿼리 키워드 분리
+    query_words = set(re.sub(r'[^\w\s]', ' ', query.lower()).split())
+    label_words = set(re.sub(r'[^\w\s]', ' ', ' '.join(labels or [])).lower().split()) if labels else set()
+    keywords = query_words | label_words
+    # 불용어 제거
+    stopwords = {'the','a','an','of','in','to','for','and','or','is','are','with','on','at','by'}
+    keywords -= stopwords
+    keywords = {w for w in keywords if len(w) > 2}
 
-    article_urls = []
-    for sq in search_queries:
-        if not sq.strip():
-            continue
-        try:
-            encoded = urllib.parse.quote(sq)
-            gnews_url = f"https://news.google.com/rss/search?q={encoded}&hl=en-US&gl=US&ceid=US:en"
-            html = scrapling_fetch(gnews_url, timeout=20)
-            if html:
-                # RSS에서 링크 추출
-                links = re.findall(r'<link>([^<]+)</link>', html)
-                for link in links[:8]:
-                    if any(src["domain"] in link for src in TRUSTED_SOURCES):
-                        article_urls.append(link)
-        except Exception:
-            pass
-        if len(article_urls) >= 5:
+    for feed in NEWS_RSS_FEEDS:
+        if len(results) >= 2:
             break
-
-    # 1-2. 각 기사에서 og:image 추출
-    for url in article_urls[:4]:
         try:
-            domain_name = get_domain_name(url)
-            html = scrapling_fetch(url, timeout=20)
-            if not html:
+            xml = _fetch_rss_curl(feed["url"], timeout=12)
+            if not xml or len(xml) < 200:
+                print(f"  ⚠️ {feed['name']}: RSS 응답 없음")
                 continue
 
-            og_img = extract_og_image(html)
-            if og_img and is_valid_image_url(og_img):
-                results.append({
-                    "url": og_img,
-                    "alt": query,
-                    "credit": domain_name,
-                    "credit_url": url,
-                    "source": "news",
-                    "source_label": f"📰 {domain_name}"
-                })
-                print(f"  ✅ 뉴스 이미지: {domain_name} — {og_img[:55]}...")
-                if len(results) >= 3:
+            items = _extract_rss_items(xml)
+            print(f"  📰 {feed['name']}: {len(items)}개 항목 스캔")
+
+            for title, link, img_url in items:
+                # 키워드 매칭
+                matched = sum(1 for kw in keywords if kw in title)
+                if matched == 0:
+                    continue
+
+                # RSS에서 바로 이미지 URL 확보
+                if img_url and is_valid_image_url(img_url):
+                    results.append({
+                        "url": img_url,
+                        "alt": query,
+                        "credit": feed["name"],
+                        "credit_url": link,
+                        "source": "news",
+                        "source_label": f"📰 {feed['name']}",
+                    })
+                    print(f"  ✅ {feed['name']} RSS 이미지 (match={matched}): {img_url[:60]}...")
                     break
-        except Exception:
+
+                # RSS 이미지 없으면 기사 페이지 scrapling → og:image
+                if link:
+                    try:
+                        page_html = scrapling_fetch(link, timeout=15)
+                        og = extract_og_image(page_html) if page_html else None
+                        if og and is_valid_image_url(og):
+                            results.append({
+                                "url": og,
+                                "alt": query,
+                                "credit": feed["name"],
+                                "credit_url": link,
+                                "source": "news",
+                                "source_label": f"📰 {feed['name']}",
+                            })
+                            print(f"  ✅ {feed['name']} og:image (match={matched}): {og[:60]}...")
+                            break
+                    except Exception:
+                        pass
+
+        except Exception as e:
+            print(f"  ⚠️ {feed['name']} 오류: {e}")
             continue
 
     return results
