@@ -63,15 +63,10 @@ FONT_PRECONNECT = """<link rel="preconnect" href="https://fonts.googleapis.com">
 # AdSense 초기화 스크립트 — 포스트당 1회만 (async, 중복 방지)
 ADSENSE_INIT = """<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2597570939533872" crossorigin="anonymous"></script>"""
 
-# ── Google Analytics 4 + Google Tag Manager ──────────────────────
-GA4_TAG = """<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-R80Z7SLS7F"></script>
-<script>
- window.dataLayer = window.dataLayer || [];
- function gtag(){dataLayer.push(arguments);}
- gtag('js', new Date());
- gtag('config', 'G-R80Z7SLS7F');
-</script>"""
+# ── Google Analytics 4 ──────────────────────────────────────────
+# GA4는 Blogger 테마에서 삽입 — 포스트 HTML에 중복 삽입 안 함
+# GA4_TAG 변수는 하위 호환용으로 유지 (미사용)
+GA4_TAG = ""  # Blogger 테마에서 처리
 
 # 인아티클 광고 — script 태그 없이 ins + push만 (init은 위에서 1회)
 AD_IN_ARTICLE_INS = """
@@ -273,7 +268,8 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
 {json.dumps(faq_schema, ensure_ascii=False, indent=2)}
 </script>"""
 
-    # ── 3. BreadcrumbList (사이트 구조 명확화) ──
+    # ── 3. BreadcrumbList ──
+    # 포스트 URL은 게시 전이라 알 수 없으므로 홈 기준으로만 구성
     breadcrumb = {
         "@context": "https://schema.org",
         "@type": "BreadcrumbList",
@@ -281,8 +277,6 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
             {"@type": "ListItem", "position": 1,
              "name": "홈", "item": BLOG_URL},
             {"@type": "ListItem", "position": 2,
-             "name": "AI 블로그", "item": f"{BLOG_URL}/"},
-            {"@type": "ListItem", "position": 3,
              "name": title[:50], "item": BLOG_URL}
         ]
     }
@@ -291,23 +285,7 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
 {json.dumps(breadcrumb, ensure_ascii=False, indent=2)}
 </script>"""
 
-    # ── 4. WebSite (사이트 전체 스키마) ──
-    website = {
-        "@context": "https://schema.org",
-        "@type": "WebSite",
-        "name": BLOG_NAME,
-        "url": BLOG_URL,
-        "inLanguage": "ko-KR",
-        "potentialAction": {
-            "@type": "SearchAction",
-            "target": f"{BLOG_URL}/search?q={{search_term_string}}",
-            "query-input": "required name=search_term_string"
-        }
-    }
-    scripts += f"""
-<script type="application/ld+json">
-{json.dumps(website, ensure_ascii=False, indent=2)}
-</script>"""
+    # ── WebSite 스키마는 Blogger 테마 수준 — 포스트 HTML에서 제거 (중복 방지) ──
 
     return scripts
 
@@ -446,13 +424,8 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 
     return f"""{json_ld}
 
-<!-- ── 기술 SEO ── -->
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="content-language" content="ko">
-<link rel="canonical" href="{BLOG_URL}/">
-
 <!-- ── 검색엔진 메타 ── -->
+<!-- canonical은 Blogger 테마가 포스트별 올바른 URL로 자동 삽입 — 여기서 중복 추가 안 함 -->
 <meta name="description" content="{safe_meta}">
 <meta name="keywords" content="{keywords}">
 <meta name="robots" content="index, follow">
@@ -463,7 +436,6 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 <meta property="og:description" content="{safe_meta}">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="{BLOG_NAME}">
-<meta property="og:url" content="{BLOG_URL}/">
 <meta property="og:image" content="{og_image}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -477,13 +449,10 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 <meta name="twitter:description" content="{safe_meta}">
 <meta name="twitter:image" content="{og_image}">
 
-<!-- ── Google Search Console 사이트맵 힌트 ── -->
-<link rel="alternate" type="application/atom+xml" title="{BLOG_NAME} Feed" href="{BLOG_URL}/feeds/posts/default">
-
 <!-- ── 성능: Fonts preconnect (렌더 블로킹 제거) ── -->
 {FONT_PRECONNECT}
 
-<!-- ── 성능: AdSense 초기화 1회만 (중복 script 제거) ── -->
+<!-- ── AdSense 초기화 1회 (GA4/AdSense는 Blogger 테마에서 중복 로드되므로 여기선 최소화) ── -->
 {ADSENSE_INIT}
 
 {PREMIUM_CSS}
