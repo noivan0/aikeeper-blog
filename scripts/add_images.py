@@ -282,6 +282,7 @@ def _fetch_rss_curl(url: str, timeout: int = 12) -> str:
 
 def _extract_rss_items(xml: str) -> list:
     """RSS XML에서 (title, link, image_url) 튜플 목록 추출"""
+    import html as html_module
     items = []
     raw_items = re.findall(r'<(?:item|entry)>(.*?)</(?:item|entry)>', xml, re.S)
     for raw in raw_items:
@@ -318,6 +319,12 @@ def _extract_rss_items(xml: str) -> list:
                 if not any(x in c.lower() for x in ['logo','icon','avatar','favicon','1x1','sprite','banner']):
                     img = c
                     break
+
+        # HTML 엔티티 디코딩 (&amp; → &, etc.)
+        if img:
+            img = html_module.unescape(img)
+        if link:
+            link = html_module.unescape(link)
 
         if link:
             items.append((title.lower(), link, img))
@@ -436,8 +443,9 @@ def search_from_reddit(query: str) -> list:
                     print(f"  ✅ Reddit 이미지(direct): r/{sub}")
                     break
 
-                # 2순위: thumbnail이 실제 이미지 URL인 경우
-                thumb = pd.get("thumbnail", "")
+                # 2순위: thumbnail이 실제 이미지 URL인 경우 (HTML 엔티티 디코딩)
+                import html as _html
+                thumb = _html.unescape(pd.get("thumbnail", ""))
                 if thumb and thumb.startswith("http") and is_valid_image_url(thumb):
                     post_url = f"https://reddit.com{pd.get('permalink', '')}"
                     results.append({
