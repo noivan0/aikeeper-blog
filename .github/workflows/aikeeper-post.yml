@@ -23,8 +23,6 @@ on:
     - cron: '0 10 * * *'    # KST 19:00 (저녁)
     - cron: '30 12 * * *'   # KST 21:30 (밤)
   workflow_dispatch:
-    # push 이벤트로 트리거되지 않도록 명시적 제한
-    # (aikeeper-manual.yml이 push 담당)
     inputs:
       topic:
         description: '블로그 주제 (비워두면 자동 발굴)'
