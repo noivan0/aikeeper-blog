@@ -1,206 +1,224 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
+    <loc>https://aikeeper.allsweep.xyz/2026/04/langchain-vs-llamaindex-2026-rag.html</loc>
+    <lastmod>2026-04-02T21:33:24+09:00</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://aikeeper.allsweep.xyz/2026/04/claude-api.html</loc>
+    <lastmod>2026-04-02T15:55:23+09:00</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://aikeeper.allsweep.xyz/2026/04/ollama-open-webui-2026.html</loc>
+    <lastmod>2026-04-02T15:41:31+09:00</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://aikeeper.allsweep.xyz/2026/04/notebooklm.html</loc>
-    <lastmod>2026-04-02T14:43:48+09:00</lastmod>
+    <lastmod>2026-04-02T15:31:51+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/04/n8n-10.html</loc>
-    <lastmod>2026-04-02T14:23:10+09:00</lastmod>
+    <lastmod>2026-04-02T15:31:55+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/04/ai.html</loc>
-    <lastmod>2026-04-02T09:23:12+09:00</lastmod>
+    <lastmod>2026-04-02T15:32:01+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/04/ai-2026-ai.html</loc>
-    <lastmod>2026-04-02T09:23:17+09:00</lastmod>
+    <lastmod>2026-04-02T15:32:06+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/04/eu-ai-act-2026.html</loc>
-    <lastmod>2026-04-02T09:23:22+09:00</lastmod>
+    <lastmod>2026-04-02T15:32:11+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/ai_0840878856.html</loc>
-    <lastmod>2026-04-02T09:23:27+09:00</lastmod>
+    <lastmod>2026-04-02T15:32:16+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/turboquant-ai.html</loc>
-    <lastmod>2026-04-02T09:23:31+09:00</lastmod>
+    <lastmod>2026-04-02T15:32:20+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/gpt.html</loc>
-    <lastmod>2026-04-02T09:23:36+09:00</lastmod>
+    <lastmod>2026-04-02T15:32:26+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/world-model-llm-ai.html</loc>
-    <lastmod>2026-04-02T09:23:41+09:00</lastmod>
+    <lastmod>2026-04-02T15:32:31+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/ai_0367078279.html</loc>
-    <lastmod>2026-04-02T09:23:45+09:00</lastmod>
+    <lastmod>2026-04-02T15:32:36+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/gpt-ai_018019560.html</loc>
-    <lastmod>2026-04-02T09:23:50+09:00</lastmod>
+    <lastmod>2026-04-02T15:32:41+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/ai-webgpu-llm.html</loc>
-    <lastmod>2026-04-02T09:23:54+09:00</lastmod>
+    <lastmod>2026-04-02T15:32:46+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/chatgpt-claude_01456715190.html</loc>
-    <lastmod>2026-04-02T09:23:59+09:00</lastmod>
+    <lastmod>2026-04-02T15:32:51+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/chatgpt-claude_01252973283.html</loc>
-    <lastmod>2026-04-02T09:24:04+09:00</lastmod>
+    <lastmod>2026-04-02T15:32:56+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/claude.html</loc>
-    <lastmod>2026-04-02T09:24:08+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:01+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/claude-3.html</loc>
-    <lastmod>2026-04-02T09:24:13+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:06+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/claude-chatgpt_0468152510.html</loc>
-    <lastmod>2026-04-02T09:24:17+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:11+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/chatgpt-claude_01867704314.html</loc>
-    <lastmod>2026-04-02T09:24:22+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:16+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/claude-chatgpt-5.html</loc>
-    <lastmod>2026-04-02T09:24:27+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:20+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/ai_01455719864.html</loc>
-    <lastmod>2026-04-02T09:24:32+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:25+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/ai-10-2026-2.html</loc>
-    <lastmod>2026-04-02T09:24:36+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:30+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/ai.html</loc>
-    <lastmod>2026-04-02T09:24:41+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:35+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/gpt-ai.html</loc>
-    <lastmod>2026-04-02T09:24:46+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:40+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/chatgpt-vs-claude-vs-gemini-2026.html</loc>
-    <lastmod>2026-04-02T09:24:50+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:44+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/2026-7.html</loc>
-    <lastmod>2026-04-02T09:24:55+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:49+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/ai-claude-gpt.html</loc>
-    <lastmod>2026-03-30T13:02:07+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:53+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/ai-ai.html</loc>
-    <lastmod>2026-03-30T12:50:12+09:00</lastmod>
+    <lastmod>2026-04-02T15:33:58+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/chatgptclaudegemini.html</loc>
-    <lastmod>2026-04-01T16:02:57+09:00</lastmod>
+    <lastmod>2026-04-02T15:34:03+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/ai-claudegpt.html</loc>
-    <lastmod>2026-03-30T12:31:23+09:00</lastmod>
+    <lastmod>2026-04-02T15:34:08+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/siri-claudegemini.html</loc>
-    <lastmod>2026-04-01T16:03:00+09:00</lastmod>
+    <lastmod>2026-04-02T15:34:12+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/chatgpt-claude-2026.html</loc>
-    <lastmod>2026-04-01T16:03:03+09:00</lastmod>
+    <lastmod>2026-04-02T15:34:17+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/500-gpu-claude-ai.html</loc>
-    <lastmod>2026-04-01T16:03:07+09:00</lastmod>
+    <lastmod>2026-04-02T15:34:22+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/chatgpt-ai.html</loc>
-    <lastmod>2026-04-01T16:03:11+09:00</lastmod>
+    <lastmod>2026-04-02T15:34:26+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://aikeeper.allsweep.xyz/2026/03/ai-2025-ai.html</loc>
-    <lastmod>2026-04-01T16:03:14+09:00</lastmod>
+    <lastmod>2026-04-02T15:34:31+09:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
