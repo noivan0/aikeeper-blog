@@ -718,8 +718,47 @@ def post_to_blogger(file_path: str):
             sys.exit(1)
         result = r.json()
         post_url = result.get('url', '')
+        post_id  = result.get('id', '')
         print(f"✅ 포스팅 완료: {result['title']}")
         print(f"   URL: {post_url}")
+
+        # 3. 발행 후 post_url 확보 → JSON-LD mainEntityOfPage/url 즉시 PATCH 업데이트
+        if post_url and post_id:
+            try:
+                current_content = result.get('content', post_data['content'])
+                # JSON-LD에서 BLOG_URL(홈)로 된 mainEntityOfPage/@id 와 url 필드를 포스트 URL로 교체
+                import re as _re, json as _json
+                def _fix_jld(content: str, purl: str) -> str:
+                    def _replace(m):
+                        try:
+                            d = _json.loads(m.group(1))
+                            if d.get('@type') == 'BlogPosting' and d.get('author', {}).get('name') == BLOG_NAME:
+                                mid = d.get('mainEntityOfPage', {})
+                                if mid.get('@id', '') == BLOG_URL:
+                                    d['mainEntityOfPage']['@id'] = purl
+                                if d.get('url', '') == BLOG_URL:
+                                    d['url'] = purl
+                                return f'<script type="application/ld+json">\n{_json.dumps(d, ensure_ascii=False, indent=2)}\n</script>'
+                        except Exception:
+                            pass
+                        return m.group(0)
+                    return _re.sub(
+                        r'<script type=["\']application/ld\+json["\']>(.*?)</script>',
+                        _replace, content, flags=_re.S
+                    )
+                fixed_content = _fix_jld(current_content, post_url)
+                if fixed_content != current_content:
+                    patch_r = blogger_request(
+                        "PATCH", f"/blogs/{BLOG_ID}/posts/{post_id}",
+                        token, body={"content": fixed_content}
+                    )
+                    if patch_r.status_code in (200, 201):
+                        print(f"  ✅ mainEntityOfPage/url → 포스트 URL 업데이트 완료")
+                    else:
+                        print(f"  ⚠️  URL 패치 실패 HTTP {patch_r.status_code}")
+            except Exception as _ue:
+                print(f"  ℹ️  URL 패치 스킵: {_ue}")
+
         # 1. Search Console Sitemap 제출
         try:
             submit_sitemap_gsc(token, post_url)
