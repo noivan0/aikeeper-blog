@@ -1,4 +1,4 @@
-name: AI Auto Post to Blogger
+name: AI Auto Post to Blogger 
 
 # ── 스케줄 전략 ──────────────────────────────────────────────────
 # 하루 7~8번 트리거 → 각 실행 시 랜덤 딜레이(0~55분) 적용
