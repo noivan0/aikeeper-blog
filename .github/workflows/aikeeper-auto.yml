@@ -1,39 +1,28 @@
 name: AI Auto Post to Blogger
 
-# ── 스케줄 전략 ──────────────────────────────────────────────────
-# 하루 7~8번 트리거 → 각 실행 시 랜덤 딜레이(0~55분) 적용
-# → 실제 포스팅 시각이 매일 달라짐 (자연스러운 사람 패턴)
-#
-# KST 기준 트리거 시각 (UTC):
-#   22:00(전날) → KST 07:00 / 00:30 → KST 09:30 / 02:00 → KST 11:00
-#   03:30 → KST 12:30 / 05:00 → KST 14:00 / 06:30 → KST 15:30
-#   08:00 → KST 17:00 / 10:00 → KST 19:00 / 12:30 → KST 21:30
-# → 랜덤 딜레이 후 실제 포스팅 → 하루 9회 분산
-# GSC 주간 리포트: 매주 일요일 22:00 UTC(월요일 KST 07:00) 실행
-
 on:
   schedule:
-    - cron: '0 22 * * *'    # KST 07:00 (아침 출근 전)
-    - cron: '30 0 * * *'    # KST 09:30 (출근 후)
-    - cron: '0 2 * * *'     # KST 11:00 (오전 중)
-    - cron: '30 3 * * *'    # KST 12:30 (점심)
-    - cron: '0 5 * * *'     # KST 14:00 (오후)
-    - cron: '30 6 * * *'    # KST 15:30 (오후)
-    - cron: '0 8 * * *'     # KST 17:00 (퇴근 전)
-    - cron: '0 10 * * *'    # KST 19:00 (저녁)
-    - cron: '30 12 * * *'   # KST 21:30 (밤)
+    - cron: '0 22 * * *'
+    - cron: '30 0 * * *'
+    - cron: '0 2 * * *'
+    - cron: '30 3 * * *'
+    - cron: '0 5 * * *'
+    - cron: '30 6 * * *'
+    - cron: '0 8 * * *'
+    - cron: '0 10 * * *'
+    - cron: '30 12 * * *'
   workflow_dispatch:
     inputs:
       topic:
-        description: '블로그 주제 (비워두면 자동 발굴)'
+        description: 'Blog topic (empty = auto)'
         required: false
         default: ''
       keywords:
-        description: '키워드 (쉼표 구분)'
+        description: 'Keywords (comma separated)'
         required: false
         default: ''
       skip_delay:
-        description: '랜덤 딜레이 스킵 (테스트용)'
+        description: 'Skip random delay (true/false)'
         required: false
         default: 'false'
 
@@ -42,8 +31,6 @@ permissions:
 
 jobs:
   auto-post:
-    # schedule 또는 workflow_dispatch 이벤트에서만 실행
-    # push로 잘못 트리거되는 경우 즉시 스킵
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
 
@@ -64,35 +51,26 @@ jobs:
       - name: Install dependencies
         run: pip3 install -r requirements.txt -q
 
-      - name: Weekly angle refresh (Monday or missing)
+      - name: Weekly angle refresh
         run: |
           WEEKDAY=$(date +%u)
           YEAR_WW=$(date +%Y-W%V)
           ANGLE_FILE="output/angles/topic_angles_${YEAR_WW}.json"
           if [ "$WEEKDAY" = "1" ] || [ ! -f "$ANGLE_FILE" ]; then
-            echo "앵글 갱신 실행 (요일=$WEEKDAY)"
-            python3 scripts/angle_refresher.py || echo "앵글 갱신 실패 (비치명적, 계속 진행)"
+            python3 scripts/angle_refresher.py || echo "angle refresh failed (non-fatal)"
           else
-            echo "앵글 갱신 스킵 (파일 존재: $ANGLE_FILE)"
+            echo "angle refresh skipped (file exists: $ANGLE_FILE)"
           fi
 
-      # ── 랜덤 딜레이 (구글 자동화 탐지 우회) ──────────────────
-      # workflow_dispatch + skip_delay=true면 즉시 실행
-      - name: Random delay (human-like posting pattern)
+      - name: Random delay
         if: github.event.inputs.skip_delay != 'true'
         run: |
           python3 -c "
           import random, time, datetime
-          # 0~55분 랜덤 대기 (schedule 실행 시에만)
           delay = random.randint(0, 55 * 60)
-          mins = delay // 60
-          secs = delay % 60
-          now = datetime.datetime.utcnow()
-          wake = now + datetime.timedelta(seconds=delay)
-          print(f'⏱  랜덤 딜레이: {mins}분 {secs}초 후 포스팅')
-          print(f'   예상 포스팅 시각: {wake.strftime(\"%H:%M UTC\")} ({wake.hour+9 if wake.hour+9<24 else wake.hour+9-24:02d}:{wake.minute:02d} KST)')
+          print(f'delay: {delay//60}m {delay%60}s')
           time.sleep(delay)
-          print('⏰ 딜레이 완료 — 포스팅 시작')
+          print('done')
           "
 
       - name: Find or use topic
@@ -110,49 +88,43 @@ jobs:
       - name: Post to Blogger
         run: python3 scripts/post_to_blogger.py "${{ steps.gen.outputs.file }}"
 
-      - name: Request Google Indexing (Sitemap batch)
+      - name: Request Google Indexing
         continue-on-error: true
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: |
           python3 -c "
-import urllib.request, re, sys, os
-sys.path.insert(0, 'scripts')
-try:
-    import indexing_api as idx
-    token = idx.get_indexing_token()
-    with urllib.request.urlopen('https://aikeeper.allsweep.xyz/atom.xml', timeout=10) as r:
-        content = r.read().decode()
-    urls = re.findall(r\"<link rel='alternate' type='text/html' href='(https://aikeeper\.allsweep\.xyz/\d{4}/[^']+)'\", content)
-    for url in urls[:5]:
-        result = idx.request_indexing(url, token)
-        if 'error' in result:
-            print(f'  WARNING: {url[:60]} [{result[\"error\"]}]')
-        else:
-            print(f'  OK: {url[:60]}')
-    print(f'색인 요청 완료: {min(5, len(urls))}개')
-except Exception as e:
-    print(f'Indexing API 스킵 (비치명적): {e}')
-"
+          import urllib.request, re, sys, os
+          sys.path.insert(0, 'scripts')
+          try:
+              import indexing_api as idx
+              token = idx.get_indexing_token()
+              with urllib.request.urlopen('https://aikeeper.allsweep.xyz/atom.xml', timeout=10) as r:
+                  content = r.read().decode()
+              urls = re.findall(r\"<link rel='alternate' type='text/html' href='(https://aikeeper\.allsweep\.xyz/\d{4}/[^']+)'\", content)
+              for url in urls[:5]:
+                  result = idx.request_indexing(url, token)
+                  print(f'  OK: {url[:60]}' if 'error' not in result else f'  WARN: {url[:60]}')
+              print(f'done: {min(5, len(urls))} urls')
+          except Exception as e:
+              print(f'indexing skipped (non-fatal): {e}')
+          "
 
       - name: Commit post
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add posts/
-          git diff --staged --quiet || git commit -m "auto: AI 포스트 $(date +'%Y-%m-%d %H:%M KST')"
+          git diff --staged --quiet || git commit -m "auto: post $(date +'%Y-%m-%d %H:%M KST')"
           git push || true
 
-      - name: Generate & Deploy RSS 2.0 + sitemap.xml (네이버 서치어드바이저)
+      - name: Deploy RSS and sitemap
         continue-on-error: true
         env:
           NAVER_INDEXNOW_KEY: ${{ secrets.NAVER_INDEXNOW_KEY }}
         run: |
-          # RSS 2.0 생성
           python3 scripts/generate_rss.py /tmp/rss.xml
-          # sitemap.xml 생성
           python3 scripts/generate_sitemap.py /tmp/sitemap.xml
-          # gh-pages 브랜치에 배포
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin gh-pages:gh-pages 2>/dev/null || true
@@ -160,17 +132,17 @@ except Exception as e:
           cp /tmp/rss.xml rss.xml
           cp /tmp/sitemap.xml sitemap.xml
           git add rss.xml sitemap.xml
-          git diff --staged --quiet || git commit -m "chore: RSS/sitemap 업데이트 $(date +'%Y-%m-%d %H:%M KST')"
+          git diff --staged --quiet || git commit -m "chore: rss/sitemap $(date +'%Y-%m-%d %H:%M KST')"
           git push origin gh-pages || true
           git checkout main
 
-      - name: GSC 주간 리포트 (매주 월요일)
+      - name: GSC weekly report (Monday only)
         if: format('{0}', github.event.schedule) == '0 22 * * 0' || github.event.inputs.skip_delay == 'gsc'
         continue-on-error: true
         run: |
-          python3 scripts/gsc_report.py || echo "GSC 리포트 실패 (비치명적)"
+          python3 scripts/gsc_report.py || echo "gsc report failed (non-fatal)"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output/reports/ || true
-          git diff --staged --quiet || git commit -m "report: GSC 주간 리포트 $(date +'%Y-W%V')"
+          git diff --staged --quiet || git commit -m "report: gsc weekly $(date +'%Y-W%V')"
           git push || true
