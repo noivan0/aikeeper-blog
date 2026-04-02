@@ -394,13 +394,13 @@ def extract_hero_image(html: str) -> str:
     return m.group(1) if m else ""
 
 
-def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, faqs: list = None) -> str:
+def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, faqs: list = None, hero_image_url: str = "") -> str:
     keywords = ", ".join(labels)
 
     # 본문 통계
     word_count = count_words(html_body)
     read_time = estimate_read_time(html_body)
-    hero_img = extract_hero_image(html_body)
+    hero_img = hero_image_url or extract_hero_image(html_body)  # front matter 우선
 
     json_ld = build_json_ld(title, meta_desc, labels, faqs,
                             hero_image_url=hero_img,
@@ -495,12 +495,16 @@ def parse_post(file_path: str):
     # SEO 키워드 meta 태그용
     seo_kw = meta.get("seo_keywords", "")
 
+    # hero_image_url front matter 필드 우선 사용
+    hero_image_url = meta.get("hero_image_url", "")
+
     return {
         "title": title,
-        "content": build_full_html(title, meta_desc, html_body, labels, faqs),
+        "content": build_full_html(title, meta_desc, html_body, labels, faqs, hero_image_url=hero_image_url),
         "labels": labels,
         "is_draft": is_draft,
         "seo_keywords": seo_kw,
+        "hero_image_url": hero_image_url,
     }
 
 

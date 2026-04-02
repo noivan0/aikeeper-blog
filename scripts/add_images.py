@@ -2,13 +2,13 @@
 """
 이미지 자동 수집 — 다중 소스, 신뢰도 기반
 수집 전략 (우선순위 순):
-  1. 관련 뉴스/블로그에서 scrapling으로 og:image 추출
-     - TechCrunch, VentureBeat, Ars Technica, TheVerge, 한국IT뉴스
-     - Reddit (r/artificial, r/MachineLearning) 스레드 이미지
-     - X(Twitter)/fxtwitter에서 트윗 이미지
+  1. Unsplash Source API (API 키 불필요, 안정적 CDN)
   2. Wikimedia Commons — 무료 CC 라이선스
-  3. Unsplash API — UNSPLASH_ACCESS_KEY 있을 때
+  3. 관련 뉴스/블로그에서 scrapling으로 og:image 추출
+     - TechCrunch, VentureBeat, Ars Technica, TheVerge, 한국IT뉴스
   4. 이모지 배너 CSS (폴백)
+
+제거: Reddit — CDN 서명 파라미터 만료 문제로 신뢰 불가
 
 출처 표시 원칙:
   - 모든 이미지에 출처(사이트명 + URL) 표기
@@ -30,16 +30,16 @@ from pathlib import Path
 UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "").strip()
 
 FALLBACK_IMAGES = [
-    {"url": "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=1200&h=630&fit=crop", "alt": "인공지능 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
-    {"url": "https://images.unsplash.com/photo-1676299081847-824916de030a?w=1200&h=630&fit=crop", "alt": "AI 머신러닝", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
-    {"url": "https://images.unsplash.com/photo-1655720828018-edd2daec9349?w=1200&h=630&fit=crop", "alt": "AI 데이터 분석", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
-    {"url": "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=1200&h=630&fit=crop", "alt": "AI 로봇 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
-    {"url": "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&h=630&fit=crop", "alt": "데이터 코드 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
-    {"url": "https://images.unsplash.com/photo-1509228627152-72ae9ae6848d?w=1200&h=630&fit=crop", "alt": "네트워크 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
-    {"url": "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&h=630&fit=crop", "alt": "미래 기술 혁신", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
-    {"url": "https://images.unsplash.com/photo-1593642632559-0c6d3fc62b89?w=1200&h=630&fit=crop", "alt": "컴퓨터 기술 개발", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
-    {"url": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&h=630&fit=crop", "alt": "반도체 칩 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
-    {"url": "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&h=630&fit=crop", "alt": "디지털 지구 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=1200&h=630&fit=crop&auto=format", "alt": "인공지능 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1676299081847-824916de030a?w=1200&h=630&fit=crop&auto=format", "alt": "AI 머신러닝", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1655720828018-edd2daec9349?w=1200&h=630&fit=crop&auto=format", "alt": "AI 데이터 분석", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=1200&h=630&fit=crop&auto=format", "alt": "AI 로봇 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&h=630&fit=crop&auto=format", "alt": "데이터 코드 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1509228627152-72ae9ae6848d?w=1200&h=630&fit=crop&auto=format", "alt": "네트워크 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&h=630&fit=crop&auto=format", "alt": "미래 기술 혁신", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1593642632559-0c6d3fc62b89?w=1200&h=630&fit=crop&auto=format", "alt": "컴퓨터 기술 개발", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&h=630&fit=crop&auto=format", "alt": "반도체 칩 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
+    {"url": "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&h=630&fit=crop&auto=format", "alt": "디지털 지구 기술", "credit": "Unsplash", "credit_url": "https://unsplash.com", "source": "fallback", "source_label": "🖼️ AI 이미지"},
 ]
 
 # ── 신뢰 뉴스 소스 화이트리스트 ─────────────────────────────────
@@ -61,8 +61,6 @@ TRUSTED_SOURCES = [
     {"domain": "zdnet.co.kr",       "name": "ZDNet Korea",   "query_suffix": ""},
     {"domain": "bloter.net",        "name": "Bloter",        "query_suffix": ""},
     {"domain": "itworld.co.kr",     "name": "ITWorld",       "query_suffix": ""},
-    # Reddit
-    {"domain": "reddit.com",        "name": "Reddit",        "query_suffix": ""},
 ]
 
 # 제외할 이미지 패턴 (로고, 광고, 아이콘 등)
@@ -135,6 +133,21 @@ def is_valid_image_url(url: str) -> bool:
     return True
 
 
+def verify_image_accessible(url: str, timeout: int = 6) -> bool:
+    """실제 HTTP HEAD 요청으로 이미지 접근 가능 여부 확인"""
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0"},
+            method="HEAD"
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            ct = resp.headers.get("Content-Type", "")
+            return "image" in ct or resp.status == 200
+    except Exception:
+        return False
+
+
 def extract_og_image(html: str) -> str:
     """HTML에서 og:image 추출"""
     # og:image 우선
@@ -163,130 +176,39 @@ def get_domain_name(url: str) -> str:
     return domain.split('.')[0].title()
 
 
-# ── 1순위: 뉴스/블로그 소스 scrapling ───────────────────────────
+# ── 1순위: Unsplash Source API (API 키 불필요) ───────────────────
 
-def search_from_news_sources(query: str, labels: list = None) -> list:
-    """신뢰 뉴스 소스에서 관련 이미지 수집"""
+def search_unsplash_direct(query: str) -> list:
+    """Unsplash Source API — API 키 불필요, 쿼리 기반 안정적 이미지"""
     results = []
-    
-    # 1-1. Google News 검색으로 관련 기사 URL 수집
-    search_queries = [
-        query,
-        " ".join((labels or [])[:3]),
-    ]
-    
-    article_urls = []
-    for sq in search_queries:
-        if not sq.strip():
-            continue
-        try:
-            encoded = urllib.parse.quote(sq)
-            gnews_url = f"https://news.google.com/rss/search?q={encoded}&hl=en-US&gl=US&ceid=US:en"
-            html = scrapling_fetch(gnews_url, timeout=20)
-            if html:
-                # RSS에서 링크 추출
-                links = re.findall(r'<link>([^<]+)</link>', html)
-                for link in links[:8]:
-                    if any(src["domain"] in link for src in TRUSTED_SOURCES):
-                        article_urls.append(link)
-        except Exception:
-            pass
-        if len(article_urls) >= 5:
-            break
-    
-    # 1-2. 각 기사에서 og:image 추출
-    for url in article_urls[:4]:
-        try:
-            domain_name = get_domain_name(url)
-            html = scrapling_fetch(url, timeout=20)
-            if not html:
-                continue
-            
-            og_img = extract_og_image(html)
-            if og_img and is_valid_image_url(og_img):
-                results.append({
-                    "url": og_img,
-                    "alt": query,
-                    "credit": domain_name,
-                    "credit_url": url,
-                    "source": "news",
-                    "source_label": f"📰 {domain_name}"
-                })
-                print(f"  ✅ 뉴스 이미지: {domain_name} — {og_img[:55]}...")
-                if len(results) >= 3:
-                    break
-        except Exception:
-            continue
-    
-    return results
+    # 영문 키워드 추출 (한글 쿼리 대비)
+    en_query = re.sub(r'[^\w\s]', ' ', query)
+    en_words = [w for w in en_query.split() if w.isascii() and len(w) > 2]
+    search_term = '+'.join(en_words[:4]) if en_words else 'artificial+intelligence'
 
+    # Unsplash Source: 쿼리 기반 고품질 이미지 (1200x630)
+    url = f"https://source.unsplash.com/1200x630/?{search_term}"
 
-def search_from_reddit(query: str) -> list:
-    """Reddit에서 관련 이미지 수집 (fxreddit 우회)"""
-    results = []
-    subreddits = ["artificial", "MachineLearning", "technology", "singularity"]
-    
-    for sub in subreddits[:2]:
-        try:
-            url = f"https://www.reddit.com/r/{sub}/search.json?q={urllib.parse.quote(query)}&limit=5&sort=relevance&t=week"
-            req = urllib.request.Request(url, headers={
-                "User-Agent": "Mozilla/5.0 AIkeeper-Blog/1.0"
-            })
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read())
-            
-            for post in data.get("data", {}).get("children", []):
-                pd = post.get("data", {})
-                # preview 이미지
-                preview = pd.get("preview", {}).get("images", [])
-                if preview:
-                    img_url = preview[0].get("source", {}).get("url", "")
-                    img_url = img_url.replace("&amp;", "&")
-                    if img_url and is_valid_image_url(img_url):
-                        post_url = f"https://reddit.com{pd.get('permalink', '')}"
-                        # URL 정규화: 서명 파라미터 제거
-                        img_url = re.sub(r'&s=[^&]+', '', img_url)
-                        results.append({
-                            "url": img_url,
-                            "alt": query[:80],  # 블로그 주제로 교체
-                            "credit": f"Reddit r/{sub}",
-                            "credit_url": post_url,
-                            "source": "reddit",
-                            "source_label": f"💬 Reddit r/{sub}"
-                        })
-                        print(f"  ✅ Reddit 이미지: r/{sub}")
-                        break
-        except Exception:
-            continue
-        if results:
-            break
-    
-    return results
-
-
-def search_from_x_twitter(query: str) -> list:
-    """X(Twitter)/fxtwitter에서 트윗 이미지 수집"""
-    results = []
     try:
-        # fxtwitter 검색 우회 — nitter 또는 Twitter API 없이 검색
-        search_url = f"https://api.fxtwitter.com/search?q={urllib.parse.quote(query + ' AI filter:images')}&count=5"
-        html = scrapling_fetch(search_url, timeout=15)
-        if html:
-            imgs = re.findall(r'https://pbs\.twimg\.com/media/[^\s"\'<>]+\.(?:jpg|png|webp)[^\s"\'<>]*', html)
-            for img_url in imgs[:2]:
-                img_url = img_url.split('?')[0] + '?format=jpg&name=large'
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}, method="HEAD")
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            final_url = resp.url  # redirect 후 실제 이미지 URL
+            if final_url and 'images.unsplash.com' in final_url:
+                # 서명 파라미터 제거하고 고정 파라미터로 대체
+                base = final_url.split('?')[0]
+                clean_url = base + '?w=1200&h=630&fit=crop&auto=format'
                 results.append({
-                    "url": img_url,
-                    "alt": query,
-                    "credit": "X (Twitter)",
-                    "credit_url": f"https://x.com/search?q={urllib.parse.quote(query)}",
-                    "source": "twitter",
-                    "source_label": "🐦 X (Twitter)"
+                    "url": clean_url,
+                    "alt": f"{query} 관련 이미지",
+                    "credit": "Unsplash",
+                    "credit_url": "https://unsplash.com",
+                    "source": "unsplash",
+                    "source_label": "📸 Unsplash"
                 })
-                print(f"  ✅ Twitter 이미지: {img_url[:55]}...")
-                break
-    except Exception:
-        pass
+                print(f"  ✅ Unsplash 이미지: {clean_url[:70]}...")
+    except Exception as e:
+        print(f"  ⚠️  Unsplash direct 실패: {e}")
+
     return results
 
 
@@ -331,7 +253,91 @@ def search_wikimedia(query: str) -> list:
         return []
 
 
-# ── 3순위: Unsplash API ───────────────────────────────────────────
+# ── 3순위: 뉴스/블로그 소스 scrapling ───────────────────────────
+
+def search_from_news_sources(query: str, labels: list = None) -> list:
+    """신뢰 뉴스 소스에서 관련 이미지 수집"""
+    results = []
+
+    # 1-1. Google News 검색으로 관련 기사 URL 수집
+    search_queries = [
+        query,
+        " ".join((labels or [])[:3]),
+    ]
+
+    article_urls = []
+    for sq in search_queries:
+        if not sq.strip():
+            continue
+        try:
+            encoded = urllib.parse.quote(sq)
+            gnews_url = f"https://news.google.com/rss/search?q={encoded}&hl=en-US&gl=US&ceid=US:en"
+            html = scrapling_fetch(gnews_url, timeout=20)
+            if html:
+                # RSS에서 링크 추출
+                links = re.findall(r'<link>([^<]+)</link>', html)
+                for link in links[:8]:
+                    if any(src["domain"] in link for src in TRUSTED_SOURCES):
+                        article_urls.append(link)
+        except Exception:
+            pass
+        if len(article_urls) >= 5:
+            break
+
+    # 1-2. 각 기사에서 og:image 추출
+    for url in article_urls[:4]:
+        try:
+            domain_name = get_domain_name(url)
+            html = scrapling_fetch(url, timeout=20)
+            if not html:
+                continue
+
+            og_img = extract_og_image(html)
+            if og_img and is_valid_image_url(og_img):
+                results.append({
+                    "url": og_img,
+                    "alt": query,
+                    "credit": domain_name,
+                    "credit_url": url,
+                    "source": "news",
+                    "source_label": f"📰 {domain_name}"
+                })
+                print(f"  ✅ 뉴스 이미지: {domain_name} — {og_img[:55]}...")
+                if len(results) >= 3:
+                    break
+        except Exception:
+            continue
+
+    return results
+
+
+def search_from_x_twitter(query: str) -> list:
+    """X(Twitter)/fxtwitter에서 트윗 이미지 수집"""
+    results = []
+    try:
+        # fxtwitter 검색 우회 — nitter 또는 Twitter API 없이 검색
+        search_url = f"https://api.fxtwitter.com/search?q={urllib.parse.quote(query + ' AI filter:images')}&count=5"
+        html = scrapling_fetch(search_url, timeout=15)
+        if html:
+            imgs = re.findall(r'https://pbs\.twimg\.com/media/[^\s"\'<>]+\.(?:jpg|png|webp)[^\s"\'<>]*', html)
+            for img_url in imgs[:2]:
+                img_url = img_url.split('?')[0] + '?format=jpg&name=large'
+                results.append({
+                    "url": img_url,
+                    "alt": query,
+                    "credit": "X (Twitter)",
+                    "credit_url": f"https://x.com/search?q={urllib.parse.quote(query)}",
+                    "source": "twitter",
+                    "source_label": "🐦 X (Twitter)"
+                })
+                print(f"  ✅ Twitter 이미지: {img_url[:55]}...")
+                break
+    except Exception:
+        pass
+    return results
+
+
+# ── Unsplash API (키 있을 때) ─────────────────────────────────────
 
 def search_unsplash(query: str) -> list:
     if not UNSPLASH_ACCESS_KEY:
@@ -429,37 +435,47 @@ def collect_images(query: str, labels: list = None) -> list:
     """다중 소스에서 이미지 수집, 우선순위 적용"""
     all_images = []
 
-    # 1순위: 뉴스 소스 (신뢰도 최고)
-    print(f"  📰 뉴스 소스 검색 중...")
-    news_imgs = search_from_news_sources(query, labels)
-    all_images.extend(news_imgs)
+    # 1순위: Unsplash Source (API 키 불필요, 안정적)
+    print(f"  📸 Unsplash 검색 중...")
+    unsplash_imgs = search_unsplash_direct(query)
+    all_images.extend(unsplash_imgs)
 
-    # 뉴스에서 못 찾으면 Reddit 시도
-    if len(all_images) < 2:
-        print(f"  💬 Reddit 검색 중...")
-        reddit_imgs = search_from_reddit(query)
-        all_images.extend(reddit_imgs)
-
-    # 2순위: Wikimedia (무조건 시도 — 무료 CC 라이선스)
+    # 2순위: Wikimedia Commons (무료 CC, 안정적 URL)
     if len(all_images) < 2:
         print(f"  🖼️  Wikimedia 검색 중...")
         wiki_imgs = search_wikimedia(query)
         all_images.extend(wiki_imgs)
 
-    # 3순위: Unsplash (키 있을 때만)
-    if len(all_images) < 2 and UNSPLASH_ACCESS_KEY:
-        print(f"  📸 Unsplash 검색 중...")
-        unsplash_imgs = search_unsplash(query)
-        all_images.extend(unsplash_imgs)
+    # 3순위: 뉴스 소스 (scrapling — 실패 가능성 높음)
+    if len(all_images) < 2:
+        print(f"  📰 뉴스 소스 검색 중...")
+        news_imgs = search_from_news_sources(query, labels)
+        all_images.extend(news_imgs)
 
-    # 폴백: 이미지 없으면 날짜 seed로 안정적 fallback 이미지 선택 (반드시 img 태그 보장)
+    # Reddit은 제거 — CDN URL 만료 문제로 신뢰 불가
+
+    # 이미지 접근 가능 여부 검증
+    verified = []
+    for img in all_images:
+        if verify_image_accessible(img["url"]):
+            verified.append(img)
+        else:
+            print(f"  ⚠️  이미지 접근 실패, 스킵: {img['url'][:60]}")
+
+    # 검증 실패해도 최소 1개는 보장 (fallback)
+    if not verified and all_images:
+        verified = [all_images[0]]  # 검증 실패해도 일단 첫번째 사용
+
+    all_images = verified
+
+    # 폴백: FALLBACK_IMAGES (Unsplash 고정 URL, 안정적)
     if not all_images:
-        seed = int(hashlib.md5(datetime.date.today().isoformat().encode()).hexdigest(), 16)
+        seed = int(hashlib.md5((query + datetime.date.today().isoformat()).encode()).hexdigest(), 16)
         fallback = FALLBACK_IMAGES[seed % len(FALLBACK_IMAGES)]
         all_images.append(fallback)
-        print(f"  🔄 Fallback 이미지 사용: {fallback['url'][:60]}...")
+        print(f"  🔄 Fallback 이미지 사용")
 
-    return all_images[:3]  # 최대 3개
+    return all_images[:2]
 
 
 def inject_images(file_path: str) -> str:
@@ -489,12 +505,22 @@ def inject_images(file_path: str) -> str:
         body = body[:insert_pos] + img2_html + "\n" + body[insert_pos:]
         print(f"  ✅ 중간 이미지 삽입 ({images[1]['source']})")
 
-    # front matter 재조합
+    # front matter에 hero_image_url 저장 (post_to_blogger.py가 읽을 수 있도록)
     if content.startswith("---"):
         parts = content.split("---", 2)
-        new_content = "---" + parts[1] + "---\n\n" + hero_html + body
+        fm_text = parts[1]
+        body_text = body  # 이미 파싱된 body 사용 (중간 이미지 삽입 후)
+
+        hero_url = images[0]["url"] if images else ""
+        # 기존 hero_image_url 있으면 교체, 없으면 추가
+        if "hero_image_url:" in fm_text:
+            fm_text = re.sub(r'hero_image_url:.*', f'hero_image_url: "{hero_url}"', fm_text)
+        else:
+            fm_text = fm_text.rstrip() + f'\nhero_image_url: "{hero_url}"\n'
+
+        new_content = "---" + fm_text + "---\n\n" + hero_html + "\n" + body_text
     else:
-        new_content = hero_html + body
+        new_content = hero_html + "\n" + body
 
     Path(file_path).write_text(new_content, encoding="utf-8")
     print(f"  ✅ 이미지 삽입 완료 (총 {min(len(images),2)}개)")
