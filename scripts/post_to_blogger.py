@@ -369,8 +369,24 @@ def fix_images_for_cls(html: str) -> str:
     return re.sub(r'<img[^>]+>', fix_img, html)
 
 
+def remove_body_images(html: str) -> str:
+    """본문 내 figure/img 이미지 제거 — hero 이미지는 build_full_html에서 단 1개만 삽입
+    
+    add_images.py가 이전 버전에서 본문에 이미지를 직접 삽입했던 것을 제거.
+    hero_figure는 별도로 렌더링하므로 본문에 figure/img가 있으면 중복이 됨.
+    """
+    # <figure ...>...</figure> 전체 제거
+    html = re.sub(r'<figure[^>]*>.*?</figure>', '', html, flags=re.S)
+    # 단독 <img ...> 제거 (figure 바깥에 있는 경우)
+    html = re.sub(r'<img[^>]+>', '', html)
+    return html
+
+
 def post_process_html(html: str) -> str:
     """HTML 후처리 — 가독성 강화 + CLS 수정 + 광고 삽입"""
+    # 본문 내 이미지 제거 (hero는 build_full_html에서 단 1개 삽입)
+    html = remove_body_images(html)
+
     # 이미지 CLS/LCP/lazy 최적화
     html = fix_images_for_cls(html)
 
@@ -394,7 +410,10 @@ def extract_hero_image(html: str) -> str:
     return m.group(1) if m else ""
 
 
-def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, faqs: list = None, hero_image_url: str = "") -> str:
+def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, faqs: list = None,
+                    hero_image_url: str = "", hero_image_alt: str = "",
+                    hero_credit: str = "", hero_credit_url: str = "",
+                    hero_source_label: str = "") -> str:
     keywords = ", ".join(labels)
 
     # 본문 통계
@@ -417,6 +436,36 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
         f'⏱ 읽기 약 {read_time}분 &nbsp;|&nbsp; 📝 {word_count:,}자'
         f'</p>\n'
     )
+
+    # hero 이미지 — h1+읽기배지 바로 뒤, 본문 전에 단 1개 렌더링
+    if hero_img:
+        alt_text = (hero_image_alt or title).replace('"', '&quot;')
+        if hero_credit and hero_credit_url:
+            caption = (
+                f'<figcaption style="font-size:0.78em;color:#888;margin-top:0.5em;text-align:center;">'
+                f'{hero_source_label or "📰"} '
+                f'<a href="{hero_credit_url}" rel="noopener noreferrer" target="_blank" '
+                f'style="color:#4f6ef7;text-decoration:none;">{hero_credit}</a>'
+                f'</figcaption>'
+            )
+        elif hero_credit:
+            caption = (
+                f'<figcaption style="font-size:0.78em;color:#888;margin-top:0.5em;text-align:center;">'
+                f'{hero_source_label or "📰"} {hero_credit}'
+                f'</figcaption>'
+            )
+        else:
+            caption = ""
+        hero_figure = (
+            f'<figure style="margin:0 0 2em;text-align:center;">'
+            f'<img src="{hero_img}" alt="{alt_text}" '
+            f'style="width:100%;max-width:760px;height:auto;aspect-ratio:16/9;'
+            f'border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.12);" '
+            f'loading="eager" fetchpriority="high" decoding="async" width="760" height="428">'
+            f'{caption}</figure>\n'
+        )
+    else:
+        hero_figure = ""
 
     og_image = hero_img or f"{BLOG_URL}/favicon.ico"
     safe_title = title.replace('"', '&quot;')
@@ -458,7 +507,7 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 {PREMIUM_CSS}
 
 <div class="ak-post" lang="ko">
-{h1_tag}{read_badge}{processed}
+{h1_tag}{read_badge}{hero_figure}{processed}
 </div>
 """
 
@@ -495,12 +544,23 @@ def parse_post(file_path: str):
     # SEO 키워드 meta 태그용
     seo_kw = meta.get("seo_keywords", "")
 
-    # hero_image_url front matter 필드 우선 사용
-    hero_image_url = meta.get("hero_image_url", "")
+    # hero 이미지 front matter에서 읽기
+    hero_image_url    = meta.get("hero_image_url", "")
+    hero_image_alt    = meta.get("hero_image_alt", title)
+    hero_credit       = meta.get("hero_credit", "")
+    hero_credit_url   = meta.get("hero_credit_url", "")
+    hero_source_label = meta.get("hero_source_label", "")
 
     return {
         "title": title,
-        "content": build_full_html(title, meta_desc, html_body, labels, faqs, hero_image_url=hero_image_url),
+        "content": build_full_html(
+            title, meta_desc, html_body, labels, faqs,
+            hero_image_url=hero_image_url,
+            hero_image_alt=hero_image_alt,
+            hero_credit=hero_credit,
+            hero_credit_url=hero_credit_url,
+            hero_source_label=hero_source_label,
+        ),
         "labels": labels,
         "is_draft": is_draft,
         "seo_keywords": seo_kw,

@@ -663,38 +663,42 @@ def inject_images(file_path: str) -> str:
 
     images = collect_images(query, labels)
 
-    # ── 대표 이미지 (hero) ──
-    # collect_images()가 항상 최소 1개 반환하므로 else 불필요
-    hero_html = build_image_html(images[0], is_hero=True)
-    print(f"  ✅ 대표 이미지 확보 ({images[0]['source']})")
+    hero = images[0]
+    print(f"  ✅ 대표 이미지 확보 ({hero['source']})")
 
-    # ── 본문 중간 이미지 (2번째 h2 앞에 삽입) ──
-    h2_positions = [m.start() for m in re.finditer(r'^## ', body, re.MULTILINE)]
-    if len(images) > 1 and len(h2_positions) >= 2:
-        img2_html = build_image_html(images[1], is_hero=False)
-        insert_pos = h2_positions[len(h2_positions) // 2]  # 중간 섹션
-        body = body[:insert_pos] + img2_html + "\n" + body[insert_pos:]
-        print(f"  ✅ 중간 이미지 삽입 ({images[1]['source']})")
+    # ── front matter에 hero 정보만 저장 (본문에 이미지 HTML 직접 삽입 안 함) ──
+    # post_to_blogger.py가 hero_image_url을 읽어 본문 최상단에 단 1개 렌더링
+    hero_url   = hero["url"]
+    hero_alt   = hero.get("alt", "")
+    hero_credit       = hero.get("credit", "")
+    hero_credit_url   = hero.get("credit_url", "")
+    hero_source_label = hero.get("source_label", "")
 
-    # front matter에 hero_image_url 저장 (post_to_blogger.py가 읽을 수 있도록)
     if content.startswith("---"):
         parts = content.split("---", 2)
-        fm_text = parts[1]
-        body_text = body  # 이미 파싱된 body 사용 (중간 이미지 삽입 후)
+        fm_text   = parts[1]
+        body_text = body  # 원본 body (이미지 HTML 미삽입)
 
-        hero_url = images[0]["url"] if images else ""
-        # 기존 hero_image_url 있으면 교체, 없으면 추가
-        if "hero_image_url:" in fm_text:
-            fm_text = re.sub(r'hero_image_url:.*', f'hero_image_url: "{hero_url}"', fm_text)
-        else:
-            fm_text = fm_text.rstrip() + f'\nhero_image_url: "{hero_url}"\n'
+        def _set_fm(fm, key, val):
+            val_escaped = val.replace('"', '\\"')
+            if f"{key}:" in fm:
+                fm = re.sub(rf'{key}:.*', f'{key}: "{val_escaped}"', fm)
+            else:
+                fm = fm.rstrip() + f'\n{key}: "{val_escaped}"\n'
+            return fm
 
-        new_content = "---" + fm_text + "---\n\n" + hero_html + "\n" + body_text
+        fm_text = _set_fm(fm_text, "hero_image_url",    hero_url)
+        fm_text = _set_fm(fm_text, "hero_image_alt",    hero_alt)
+        fm_text = _set_fm(fm_text, "hero_credit",       hero_credit)
+        fm_text = _set_fm(fm_text, "hero_credit_url",   hero_credit_url)
+        fm_text = _set_fm(fm_text, "hero_source_label", hero_source_label)
+
+        new_content = "---" + fm_text + "---\n\n" + body_text
     else:
-        new_content = hero_html + "\n" + body
+        new_content = body
 
     Path(file_path).write_text(new_content, encoding="utf-8")
-    print(f"  ✅ 이미지 삽입 완료 (총 {min(len(images),2)}개)")
+    print(f"  ✅ 이미지 삽입 완료 (front matter 저장, 본문 미삽입)")
     return file_path
 
 
