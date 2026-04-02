@@ -203,22 +203,29 @@ def count_words(html: str) -> int:
 
 def build_json_ld(title: str, meta_desc: str, labels: list,
                   faqs: list = None, hero_image_url: str = "",
-                  word_count: int = 0, read_time: int = 0) -> str:
-    pub_date = datetime.date.today().isoformat()
+                  word_count: int = 0, read_time: int = 0,
+                  post_url: str = "") -> str:
+    # ISO8601 완전형식 (구글/네이버 공식 권장: 날짜+시간+timezone)
+    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))  # KST
+    pub_date_full = now.strftime("%Y-%m-%dT%H:%M:%S+09:00")
     keywords = ", ".join(labels)
+    canonical_url = post_url or BLOG_URL
 
-    # ── 1. BlogPosting (구글 Article 권장 필드 모두 포함) ──
+    # ── 1. BlogPosting (구글 Article + 네이버 구조화 데이터 공식 기준) ──
     blogposting = {
         "@context": "https://schema.org",
         "@type": "BlogPosting",
         "headline": title[:110],          # 구글 권장: 110자 이내
         "description": meta_desc[:300],
         "keywords": keywords,
-        "datePublished": pub_date,
-        "dateModified": pub_date,
+        # 구글 공식: ISO8601 완전형식 필수 (날짜만 쓰면 Rich Result 제외될 수 있음)
+        "datePublished": pub_date_full,
+        "dateModified": pub_date_full,
+        # 구글 공식: author는 Person이어야 Rich Result eligible
+        # 블로그 저자가 없으면 Organization도 허용되나 Person이 우선
         "author": {
-            "@type": "Organization",
-            "name": BLOG_NAME,
+            "@type": "Person",
+            "name": "AI키퍼 편집팀",
             "url": BLOG_URL
         },
         "publisher": {
@@ -230,12 +237,14 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
                 "url": f"{BLOG_URL}/favicon.ico"
             }
         },
+        # 구글/네이버 공식: mainEntityOfPage @id는 포스트 자신의 URL
         "mainEntityOfPage": {
             "@type": "WebPage",
-            "@id": BLOG_URL
+            "@id": canonical_url
         },
+        "url": canonical_url,
         "inLanguage": "ko-KR",
-        # 네이버 스마트블록: articleSection + speakable 추가
+        # 네이버 스마트블록: articleSection + speakable
         "articleSection": "AI 기술 블로그",
         "speakable": {
             "@type": "SpeakableSpecification",
@@ -243,12 +252,13 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
         },
     }
     if hero_image_url:
-        blogposting["image"] = {
-            "@type": "ImageObject",
-            "url": hero_image_url,
-            "width": 1200,
-            "height": 630
-        }
+        # 구글 공식: 다중 비율 이미지 배열 권장 (1x1, 4x3, 16x9) → Rich Result eligibility 향상
+        # 실제 이미지 URL이 1개이므로 배열로 제공 (크롤러가 적합한 비율 선택)
+        blogposting["image"] = [
+            {"@type": "ImageObject", "url": hero_image_url, "width": 1200, "height": 1200},  # 1:1
+            {"@type": "ImageObject", "url": hero_image_url, "width": 1200, "height": 900},   # 4:3
+            {"@type": "ImageObject", "url": hero_image_url, "width": 1200, "height": 630},   # 16:9
+        ]
         # 네이버 웹문서 썸네일: thumbnailUrl 명시
         blogposting["thumbnailUrl"] = hero_image_url
     if word_count:
@@ -425,7 +435,7 @@ def extract_hero_image(html: str) -> str:
 def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, faqs: list = None,
                     hero_image_url: str = "", hero_image_alt: str = "",
                     hero_credit: str = "", hero_credit_url: str = "",
-                    hero_source_label: str = "") -> str:
+                    hero_source_label: str = "", post_url: str = "") -> str:
     keywords = ", ".join(labels)
 
     # 본문 통계
@@ -436,7 +446,8 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
     json_ld = build_json_ld(title, meta_desc, labels, faqs,
                             hero_image_url=hero_img,
                             word_count=word_count,
-                            read_time=read_time)
+                            read_time=read_time,
+                            post_url=post_url)
     processed = post_process_html(html_body)
 
     # 제목 앞에 h1 삽입 (구글: 페이지당 h1 1개 권장)
@@ -578,6 +589,7 @@ def parse_post(file_path: str):
             hero_credit=hero_credit,
             hero_credit_url=hero_credit_url,
             hero_source_label=hero_source_label,
+            post_url=meta.get("post_url", ""),  # 재발행 시 기존 URL 전달 가능
         ),
         "labels": labels,
         "is_draft": is_draft,
