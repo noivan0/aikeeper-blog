@@ -531,12 +531,20 @@ def collect_images(query: str, labels: list = None) -> list:
             verified.append(img)
         else:
             print(f"  ⚠️  이미지 접근 실패, 스킵: {img['url'][:60]}")
-    # 전량 실패해도 최소 1개 보장
-    if not verified and all_images:
-        verified = [all_images[0]]
+
     all_images = verified
 
-    # 폴백: FALLBACK_IMAGES (Unsplash 고정 URL, 항상 안정적)
+    # 검증 후 이미지 부족하면 Unsplash Direct 추가 시도 (항상 안정적)
+    if len(all_images) < 1:
+        print(f"  📸 Unsplash Direct 폴백 시도...")
+        unsplash_direct = search_unsplash_direct(query)
+        for img in unsplash_direct:
+            if verify_image_accessible(img["url"]):
+                all_images.append(img)
+                print(f"  ✅ Unsplash Direct 폴백 성공")
+                break
+
+    # 최종 폴백: FALLBACK_IMAGES (Unsplash 고정 URL, 항상 안정적)
     if not all_images:
         seed = int(hashlib.md5((query + datetime.date.today().isoformat()).encode()).hexdigest(), 16)
         fallback = FALLBACK_IMAGES[seed % len(FALLBACK_IMAGES)]

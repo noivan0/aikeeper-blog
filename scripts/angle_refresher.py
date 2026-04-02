@@ -22,6 +22,23 @@ Angle Refresher — P004
 import os, json, datetime, time, urllib.request, urllib.parse, re, hashlib, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# AI_DOMAINS — find_topics.py와 공유 (import 또는 직접 정의)
+try:
+    from find_topics import AI_DOMAINS
+except Exception:
+    # fallback: 기본 도메인 목록
+    AI_DOMAINS = [
+        "ChatGPT OpenAI", "Claude Anthropic", "Gemini Google AI", "LLM 언어모델",
+        "AI 에이전트 자동화", "멀티모달 AI", "AI 코딩 개발", "프롬프트 엔지니어링",
+        "딥러닝 머신러닝", "AI 생산성 활용", "RAG 벡터DB", "오픈소스 AI 모델",
+        "AI 규제 정책", "Grok xAI", "Llama Meta AI", "Mistral AI",
+        "Perplexity AI", "DeepSeek AI 모델", "AI 헬스케어 의료", "AI 교육 에듀테크",
+        "AI 법률 리걸테크", "AI 금융 핀테크", "AI 마케팅 광고", "AI 사이버보안",
+        "AI 로보틱스 자율주행", "파인튜닝 LoRA PEFT", "양자화 GGUF llama.cpp",
+        "AI 할루시네이션 해결", "AI 멀티에이전트 시스템", "엣지 AI 온디바이스",
+        "AI 칩 반도체 NVIDIA", "한국 AI 정책 NIPA", "네이버 CLOVA AI", "카카오 AI",
+    ]
+
 BASE   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT = os.path.join(BASE, "output", "angles")
 BRAVE_API_KEY = os.environ.get("BRAVE_API_KEY", "")
