@@ -2,13 +2,15 @@
 """
 이미지 자동 수집 — 다중 소스, 신뢰도 기반
 수집 전략 (우선순위 순):
-  1. Unsplash Source API (API 키 불필요, 안정적 CDN)
-  2. Wikimedia Commons — 무료 CC 라이선스
-  3. 관련 뉴스/블로그에서 scrapling으로 og:image 추출
+  1. 관련 뉴스/블로그에서 scrapling으로 og:image 추출
      - TechCrunch, VentureBeat, Ars Technica, TheVerge, 한국IT뉴스
-  4. 이모지 배너 CSS (폴백)
+     - Reddit r/artificial, r/MachineLearning 스레드
+  2. Wikimedia Commons — 무료 CC 라이선스
+  3. Unsplash (API 키 있으면 API, 없으면 Source API)
+  4. FALLBACK_IMAGES — Unsplash 고정 URL (폴백)
 
-제거: Reddit — CDN 서명 파라미터 만료 문제로 신뢰 불가
+Reddit 이미지: CDN preview(만료됨) 대신 direct URL / thumbnail 우선 사용
+모든 이미지: HTTP HEAD 검증 후 접근 불가 URL 자동 제외
 
 출처 표시 원칙:
   - 모든 이미지에 출처(사이트명 + URL) 표기
@@ -311,6 +313,65 @@ def search_from_news_sources(query: str, labels: list = None) -> list:
     return results
 
 
+def search_from_reddit(query: str) -> list:
+    """Reddit JSON API — 외부 링크 이미지 우선 (CDN preview 만료 문제 회피)"""
+    results = []
+    subreddits = ["artificial", "MachineLearning", "technology", "singularity"]
+
+    for sub in subreddits[:2]:
+        try:
+            url = (
+                f"https://www.reddit.com/r/{sub}/search.json"
+                f"?q={urllib.parse.quote(query)}&limit=10&sort=relevance&t=month"
+            )
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "Mozilla/5.0 AIkeeper-Blog/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+
+            for post in data.get("data", {}).get("children", []):
+                pd = post.get("data", {})
+
+                # 1순위: post_hint=="image" 인 경우 — url이 직접 이미지 링크
+                hint = pd.get("post_hint", "")
+                ext_url = pd.get("url_overridden_by_dest", pd.get("url", ""))
+                if hint == "image" and ext_url and is_valid_image_url(ext_url):
+                    post_url = f"https://reddit.com{pd.get('permalink', '')}"
+                    results.append({
+                        "url": ext_url,
+                        "alt": query[:80],
+                        "credit": f"Reddit r/{sub}",
+                        "credit_url": post_url,
+                        "source": "reddit",
+                        "source_label": f"💬 Reddit r/{sub}",
+                    })
+                    print(f"  ✅ Reddit 이미지(direct): r/{sub}")
+                    break
+
+                # 2순위: thumbnail이 실제 이미지 URL인 경우
+                thumb = pd.get("thumbnail", "")
+                if thumb and thumb.startswith("http") and is_valid_image_url(thumb):
+                    post_url = f"https://reddit.com{pd.get('permalink', '')}"
+                    results.append({
+                        "url": thumb,
+                        "alt": query[:80],
+                        "credit": f"Reddit r/{sub}",
+                        "credit_url": post_url,
+                        "source": "reddit",
+                        "source_label": f"💬 Reddit r/{sub}",
+                    })
+                    print(f"  ✅ Reddit 이미지(thumb): r/{sub}")
+                    break
+
+        except Exception:
+            continue
+        if results:
+            break
+
+    return results
+
+
 def search_from_x_twitter(query: str) -> list:
     """X(Twitter)/fxtwitter에서 트윗 이미지 수집"""
     results = []
@@ -435,45 +496,52 @@ def collect_images(query: str, labels: list = None) -> list:
     """다중 소스에서 이미지 수집, 우선순위 적용"""
     all_images = []
 
-    # 1순위: Unsplash Source (API 키 불필요, 안정적)
-    print(f"  📸 Unsplash 검색 중...")
-    unsplash_imgs = search_unsplash_direct(query)
-    all_images.extend(unsplash_imgs)
+    # 1순위: 뉴스/블로그 소스 scrapling (신뢰도 최고)
+    print(f"  📰 뉴스 소스 검색 중...")
+    news_imgs = search_from_news_sources(query, labels)
+    all_images.extend(news_imgs)
 
-    # 2순위: Wikimedia Commons (무료 CC, 안정적 URL)
+    # 뉴스에서 못 찾으면 Reddit 시도 (단, 만료 안 되는 URL만 허용)
+    if len(all_images) < 2:
+        print(f"  💬 Reddit 검색 중...")
+        reddit_imgs = search_from_reddit(query)
+        all_images.extend(reddit_imgs)
+
+    # 2순위: Wikimedia Commons (무료 CC 라이선스, 안정적 URL)
     if len(all_images) < 2:
         print(f"  🖼️  Wikimedia 검색 중...")
         wiki_imgs = search_wikimedia(query)
         all_images.extend(wiki_imgs)
 
-    # 3순위: 뉴스 소스 (scrapling — 실패 가능성 높음)
+    # 3순위: Unsplash API (키 있을 때) 또는 Direct
     if len(all_images) < 2:
-        print(f"  📰 뉴스 소스 검색 중...")
-        news_imgs = search_from_news_sources(query, labels)
-        all_images.extend(news_imgs)
+        if UNSPLASH_ACCESS_KEY:
+            print(f"  📸 Unsplash API 검색 중...")
+            unsplash_imgs = search_unsplash(query)
+            all_images.extend(unsplash_imgs)
+        else:
+            print(f"  📸 Unsplash Direct 검색 중...")
+            unsplash_imgs = search_unsplash_direct(query)
+            all_images.extend(unsplash_imgs)
 
-    # Reddit은 제거 — CDN URL 만료 문제로 신뢰 불가
-
-    # 이미지 접근 가능 여부 검증
+    # 이미지 접근 가능 여부 실제 검증 (만료 URL 걸러냄)
     verified = []
     for img in all_images:
         if verify_image_accessible(img["url"]):
             verified.append(img)
         else:
             print(f"  ⚠️  이미지 접근 실패, 스킵: {img['url'][:60]}")
-
-    # 검증 실패해도 최소 1개는 보장 (fallback)
+    # 전량 실패해도 최소 1개 보장
     if not verified and all_images:
-        verified = [all_images[0]]  # 검증 실패해도 일단 첫번째 사용
-
+        verified = [all_images[0]]
     all_images = verified
 
-    # 폴백: FALLBACK_IMAGES (Unsplash 고정 URL, 안정적)
+    # 폴백: FALLBACK_IMAGES (Unsplash 고정 URL, 항상 안정적)
     if not all_images:
         seed = int(hashlib.md5((query + datetime.date.today().isoformat()).encode()).hexdigest(), 16)
         fallback = FALLBACK_IMAGES[seed % len(FALLBACK_IMAGES)]
         all_images.append(fallback)
-        print(f"  🔄 Fallback 이미지 사용")
+        print(f"  🔄 Fallback 이미지 사용: {fallback['url'][:60]}...")
 
     return all_images[:2]
 
