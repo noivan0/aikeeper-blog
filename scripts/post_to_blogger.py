@@ -21,6 +21,10 @@ BLOG_ID = "3598676904202320050"  # AI키퍼
 BLOG_URL = "https://aikeeper.allsweep.xyz"
 BLOG_NAME = "AI키퍼"
 
+# 네이버 서치어드바이저 인증 코드 (발급 후 여기에 입력, 빈 문자열이면 삽입 안 함)
+# 발급처: https://searchadvisor.naver.com → 사이트 등록 → 메타 태그 인증
+NAVER_SITE_VERIFICATION = os.environ.get("NAVER_SITE_VERIFICATION", "")
+
 # ── Google AdSense 광고 코드 ──────────────────────────────────────
 ADSENSE_PUB = "ca-pub-2597570939533872"
 
@@ -479,6 +483,7 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 <meta name="keywords" content="{keywords}">
 <meta name="robots" content="index, follow">
 <meta name="author" content="{BLOG_NAME}">
+{f'<meta name="naver-site-verification" content="{NAVER_SITE_VERIFICATION}">' if NAVER_SITE_VERIFICATION else ''}
 
 <!-- ── Open Graph (SNS 공유 최적화) ── -->
 <meta property="og:title" content="{safe_title} | {BLOG_NAME}">
