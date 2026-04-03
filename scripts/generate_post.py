@@ -348,7 +348,9 @@ def make_seo_slug(title: str, topic: str) -> str:
 def save_as_markdown(post_data: dict, topic: str) -> str:
     today = datetime.date.today().strftime("%Y-%m-%d")
     slug = make_seo_slug(post_data.get("title", topic), topic)
-    filename = f"posts/{today}-{slug}.md"
+    posts_dir = os.environ.get("POSTS_DIR", "posts")
+    os.makedirs(posts_dir, exist_ok=True)
+    filename = f"{posts_dir}/{today}-{slug}.md"
 
     safe_title   = post_data['title'].replace('"', '\\"')
     safe_meta    = post_data.get('meta_description', '').replace('"', '\\"')

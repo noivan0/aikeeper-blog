@@ -12,17 +12,41 @@
       "adsense_pub": "ca-pub-2597570939533872",
       "adsense_in_article_slot": "6675974233",
       "adsense_display_slot": "8117048415",
+      "naver_site_verification": "",
       "env": {
         "BLOGGER_CLIENT_ID": "BLOGGER_CLIENT_ID",
         "BLOGGER_CLIENT_SECRET": "BLOGGER_CLIENT_SECRET",
         "BLOGGER_REFRESH_TOKEN": "BLOGGER_REFRESH_TOKEN",
-        "GOOGLE_SERVICE_ACCOUNT_JSON": "GOOGLE_SERVICE_ACCOUNT_JSON",
-        "NAVER_SITE_VERIFICATION": ""
+        "GOOGLE_SERVICE_ACCOUNT_JSON": "GOOGLE_SERVICE_ACCOUNT_JSON"
       },
       "github": {
         "repo": "noivan0/aikeeper-blog",
         "branch": "main",
         "posts_dir": "posts"
+      }
+    },
+    {
+      "id": "allsweep",
+      "name": "모든정보 쓸어담기",
+      "blog_id": "8772490249452917821",
+      "blog_url": "https://www.allsweep.xyz",
+      "enabled": true,
+      "topic_domain": "NEWS",
+      "language": "ko",
+      "adsense_pub": "ca-pub-2597570939533872",
+      "adsense_in_article_slot": "6675974233",
+      "adsense_display_slot": "8117048415",
+      "naver_site_verification": "cecd949ef22ac450cb8403b1a51b820bbe46fcb3",
+      "env": {
+        "BLOGGER_CLIENT_ID": "BLOGGER_CLIENT_ID",
+        "BLOGGER_CLIENT_SECRET": "BLOGGER_CLIENT_SECRET",
+        "BLOGGER_REFRESH_TOKEN": "BLOGGER_REFRESH_TOKEN",
+        "GOOGLE_SERVICE_ACCOUNT_JSON": "GOOGLE_SERVICE_ACCOUNT_JSON"
+      },
+      "github": {
+        "repo": "noivan0/aikeeper-blog",
+        "branch": "main",
+        "posts_dir": "posts-allsweep"
       }
     }
   ]

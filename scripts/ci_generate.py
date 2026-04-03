@@ -16,10 +16,11 @@ print(r.stdout)
 if r.stderr:
     print(r.stderr, file=sys.stderr)
 
-# 파일 경로 추출
+# 파일 경로 추출 (POSTS_DIR 환경변수 지원)
+posts_dir = os.environ.get("POSTS_DIR", "posts")
 filepath = ""
 for line in reversed(r.stdout.splitlines()):
-    if line.startswith("posts/"):
+    if line.startswith(posts_dir + "/") or line.startswith("posts/"):
         filepath = line.strip()
         break
 

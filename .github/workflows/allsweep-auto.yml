@@ -1,0 +1,132 @@
+name: allsweep 자동 포스팅
+
+on:
+  schedule:
+    # UTC 기준 (KST = UTC+9)
+    # KST: 07:30, 09:00, 11:30, 13:00, 15:30, 17:00, 19:30, 21:00
+    - cron: '30 22 * * *'   # KST 07:30
+    - cron: '0  0  * * *'   # KST 09:00
+    - cron: '30 2  * * *'   # KST 11:30
+    - cron: '0  4  * * *'   # KST 13:00
+    - cron: '30 6  * * *'   # KST 15:30
+    - cron: '0  8  * * *'   # KST 17:00
+    - cron: '30 10 * * *'   # KST 19:30
+    - cron: '0  12 * * *'   # KST 21:00
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: '주제 (비워두면 자동)'
+        required: false
+        default: ''
+      keywords:
+        description: '키워드 (쉼표 구분)'
+        required: false
+        default: ''
+      category:
+        description: '카테고리 (세계/사회/경제/IT/생활)'
+        required: false
+        default: ''
+      skip_delay:
+        description: '랜덤 딜레이 스킵 (true/false)'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  auto-post:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: self-hosted
+
+    env:
+      # 공통 API
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+      ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
+      BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      # Blogger OAuth (동일 계정)
+      BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+      BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+      BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+      # allsweep 블로그 설정
+      TARGET_BLOG_ID: "8772490249452917821"
+      TARGET_BLOG_URL: "https://www.allsweep.xyz"
+      TARGET_BLOG_NAME: "모든정보 쓸어담기"
+      ADSENSE_PUB: "ca-pub-2597570939533872"
+      ADSENSE_IN_ARTICLE_SLOT: "6675974233"
+      ADSENSE_DISPLAY_SLOT: "8117048415"
+      NAVER_SITE_VERIFICATION: "cecd949ef22ac450cb8403b1a51b820bbe46fcb3"
+      POSTS_DIR: "posts-allsweep"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 의존성 설치
+        run: pip3 install -r requirements.txt -q
+
+      - name: 랜덤 딜레이
+        if: github.event.inputs.skip_delay != 'true'
+        run: |
+          python3 -c "
+          import random, time
+          delay = random.randint(0, 45 * 60)
+          print(f'딜레이: {delay//60}분 {delay%60}초')
+          time.sleep(delay)
+          print('딜레이 완료')
+          "
+
+      - name: 주제 발굴
+        id: topic
+        run: |
+          mkdir -p posts-allsweep
+          python3 scripts/ci_find_topic_allsweep.py \
+            "${{ github.event.inputs.topic }}" \
+            "${{ github.event.inputs.keywords }}" \
+            "${{ github.event.inputs.category }}"
+
+      - name: 포스트 생성
+        id: gen
+        env:
+          POSTS_DIR: posts-allsweep
+        run: |
+          python3 scripts/ci_generate.py \
+            "${{ steps.topic.outputs.topic }}" \
+            "${{ steps.topic.outputs.keywords }}" \
+            "${{ steps.topic.outputs.angle }}"
+
+      - name: 이미지 추가
+        continue-on-error: true
+        run: python3 scripts/add_images.py "${{ steps.gen.outputs.file }}" || true
+
+      - name: Blogger 발행
+        run: python3 scripts/post_to_blogger.py "${{ steps.gen.outputs.file }}"
+
+      - name: Google Indexing API
+        continue-on-error: true
+        run: |
+          python3 -c "
+          import urllib.request, re, sys
+          sys.path.insert(0, 'scripts')
+          try:
+              import indexing_api as idx
+              token = idx.get_indexing_token()
+              with urllib.request.urlopen('https://www.allsweep.xyz/atom.xml', timeout=10) as r:
+                  content = r.read().decode()
+              urls = re.findall(r\"href='(https://www\.allsweep\.xyz/\d{4}/[^']+)'\", content)
+              for url in urls[:5]:
+                  result = idx.request_indexing(url, token)
+                  print('OK:', url[:60])
+              print(f'완료: {min(5,len(urls))}개')
+          except Exception as e:
+              print(f'색인 요청 스킵: {e}')
+          "
+
+      - name: Git 커밋 & 푸시
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add posts-allsweep/
+          git diff --staged --quiet || git commit -m "auto[allsweep]: $(date +'%Y-%m-%d %H:%M KST')"
+          git push || true

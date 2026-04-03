@@ -89,7 +89,13 @@ GH_OUTPUT_TOPIC=/tmp/aikeeper_gh_topic_${BLOG_ID}_$$.txt
 export GITHUB_OUTPUT="$GH_OUTPUT_TOPIC"
 touch "$GITHUB_OUTPUT"
 
-python3 scripts/ci_find_topic.py "" "" 2>&1 | tee -a "$LOG_FILE"
+# 블로그별 전용 주제 발굴 스크립트 선택
+if [ "$BLOG_ID" = "allsweep" ]; then
+    FIND_TOPIC_SCRIPT="scripts/ci_find_topic_allsweep.py"
+else
+    FIND_TOPIC_SCRIPT="scripts/ci_find_topic.py"
+fi
+python3 "$FIND_TOPIC_SCRIPT" "" "" 2>&1 | tee -a "$LOG_FILE"
 
 TOPIC=$(grep '^topic=' "$GH_OUTPUT_TOPIC" | cut -d= -f2- | head -1)
 KEYWORDS=$(grep '^keywords=' "$GH_OUTPUT_TOPIC" | cut -d= -f2- | head -1)
