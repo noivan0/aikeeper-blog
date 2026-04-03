@@ -233,15 +233,27 @@ def find_related_posts(
 # ══════════════════════════════════════════════════════════════════════════════
 
 def make_card_description(title: str, labels: list) -> str:
-    """카드 한줄 설명 — 라벨 기반 자동 생성"""
-    if labels:
-        label_str = ", ".join(labels[:2])
-        return f"{label_str} 관련 심층 분석 — 지금 바로 확인하세요."
-    # 제목에서 핵심어 추출
-    tokens = list(tokenize(title))
-    if tokens:
-        return f"{tokens[0]} 완벽 정리 — 실전 활용법까지 한 번에."
-    return "관련 내용을 더 깊게 알아보세요."
+    """카드 한줄 설명 — 제목 기반 자연어 생성 (CTA 최적화)"""
+    import hashlib, re as _re
+
+    # 제목에서 핵심 키워드 추출
+    # 이모지 제거
+    clean = _re.sub(r'[^\w\s가-힣]', ' ', title).strip()
+    tokens = [t for t in clean.split() if len(t) >= 2][:4]
+    keyword = " ".join(tokens[:2]) if tokens else ""
+
+    # 제목 패턴별 CTA 문구 (다양성 확보)
+    cta_templates = [
+        lambda k: f"{k} 핵심만 빠르게 — 3분이면 충분합니다.",
+        lambda k: f"이 글과 함께 읽으면 이해가 두 배로 깊어집니다.",
+        lambda k: f"{k} 놓치면 아쉬운 내용, 지금 바로 확인하세요.",
+        lambda k: f"관련 트렌드와 실전 팁을 한 번에 정리했습니다.",
+        lambda k: f"{k} 완전 정복 — 실제 사례와 함께 설명합니다.",
+    ]
+
+    # 제목 해시로 템플릿 선택 (같은 제목은 항상 같은 문구)
+    idx = int(hashlib.md5(title.encode()).hexdigest(), 16) % len(cta_templates)
+    return cta_templates[idx](keyword)
 
 
 def build_related_section(related_posts: list) -> str:
