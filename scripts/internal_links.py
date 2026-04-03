@@ -71,11 +71,8 @@ def get_access_token() -> str:
 # 2. Blogger API — 포스트 목록 가져오기
 # ══════════════════════════════════════════════════════════════════════════════
 
-def fetch_posts(token: str, max_results: int = MAX_POSTS) -> list:
-    """Blogger API v3 — 최근 포스트 최대 max_results개 가져오기
-    
-    반환: [{"id", "title", "url", "published", "labels"}, ...]
-    """
+def _fetch_posts_for_blog(token: str, blog_id: str, max_results: int = MAX_POSTS) -> list:
+    """Blogger API v3 — blog_id를 직접 지정해서 포스트 가져오기 (내부용)"""
     posts = []
     page_token = None
 
@@ -84,14 +81,14 @@ def fetch_posts(token: str, max_results: int = MAX_POSTS) -> list:
         params = {
             "maxResults": fetch,
             "status": "LIVE",
-            "fetchBodies": "false",   # 본문 불필요 — 속도 절감
+            "fetchBodies": "false",
             "fields": "items(id,title,url,published,labels),nextPageToken",
         }
         if page_token:
             params["pageToken"] = page_token
 
         qs = urllib.parse.urlencode(params)
-        url = f"https://blogger.googleapis.com/v3/blogs/{BLOG_ID}/posts?{qs}"
+        url = f"https://blogger.googleapis.com/v3/blogs/{blog_id}/posts?{qs}"
         req = urllib.request.Request(
             url,
             headers={"Authorization": f"Bearer {token}", "Accept-Encoding": "gzip"},
@@ -102,7 +99,8 @@ def fetch_posts(token: str, max_results: int = MAX_POSTS) -> list:
                 raw = gzip.decompress(raw)
             data = json.loads(raw)
 
-        for item in data.get("items", []):
+        items = data.get("items", [])
+        for item in items:
             posts.append({
                 "id":        item.get("id", ""),
                 "title":     item.get("title", ""),
@@ -116,6 +114,17 @@ def fetch_posts(token: str, max_results: int = MAX_POSTS) -> list:
             break
 
     return posts
+
+
+def fetch_posts(token: str, max_results: int = MAX_POSTS) -> list:
+    """Blogger API v3 — 최근 포스트 최대 max_results개 가져오기 (환경변수 BLOG_ID 사용)
+    
+    반환: [{"id", "title", "url", "published", "labels"}, ...]
+    """
+    return _fetch_posts_for_blog(token, BLOG_ID, max_results)
+
+
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -580,6 +589,8 @@ def add_internal_links(
     token: str = "",
     cached_posts: list = None,
     verbose: bool = False,
+    blog_id: str = "",
+    blog_url: str = "",
 ) -> tuple:
     """포스트 HTML에 내부링크 자동 삽입 (메인 진입점)
 
@@ -591,10 +602,17 @@ def add_internal_links(
         token:          Blogger API access token (없으면 자동 획득)
         cached_posts:   외부에서 캐시된 포스트 목록 (반복 호출 최적화)
         verbose:        디버그 출력 여부
+        blog_id:        대상 블로그 ID (명시적 지정 — 환경변수 우선)
+        blog_url:       대상 블로그 URL (명시적 지정 — 환경변수 우선)
 
     Returns:
         (modified_html, related_posts_list)
     """
+    # ── 블로그 ID/URL 동적 오버라이드 (모듈 상수 우회) ──
+    # 모듈 임포트 시점에 BLOG_ID가 고정되는 문제 해결
+    # blog_id 파라미터가 있으면 fetch_posts에서 직접 사용
+    effective_blog_id = blog_id or BLOG_ID
+
     # ── 토큰 획득 ──
     if not token:
         try:
@@ -607,9 +625,9 @@ def add_internal_links(
     # ── 포스트 목록 ──
     if cached_posts is None:
         try:
-            all_posts = fetch_posts(token, MAX_POSTS)
+            all_posts = _fetch_posts_for_blog(token, effective_blog_id, MAX_POSTS)
             if verbose:
-                print(f"[internal_links] 포스트 {len(all_posts)}개 로드")
+                print(f"[internal_links] 포스트 {len(all_posts)}개 로드 (blog: {effective_blog_id})")
         except Exception as e:
             if verbose:
                 print(f"[internal_links] 포스트 목록 로드 실패 (스킵): {e}")

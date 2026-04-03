@@ -130,11 +130,9 @@ def main():
     print(f"[INFO] Blogger 발행 중...")
     token = get_oauth_token()
 
-    # 4-1. 내부링크 (연관글 카드) 삽입
+    # 4-1. 내부링크 (연관글 카드) 삽입 — 꿀통몬스터 블로그 포스트만 참조
     try:
         from internal_links import add_internal_links
-        os.environ["TARGET_BLOG_ID"]  = BLOG_ID
-        os.environ["TARGET_BLOG_URL"] = "https://ggultongmon.allsweep.xyz"
         html, related = add_internal_links(
             html,
             current_title=title,
@@ -142,6 +140,8 @@ def main():
             current_url="",   # 발행 전이라 URL 미확정
             token=token,
             verbose=True,
+            blog_id=BLOG_ID,                          # 꿀통몬스터 ID 명시 전달
+            blog_url="https://ggultongmon.allsweep.xyz",
         )
         if related:
             print(f"[INFO] 연관글 {len(related)}개 삽입 완료")
