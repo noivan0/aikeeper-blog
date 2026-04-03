@@ -21,6 +21,11 @@ from google.auth.transport.requests import Request
 BLOG_ID   = os.environ.get("TARGET_BLOG_ID",   "3598676904202320050")
 BLOG_URL  = os.environ.get("TARGET_BLOG_URL",  "https://aikeeper.allsweep.xyz")
 BLOG_NAME = os.environ.get("TARGET_BLOG_NAME", "AI키퍼")
+BLOG_TYPE = os.environ.get("BLOG_TYPE", "AI")  # "NEWS" or "AI"
+
+# 블로그 타입별 메타
+_ARTICLE_SECTION = "시사·뉴스 블로그" if BLOG_TYPE == "NEWS" else "AI 기술 블로그"
+_AUTHOR_NAME = f"{BLOG_NAME} 편집팀"
 
 # 네이버 서치어드바이저 인증 코드
 NAVER_SITE_VERIFICATION = os.environ.get("NAVER_SITE_VERIFICATION", "")
@@ -229,7 +234,7 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
         # 블로그 저자가 없으면 Organization도 허용되나 Person이 우선
         "author": {
             "@type": "Person",
-            "name": "AI키퍼 편집팀",
+            "name": _AUTHOR_NAME,
             "url": BLOG_URL
         },
         "publisher": {
@@ -249,7 +254,7 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
         "url": canonical_url,
         "inLanguage": "ko-KR",
         # 네이버 스마트블록: articleSection + speakable
-        "articleSection": "AI 기술 블로그",
+        "articleSection": _ARTICLE_SECTION,
         "speakable": {
             "@type": "SpeakableSpecification",
             "cssSelector": ["h1", "h2", ".post-summary"]
@@ -408,8 +413,9 @@ def remove_body_images(html: str) -> str:
     return html
 
 
-def post_process_html(html: str) -> str:
-    """HTML 후처리 — 가독성 강화 + CLS 수정 + 광고 삽입"""
+def post_process_html(html: str, title: str = "", labels: list = None,
+                      post_url: str = "") -> str:
+    """HTML 후처리 — 가독성 강화 + CLS 수정 + 광고 삽입 + 내부링크"""
     # 마크다운 # 제목이 h1으로 변환된 경우 제거
     # (Blogger 테마가 h3.post-title로 제목을 이미 표시하므로 본문 h1은 중복)
     html = re.sub(r'<h1[^>]*>.*?</h1>\s*', '', html, count=1, flags=re.S)
@@ -427,6 +433,22 @@ def post_process_html(html: str) -> str:
         html,
         flags=re.IGNORECASE
     )
+
+    # ── 내부링크 자동삽입 (관련 글 CTA 카드 섹션 + 앵커링크) ──
+    if title:
+        try:
+            from internal_links import add_internal_links
+            html, related = add_internal_links(
+                html,
+                current_title=title,
+                current_labels=labels or [],
+                current_url=post_url,
+                verbose=True,
+            )
+            if related:
+                print(f"  🔗 내부링크 {len(related)}개 삽입 완료")
+        except Exception as _ile:
+            print(f"  ℹ️  내부링크 스킵 (비치명적): {_ile}")
 
     # 광고 삽입
     html = inject_ads(html)
@@ -457,7 +479,7 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
                             word_count=word_count,
                             read_time=read_time,
                             post_url=post_url)
-    processed = post_process_html(html_body)
+    processed = post_process_html(html_body, title=title, labels=labels, post_url=post_url)
 
     # h1은 Blogger 테마의 h3.post-title이 이미 제목을 표시하므로 본문에 중복 삽입 안 함
     # → 독자 화면에서 제목이 두 번 보이는 문제 방지

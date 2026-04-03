@@ -59,6 +59,7 @@ jobs:
       ADSENSE_DISPLAY_SLOT: "8117048415"
       NAVER_SITE_VERIFICATION: "cecd949ef22ac450cb8403b1a51b820bbe46fcb3"
       POSTS_DIR: "posts-allsweep"
+      BLOG_TYPE: "NEWS"
 
     steps:
       - uses: actions/checkout@v4
