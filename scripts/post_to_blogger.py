@@ -529,18 +529,20 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
     _summary_text = naver_summary or meta_desc
     safe_summary = _summary_text.replace('"', '&quot;')
 
-    # Blogger 썸네일 인식: 첫 번째 <img>를 최대한 앞에 배치
-    # JSON-LD 직후, 모든 CSS/meta 앞에 히든 img 삽입 → Blogger가 즉시 썸네일로 인식
+    # Blogger 썸네일 인식: 첫 번째 <img>를 HTML 최상단에 배치
+    # Blogger는 포스트 HTML에서 첫 번째 <img> src를 목록 미리보기 썸네일로 사용함
+    # → 모든 script/meta/CSS 태그보다 앞에 와야 Blogger가 인식
     thumb_tag = ""
     if hero_img:
+        _alt = (hero_image_alt or title).replace('"', '&quot;')
         thumb_tag = (
-            f'<img src="{hero_img}" alt="{(hero_image_alt or title).replace(chr(34), "&quot;")}" '
-            f'style="display:none;width:1px;height:1px;" width="1" height="1" '
-            f'aria-hidden="true">\n'
+            f'<img src="{hero_img}" alt="{_alt}" '
+            f'style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;" '
+            f'width="1" height="1" aria-hidden="true">\n'
         )
 
-    return f"""{json_ld}
-{thumb_tag}
+    return f"""{thumb_tag}{json_ld}
+
 <!-- ── 검색엔진 메타 ── -->
 <!-- canonical은 Blogger 테마가 포스트별 올바른 URL로 자동 삽입 — 여기서 중복 추가 안 함 -->
 <meta name="description" content="{safe_meta}">
