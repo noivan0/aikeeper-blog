@@ -49,5 +49,31 @@
         "posts_dir": "posts-allsweep"
       }
     }
+  ,
+    {
+      "id": "ggultongmon",
+      "name": "꿀통 몬스터",
+      "blog_id": "4422596386410826373",
+      "blog_url": "https://ggultongmon.allsweep.xyz",
+      "enabled": true,
+      "topic_domain": "COUPANG",
+      "language": "ko",
+      "adsense_pub": "ca-pub-2597570939533872",
+      "adsense_in_article_slot": "6675974233",
+      "adsense_display_slot": "8117048415",
+      "naver_site_verification": "",
+      "env": {
+        "BLOGGER_CLIENT_ID": "BLOGGER_CLIENT_ID",
+        "BLOGGER_CLIENT_SECRET": "BLOGGER_CLIENT_SECRET",
+        "BLOGGER_REFRESH_TOKEN": "BLOGGER_REFRESH_TOKEN",
+        "COUPANG_ACCESS_KEY": "COUPANG_ACCESS_KEY",
+        "COUPANG_SECRET_KEY": "COUPANG_SECRET_KEY"
+      },
+      "github": {
+        "repo": "noivan0/aikeeper-blog",
+        "branch": "main",
+        "posts_dir": "posts-ggultongmon"
+      }
+    }
   ]
 }
