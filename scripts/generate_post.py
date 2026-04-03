@@ -211,7 +211,33 @@ def generate_post(topic: str, keywords: list = None, angle: str = "") -> dict:
     keywords_str = ", ".join(keywords) if keywords else topic
     today = datetime.date.today().strftime("%Y년 %m월 %d일")
 
-    prompt = f"""오늘은 {today}입니다. 아래 주제로 요즘IT 상위 1% 수준의 딥다이브 글을 작성하세요.
+    # BLOG_TYPE별 라벨 목록 정의
+    if BLOG_TYPE == "NEWS":
+        labels_instruction = """아래 표준 라벨 목록에서만 선택 (3~6개, 쉼표 구분):
+세계 동향, 세계 이슈, 세계 최신 뉴스,
+사회 최신 뉴스, 사회 동향, 사회 이슈,
+경제 동향, 경제 이슈, 경제 최신 뉴스,
+IT 최신 뉴스, IT 동향, IT 이슈,
+생활 최신 뉴스, 생활 동향, 생활 이슈,
+한국 정치, 한국 경제, 국제 뉴스, 미국 정치, 중국 경제,
+SEO 최적화, 오늘의 뉴스, 주요 뉴스
+
+반드시 포스트 내용과 일치하는 카테고리 라벨 선택:
+- 세계/국제 뉴스 → 세계 동향, 세계 이슈, 세계 최신 뉴스
+- 사회/국내 뉴스 → 사회 최신 뉴스, 사회 동향, 사회 이슈
+- 경제/금융 뉴스 → 경제 동향, 경제 이슈, 경제 최신 뉴스
+- IT/기술 뉴스 → IT 최신 뉴스, IT 동향, IT 이슈
+- 생활/문화 뉴스 → 생활 최신 뉴스, 생활 동향, 생활 이슈"""
+        blog_style = "한국 시사·뉴스 블로그"
+    else:
+        labels_instruction = """아래 표준 라벨 목록에서만 선택 (3~5개, 쉼표 구분):
+AI기초, ChatGPT, Claude, Gemini, LLM, 프롬프트엔지니어링, AI코딩, AI에이전트, RAG, 파인튜닝,
+이미지생성AI, 영상생성AI, AI음성, 로컬LLM, AI보안, AI의료, AI교육, AI금융, AI마케팅, AI법률,
+자율주행, AI로봇, AI반도체, 딥러닝, 머신러닝, 오픈소스AI, 한국AI, AI정책규제, AI트렌드, AI생산성,
+AI스타트업, AI윤리, AI일자리, 멀티모달AI, AI검색, 스마트팩토리"""
+        blog_style = "요즘IT 상위 1%"
+
+    prompt = f"""오늘은 {today}입니다. 아래 주제로 {blog_style} 수준의 딥다이브 글을 작성하세요.
 
 **주제**: {topic}
 **핵심 키워드**: {keywords_str}
@@ -246,11 +272,7 @@ def generate_post(topic: str, keywords: list = None, angle: str = "") -> dict:
 ===TITLE===
 클릭 유발 제목 (50자 이내, 이모지 최대 1개만, 제목 맨 앞에 위치)
 ===LABELS===
-아래 표준 라벨 목록에서만 선택 (3~5개, 쉼표 구분):
-AI기초, ChatGPT, Claude, Gemini, LLM, 프롬프트엔지니어링, AI코딩, AI에이전트, RAG, 파인튜닝,
-이미지생성AI, 영상생성AI, AI음성, 로컬LLM, AI보안, AI의료, AI교육, AI금융, AI마케팅, AI법률,
-자율주행, AI로봇, AI반도체, 딥러닝, 머신러닝, 오픈소스AI, 한국AI, AI정책규제, AI트렌드, AI생산성,
-AI스타트업, AI윤리, AI일자리, 멀티모달AI, AI검색, 스마트팩토리
+{labels_instruction}
 ===META===
 구글/네이버 검색결과 설명 (150~160자)
 [작성 규칙 — 네이버 공식 가이드 기준]
