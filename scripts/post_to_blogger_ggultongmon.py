@@ -163,20 +163,30 @@ def main():
     import subprocess
     try:
         git_dir = BASE_DIR
+        remote = f"https://{os.environ.get('GITHUB_PAT', '')}@github.com/noivan0/aikeeper-blog.git"
+
         subprocess.run(["git", "-C", str(git_dir), "add", str(md_path)], check=True)
         subprocess.run(["git", "-C", str(git_dir), "commit", "-m",
                         f"feat: [ggultongmon] {title[:50]}"], check=True)
-        github_pat = os.environ.get("GITHUB_PAT", "")
-        if github_pat:
+
+        if os.environ.get("GITHUB_PAT", ""):
+            # fetch 후 rebase (실패 시 abort하고 force push로 대체)
+            try:
+                subprocess.run(
+                    ["git", "-C", str(git_dir), "fetch", remote, "main"],
+                    check=True, capture_output=True, timeout=30
+                )
+                subprocess.run(
+                    ["git", "-C", str(git_dir), "rebase", "FETCH_HEAD"],
+                    check=True, capture_output=True, timeout=30
+                )
+            except subprocess.CalledProcessError:
+                # rebase 충돌 시 abort 후 로컬 커밋 유지 (포스팅 백업 우선)
+                subprocess.run(["git", "-C", str(git_dir), "rebase", "--abort"],
+                               capture_output=True)
             subprocess.run(
-                ["git", "-C", str(git_dir), "pull", "--rebase",
-                 f"https://{github_pat}@github.com/noivan0/aikeeper-blog.git", "main"],
-                check=True, capture_output=True
-            )
-            subprocess.run(
-                ["git", "-C", str(git_dir), "push",
-                 f"https://{github_pat}@github.com/noivan0/aikeeper-blog.git", "main"],
-                check=True
+                ["git", "-C", str(git_dir), "push", remote, "main"],
+                check=True, timeout=30
             )
             print(f"[INFO] GitHub push 완료")
     except Exception as e:
