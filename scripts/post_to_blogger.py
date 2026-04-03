@@ -17,42 +17,46 @@ from pathlib import Path
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
-BLOG_ID = "3598676904202320050"  # AI키퍼
-BLOG_URL = "https://aikeeper.allsweep.xyz"
-BLOG_NAME = "AI키퍼"
+# ── 멀티 블로그: 환경변수 우선, fallback은 기존 하드코딩값 ──────────────
+BLOG_ID   = os.environ.get("TARGET_BLOG_ID",   "3598676904202320050")
+BLOG_URL  = os.environ.get("TARGET_BLOG_URL",  "https://aikeeper.allsweep.xyz")
+BLOG_NAME = os.environ.get("TARGET_BLOG_NAME", "AI키퍼")
 
-# 네이버 서치어드바이저 인증 코드 (발급 후 여기에 입력, 빈 문자열이면 삽입 안 함)
-# 발급처: https://searchadvisor.naver.com → 사이트 등록 → 메타 태그 인증
+# 네이버 서치어드바이저 인증 코드
 NAVER_SITE_VERIFICATION = os.environ.get("NAVER_SITE_VERIFICATION", "")
 
 # ── Google AdSense 광고 코드 ──────────────────────────────────────
-ADSENSE_PUB = "ca-pub-2597570939533872"
+ADSENSE_PUB = os.environ.get("ADSENSE_PUB", "ca-pub-2597570939533872")
+
+# ── AdSense 슬롯 — 환경변수 우선, fallback은 aikeeper 기본값 ──────
+_IN_ARTICLE_SLOT = os.environ.get("ADSENSE_IN_ARTICLE_SLOT", "6675974233")
+_DISPLAY_SLOT    = os.environ.get("ADSENSE_DISPLAY_SLOT",    "8117048415")
 
 # 인아티클 광고 — 본문 섹션 사이 삽입 (클릭률 가장 높음)
-AD_IN_ARTICLE = """
+AD_IN_ARTICLE = f"""
 <div style="margin:2.5em 0;text-align:center;">
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2597570939533872" crossorigin="anonymous"></script>
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={ADSENSE_PUB}" crossorigin="anonymous"></script>
 <ins class="adsbygoogle"
  style="display:block;text-align:center;"
  data-ad-layout="in-article"
  data-ad-format="fluid"
- data-ad-client="ca-pub-2597570939533872"
- data-ad-slot="6675974233"></ins>
-<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+ data-ad-client="{ADSENSE_PUB}"
+ data-ad-slot="{_IN_ARTICLE_SLOT}"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({{}});</script>
 </div>
 """
 
 # 디스플레이 광고 — 본문 하단 삽입
-AD_DISPLAY = """
+AD_DISPLAY = f"""
 <div style="margin:2.5em 0;">
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2597570939533872" crossorigin="anonymous"></script>
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={ADSENSE_PUB}" crossorigin="anonymous"></script>
 <ins class="adsbygoogle"
  style="display:block"
- data-ad-client="ca-pub-2597570939533872"
- data-ad-slot="8117048415"
+ data-ad-client="{ADSENSE_PUB}"
+ data-ad-slot="{_DISPLAY_SLOT}"
  data-ad-format="auto"
  data-full-width-responsive="true"></ins>
-<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+<script>(adsbygoogle = window.adsbygoogle || []).push({{}});</script>
 </div>
 """
 
