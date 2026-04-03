@@ -270,7 +270,7 @@ AI스타트업, AI윤리, AI일자리, 멀티모달AI, AI검색, 스마트팩토
 아래 형식으로 정확히 응답:
 
 ===TITLE===
-클릭 유발 제목 (50자 이내, 이모지 최대 1개만, 제목 맨 앞에 위치)
+클릭 유발 제목 (50자 이내, 이모지 절대 사용 금지, 숫자·특수문자·물음표 활용)
 ===LABELS===
 {labels_instruction}
 ===META===
@@ -342,7 +342,11 @@ A5: 상세 답변
                 e = pos
         return t[s:e].strip()
 
-    title = extract_section(text, "TITLE")
+    title_raw = extract_section(text, "TITLE")
+    # 제목 이모지 강제 제거 (Claude가 지시 무시 시 후처리)
+    title = re.sub(r'[\U00010000-\U0010ffff\U00002600-\U000027BF\U0001F300-\U0001F9FF]', '', title_raw).strip()
+    title = re.sub(r'^\s*[\W_]+\s*', '', title).strip()  # 앞 특수문자 제거
+
     labels = [l.strip() for l in extract_section(text, "LABELS").split(",") if l.strip()]
     meta_desc = extract_section(text, "META")
     naver_summary = extract_section(text, "SUMMARY")  # 네이버 스마트블록 요약박스
