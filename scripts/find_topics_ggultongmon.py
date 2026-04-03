@@ -14,6 +14,7 @@ from coupang_api import _get, search_products
 
 ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "")
 ANTHROPIC_MODEL    = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+COUPANG_SUB_ID     = os.environ.get("COUPANG_SUB_ID", "ggultongmon")
 
 # ── 카테고리 정의 (공식 API 기준) ──────────────────────────────────────
 CATEGORIES = {
@@ -59,7 +60,7 @@ SKIP_CATEGORIES = {1019}  # 도서/음반 — 쿠팡 파트너스 수수료 낮�
 
 def get_best_products(cat_id: int, limit: int = 20) -> list:
     """bestcategories API로 카테고리 베스트 상품 수집 + 가격 필터"""
-    path = f"/v2/providers/affiliate_open_api/apis/openapi/products/bestcategories/{cat_id}?limit={limit}&subId=ggultongmon"
+    path = f"/v2/providers/affiliate_open_api/apis/openapi/products/bestcategories/{cat_id}?limit={limit}&subId={COUPANG_SUB_ID}"
     try:
         d = _get(path)
         if d.get("rCode") != "0":
