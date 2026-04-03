@@ -147,6 +147,9 @@ def main():
             print(f"[INFO] 연관글 {len(related)}개 삽입 완료")
     except Exception as e:
         print(f"[INFO] 연관글 스킵 (비치명적): {e}")
+
+    # 발행 직전 토큰 재발급 (내부링크 처리 중 만료 방지)
+    token = get_oauth_token()
     result = publish_to_blogger(title, html, LABELS, token)
     post_url = result.get("url", "")
     print(f"✅ 포스팅 완료: {title}")
