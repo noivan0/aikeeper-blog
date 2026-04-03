@@ -12,13 +12,15 @@ update_existing_posts.py — 기존 포스트 전체 SEO 업데이트
 7. url 필드 추가
 8. 네이버 요약박스 (.post-summary) 추가 (없는 경우)
 9. 기존 구버전 custom JSON-LD 제거 후 신버전으로 교체
+10. 내부링크 카드 섹션 소급 삽입 (--with-internal-links 플래그)
 """
 
 import os, re, sys, json, time, datetime, urllib.request, urllib.parse, gzip
 
-BLOG_ID = "3598676904202320050"
-BLOG_URL = "https://aikeeper.allsweep.xyz"
-BLOG_NAME = "AI키퍼"
+# ── 멀티 블로그 지원: 환경변수 우선, fallback은 aikeeper 기본값 ──
+BLOG_ID   = os.environ.get("TARGET_BLOG_ID",   "3598676904202320050")
+BLOG_URL  = os.environ.get("TARGET_BLOG_URL",  "https://aikeeper.allsweep.xyz")
+BLOG_NAME = os.environ.get("TARGET_BLOG_NAME", "AI키퍼")
 
 CLIENT_ID     = os.environ.get("BLOGGER_CLIENT_ID", "")
 CLIENT_SECRET = os.environ.get("BLOGGER_CLIENT_SECRET", "")
@@ -210,41 +212,81 @@ def update_post_html(html: str, post_url: str, pub_iso: str) -> tuple[str, bool]
     return new_html, changed
 
 
-def main():
-    token = get_token()
-    print("🔄 전체 포스트 SEO 업데이트 시작...\n")
-
-    # 전체 포스트 목록
+def fetch_all_posts_meta(token: str) -> list:
+    """전체 포스트 메타 목록 (title, url, published, labels, id) 가져오기"""
     posts = []
     page_token = None
     while True:
-        url = f"https://blogger.googleapis.com/v3/blogs/{BLOG_ID}/posts?maxResults=500&status=LIVE&fetchBodies=false"
+        params = "maxResults=500&status=LIVE&fetchBodies=false&fields=items(id,title,url,published,labels),nextPageToken"
         if page_token:
-            url += f"&pageToken={page_token}"
-        data = blogger_get(f"/blogs/{BLOG_ID}/posts" + ("" if not page_token else f"?maxResults=500&status=LIVE&fetchBodies=false&pageToken={page_token}"), token)
-        # 직접 URL 방식으로
+            params += f"&pageToken={page_token}"
+        url = f"https://blogger.googleapis.com/v3/blogs/{BLOG_ID}/posts?{params}"
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
         with urllib.request.urlopen(req, timeout=20) as r:
             data = json.loads(r.read())
         for p in data.get("items", []):
-            posts.append({"id": p["id"], "url": p.get("url", ""), "published": p.get("published", "")})
+            posts.append({
+                "id":        p["id"],
+                "title":     p.get("title", ""),
+                "url":       p.get("url", ""),
+                "published": p.get("published", ""),
+                "labels":    p.get("labels", []),
+            })
         page_token = data.get("nextPageToken")
         if not page_token:
             break
+    return posts
 
+
+def main():
+    # ── 인자 파싱 ──
+    with_internal_links = "--with-internal-links" in sys.argv
+    internal_links_only = "--internal-links-only" in sys.argv
+
+    token = get_token()
+
+    mode = ""
+    if internal_links_only:
+        mode = " [내부링크 삽입 전용]"
+    elif with_internal_links:
+        mode = " [SEO 업데이트 + 내부링크 삽입]"
+    print(f"🔄 전체 포스트 SEO 업데이트 시작{mode}...\n")
+    print(f"   BLOG_ID:  {BLOG_ID}")
+    print(f"   BLOG_URL: {BLOG_URL}\n")
+
+    # ── 내부링크 모듈 로드 (사전 체크) ──
+    il_module = None
+    if with_internal_links or internal_links_only:
+        try:
+            import sys as _sys
+            import os as _os
+            _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+            import internal_links as _il
+            il_module = _il
+            print("🔗 내부링크 모듈 로드 완료\n")
+        except Exception as e:
+            print(f"⚠️  내부링크 모듈 로드 실패: {e}\n")
+            with_internal_links = False
+            internal_links_only = False
+
+    # ── 전체 포스트 목록 ──
+    posts = fetch_all_posts_meta(token)
     print(f"총 {len(posts)}개 포스트 처리 예정\n")
+
     ok, skip, fail = 0, 0, 0
 
     for i, post in enumerate(posts, 1):
-        pid = post["id"]
-        purl = post["url"]
-        pub  = post["published"]
-        print(f"[{i:2}/{len(posts)}] {purl.split('/')[-1][:40]}")
+        pid   = post["id"]
+        purl  = post["url"]
+        pub   = post["published"]
+        ptitle = post.get("title", "")
+        plabels = post.get("labels", [])
+        print(f"[{i:2}/{len(posts)}] {ptitle[:45]}")
 
         try:
             # 포스트 전체 본문 가져오기
             req = urllib.request.Request(
-                f"https://blogger.googleapis.com/v3/blogs/{BLOG_ID}/posts/{pid}?fields=content,published",
+                f"https://blogger.googleapis.com/v3/blogs/{BLOG_ID}/posts/{pid}?fields=content,published,title,labels",
                 headers={"Authorization": f"Bearer {token}"}
             )
             with urllib.request.urlopen(req, timeout=30) as r:
@@ -252,20 +294,42 @@ def main():
 
             content = pdata.get("content", "")
             pub_iso = pdata.get("published", pub)
+            # 더 정확한 제목/라벨 (본문 조회 시 포함)
+            ptitle  = pdata.get("title", ptitle)
+            plabels = pdata.get("labels", plabels)
 
-            new_content, changed = update_post_html(content, purl, pub_iso)
+            changed = False
+
+            # ── 기존 SEO 업데이트 (--internal-links-only 아닌 경우) ──
+            if not internal_links_only:
+                new_content, seo_changed = update_post_html(content, purl, pub_iso)
+                if seo_changed:
+                    content = new_content
+                    changed = True
+
+            # ── 내부링크 소급 삽입 ──
+            if il_module and (with_internal_links or internal_links_only):
+                il_content, il_changed = il_module.apply_to_existing_post(
+                    content, ptitle, plabels, purl,
+                    token=token,
+                    cached_posts=posts,   # 전체 목록 캐시 재사용
+                )
+                if il_changed:
+                    content = il_content
+                    changed = True
+                    print(f"       🔗 내부링크 삽입")
 
             if not changed:
-                print(f"       → SKIP (변경 없음 또는 JSON-LD 없음)")
+                print(f"       → SKIP (변경 없음)")
                 skip += 1
                 time.sleep(0.3)
                 continue
 
             # PATCH로 업데이트
-            result = blogger_patch(
+            blogger_patch(
                 f"/blogs/{BLOG_ID}/posts/{pid}",
                 token,
-                {"content": new_content}
+                {"content": content}
             )
             print(f"       → OK ✅")
             ok += 1

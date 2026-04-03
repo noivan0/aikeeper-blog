@@ -384,13 +384,34 @@ def build_related_section(related_posts: list) -> str:
 # 5. 본문 내 앵커링크 삽입 (키워드 매칭)
 # ══════════════════════════════════════════════════════════════════════════════
 
+def build_protected_ranges(html: str) -> list:
+    """앵커링크 삽입 불가 구간 목록 반환
+    
+    보호 대상:
+      - 모든 HTML 태그 (<tag ...>)
+      - <a>...</a> 전체 블록 (이미 링크된 곳)
+      - <h1>~<h6> 전체 블록 (제목에 링크 금지)
+      - <script>, <style>, <ins> 전체 블록
+    """
+    ranges = []
+    # 블록 태그 전체 (a, h1-h6, script, style, ins, figure)
+    for m in re.finditer(
+        r'<(a|h[1-6]|script|style|ins|figure)\b[^>]*>.*?</\1>',
+        html, re.S | re.I
+    ):
+        ranges.append((m.start(), m.end()))
+    # 단일 태그 (<img>, <br>, 등)
+    for m in re.finditer(r'<[^>]+>', html):
+        ranges.append((m.start(), m.end()))
+    return ranges
+
+
 def inject_anchor_links(html: str, related_posts: list, max_anchors: int = 2) -> str:
     """본문 내 자연스러운 앵커링크 삽입 (최대 max_anchors개)
     
     전략:
-      - 각 관련 포스트 제목의 핵심 키워드를 본문에서 탐색
-      - 이미 링크가 걸린 텍스트는 건드리지 않음
-      - h태그, 광고 블록, script 태그 안은 건드리지 않음
+      - 각 관련 포스트 제목의 핵심 키워드를 <p> 본문에서만 탐색
+      - h1~h6, <a>, <script>, <ins> 안은 절대 건드리지 않음
       - 첫 번째 등장하는 텍스트에만 링크 삽입 (포스트당 1회)
     """
     inserted = 0
@@ -399,12 +420,11 @@ def inject_anchor_links(html: str, related_posts: list, max_anchors: int = 2) ->
         if inserted >= max_anchors:
             break
 
-        # 핵심 키워드 추출 (길이 3자 이상 영문 또는 2자 이상 한글)
+        # 핵심 키워드 추출 (가장 긴 토큰 우선)
         tokens = sorted(tokenize(post["title"]), key=len, reverse=True)
-        # 가장 긴 의미있는 키워드를 대상으로
         keyword = None
         for tok in tokens:
-            if len(tok) >= 3:  # 영문 3자 이상 or 한글 2자 이상은 tokenize에서 보장
+            if len(tok) >= 3:
                 keyword = tok
                 break
 
@@ -414,61 +434,54 @@ def inject_anchor_links(html: str, related_posts: list, max_anchors: int = 2) ->
         post_url   = post["url"]
         post_title = post["title"].replace('"', "&quot;")
 
-        # 본문에서 키워드 검색 (대소문자 무시)
-        # HTML 태그 내부, <a> 태그 안, 광고/스크립트 블록 제외
-        # 단순 regex: 태그 밖의 텍스트에서만 치환
+        # 보호 구간 수집 (매 반복마다 갱신 — 이전 삽입으로 위치가 바뀌므로)
+        protected_ranges = build_protected_ranges(html)
 
-        # 먼저 html에서 "보호 구간" 수집 (태그 전체, <a>...</a>)
-        protected = set()
-        for m in re.finditer(r'<[^>]+>|<a\b[^>]*>.*?</a>', html, re.S | re.I):
-            protected.add((m.start(), m.end()))
-
-        def is_in_protected(start, end):
-            for ps, pe in protected:
+        def is_in_protected(start: int, end: int) -> bool:
+            for ps, pe in protected_ranges:
                 if ps <= start < pe or ps < end <= pe:
                     return True
             return False
 
-        # 키워드 패턴 (단어 경계: 한글은 경계 없음, 영문은 \b)
+        # 키워드 패턴
         if re.search(r'[가-힣]', keyword):
             pattern = re.compile(re.escape(keyword))
         else:
             pattern = re.compile(r'\b' + re.escape(keyword) + r'\b', re.IGNORECASE)
 
-        match = pattern.search(html)
-        if not match:
-            continue
+        # <p>...</p> 블록 내에서만 탐색
+        found = False
+        for p_match in re.finditer(r'<p[^>]*>(.*?)</p>', html, re.S | re.I):
+            p_start = p_match.start(1)  # <p> 내용 시작
+            inner = p_match.group(1)
 
-        ms, me = match.start(), match.end()
-
-        # 보호 구간 내부이면 건너뜀
-        if is_in_protected(ms, me):
-            # 다음 등장 탐색
-            search_start = me
-            found = False
-            while True:
-                match2 = pattern.search(html, search_start)
-                if not match2:
-                    break
-                ms2, me2 = match2.start(), match2.end()
-                if not is_in_protected(ms2, me2):
-                    ms, me, found = ms2, me2, True
-                    break
-                search_start = me2
-            if not found:
+            kw_match = pattern.search(inner)
+            if not kw_match:
                 continue
 
-        # 앵커 링크로 교체 (CTA 스타일)
-        original_text = html[ms:me]
-        anchor = (
-            f'<a href="{post_url}" '
-            f'rel="noopener" '
-            f'title="{post_title}" '
-            f'style="color:{THEME_COLOR};text-decoration:underline;text-decoration-style:dotted;">'
-            f'{original_text}</a>'
-        )
-        html = html[:ms] + anchor + html[me:]
-        inserted += 1
+            # 절대 위치 계산
+            abs_start = p_start + kw_match.start()
+            abs_end   = p_start + kw_match.end()
+
+            if is_in_protected(abs_start, abs_end):
+                continue
+
+            # 앵커 삽입
+            original_text = html[abs_start:abs_end]
+            anchor = (
+                f'<a href="{post_url}" '
+                f'rel="noopener" '
+                f'title="{post_title}" '
+                f'style="color:{THEME_COLOR};text-decoration:underline;text-decoration-style:dotted;">'
+                f'{original_text}</a>'
+            )
+            html = html[:abs_start] + anchor + html[abs_end:]
+            inserted += 1
+            found = True
+            break  # 이 포스트는 1회만 삽입
+
+        # <p> 안에서 못 찾으면 건너뜀
+        _ = found  # suppress lint
 
     return html
 
