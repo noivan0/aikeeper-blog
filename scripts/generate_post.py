@@ -229,20 +229,22 @@ def generate_post(topic: str, keywords: list = None, angle: str = "") -> dict:
 - 부동산 금리 포스트 → 기준금리, 부동산 전망, 집값 하락, 아파트 매매, 금리 인상"""
         blog_style = "한국 시사·뉴스 블로그"
     else:
-        labels_instruction = """이 포스트의 핵심 SEO 키워드를 라벨로 사용합니다 (5~8개, 쉼표 구분).
+        labels_instruction = """이 포스트의 핵심 SEO 키워드를 라벨로 사용합니다 (6~9개, 쉼표 구분).
 
-[라벨 작성 원칙]
-1. 실제로 사람들이 네이버·구글에 검색하는 키워드 그대로 사용
-2. 도구명·기술명·서비스명(ChatGPT, Claude, Notion AI 등) 반드시 포함
-3. "~사용법", "~활용법", "~차이", "~비교", "~만들기" 등 실용적 검색 의도 반영
-4. 카테고리명(AI생산성·AI트렌드 등) 대신 실제 검색어 사용
-5. 2~5글자 단어 위주, 너무 긴 문장형 금지
+[라벨 작성 원칙 — 반드시 준수]
+1. 카테고리명 절대 금지: AI생산성, AI트렌드, AI기초, 오픈소스AI 등 분류어 사용 금지
+2. 실제 검색어 사용: 사람들이 네이버·구글 검색창에 직접 치는 단어/구절
+3. 도구·서비스 실명 포함: ChatGPT, Claude, Gemma, Ollama, Notion AI 등 구체적 이름
+4. 행위·방법 키워드 포함: "사용법", "설치", "활용법", "무료", "비교", "후기" 등
+5. 핵심 문제/주제 키워드: 포스트가 해결하는 실제 문제나 주제 단어
 
-[예시]
-- ChatGPT 활용 포스트 → ChatGPT, 챗GPT 사용법, AI 자동화, 업무 자동화, 프롬프트
-- Claude API 포스트 → Claude API, 앤트로픽, AI API, 클로드 비용, LLM API
-- Notion AI 포스트 → Notion AI, 노션 AI, 노션 사용법, AI 메모, 업무 툴
-- 공장 QC 자동화 포스트 → QC 자동화, 공장 AI, 스마트팩토리, 품질검사 AI, 제조 자동화"""
+[좋은 예시]
+- Gemma 4 Ollama 포스트 → Gemma 4, Ollama, 로컬 AI 실행, 구글 AI 오픈소스, LLM 무료 설치, AI 로컬 실행, 오픈소스 LLM, Gemma 사용법
+- ChatGPT 계약서 검토 포스트 → ChatGPT 계약서, AI 계약서 검토, 독소조항, 월세 계약, 전세 계약, AI 법률, 계약서 분석
+- Whisper Notion 강의정리 포스트 → Whisper, Notion AI, 강의 자동정리, 음성 텍스트 변환, AI 메모, 회의록 자동화, 강의 요약
+
+[나쁜 예시 — 이런 라벨 금지]
+- AI생산성, AI트렌드, AI기초, 오픈소스AI, 한국AI (카테고리어)"""
         blog_style = "요즘IT 상위 1%"
 
     prompt = f"""오늘은 {today}입니다. 아래 주제로 {blog_style} 수준의 딥다이브 글을 작성하세요.
