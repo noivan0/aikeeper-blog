@@ -1,6 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
+    <loc>https://aikeeper.allsweep.xyz/2026/04/cursor-ai-4.html</loc>
+    <lastmod>2026-04-03T12:48:20+09:00</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://aikeeper.allsweep.xyz/2026/04/rtx-3070-ai-llamafactory.html</loc>
+    <lastmod>2026-04-03T11:33:23+09:00</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://aikeeper.allsweep.xyz/2026/04/llm-ai.html</loc>
+    <lastmod>2026-04-03T10:50:08+09:00</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://aikeeper.allsweep.xyz/2026/04/autogen-1-ai.html</loc>
+    <lastmod>2026-04-03T09:47:57+09:00</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://aikeeper.allsweep.xyz/2026/04/rlhf-chatgpt.html</loc>
     <lastmod>2026-04-03T08:06:13+09:00</lastmod>
     <changefreq>weekly</changefreq>
