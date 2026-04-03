@@ -499,7 +499,7 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
             caption = (
                 f'<figcaption style="font-size:0.78em;color:#888;margin-top:0.5em;text-align:center;">'
                 f'{hero_source_label or "📰"} '
-                f'<a href="{hero_credit_url}" rel="noopener noreferrer" target="_blank" '
+                f'<a href="{hero_credit_url}" rel="noopener noreferrer" '
                 f'style="color:#4f6ef7;text-decoration:none;">{hero_credit}</a>'
                 f'</figcaption>'
             )

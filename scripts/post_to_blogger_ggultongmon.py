@@ -125,10 +125,28 @@ def main():
         meta_desc=META_DESC or post_data.get("meta_desc", ""),
         faq_raw=post_data.get("faq_raw", ""),
     )
-    
-    # 4. Blogger 발행
+
+    # 4. Blogger 토큰 획득 (내부링크 + 발행 공용)
     print(f"[INFO] Blogger 발행 중...")
     token = get_oauth_token()
+
+    # 4-1. 내부링크 (연관글 카드) 삽입
+    try:
+        from internal_links import add_internal_links
+        os.environ["TARGET_BLOG_ID"]  = BLOG_ID
+        os.environ["TARGET_BLOG_URL"] = "https://ggultongmon.allsweep.xyz"
+        html, related = add_internal_links(
+            html,
+            current_title=title,
+            current_labels=LABELS,
+            current_url="",   # 발행 전이라 URL 미확정
+            token=token,
+            verbose=True,
+        )
+        if related:
+            print(f"[INFO] 연관글 {len(related)}개 삽입 완료")
+    except Exception as e:
+        print(f"[INFO] 연관글 스킵 (비치명적): {e}")
     result = publish_to_blogger(title, html, LABELS, token)
     post_url = result.get("url", "")
     print(f"✅ 포스팅 완료: {title}")

@@ -257,13 +257,14 @@ def make_card_description(title: str, labels: list) -> str:
 
 
 def build_related_section(related_posts: list) -> str:
-    """카드형 CTA 관련 글 섹션 HTML 생성
-    
-    디자인:
-      - 카드형 레이아웃 (CSS Grid, 모바일 최적화)
-      - 제목 + 한줄 설명 + 화살표 아이콘
-      - "이 글도 읽어보세요 →" 헤더
-      - 색상: #4f6ef7 계열
+    """카드형 CTA 관련 글 섹션 HTML 생성 v2
+
+    디자인 개선:
+      - 상단 진한 구분선 + 배경색으로 본문과 명확히 분리
+      - 섹션 헤더: 아이콘 + "함께 읽으면 좋은 글" 텍스트
+      - 카드: 좌측 강조 바 + 제목 + 설명 + 화살표
+      - target="_blank" 제거 (애드센스 CTR 최적화)
+      - 모바일 최적화 (1열 그리드)
     """
     if not related_posts:
         return ""
@@ -278,11 +279,12 @@ def build_related_section(related_posts: list) -> str:
         cards_html += f"""
   <a href="{url}" class="il-card" rel="noopener" title="{title}">
     <div class="il-card-inner">
+      <div class="il-card-accent"></div>
       <div class="il-card-body">
         <p class="il-card-title">{title}</p>
         <p class="il-card-desc">{desc}</p>
       </div>
-      <span class="il-arrow" aria-hidden="true">→</span>
+      <span class="il-arrow" aria-hidden="true">&#8594;</span>
     </div>
   </a>"""
 
@@ -291,60 +293,76 @@ def build_related_section(related_posts: list) -> str:
 <div class="il-related-section">
   <style>
     .il-related-section {{
-      margin: 3em 0 2em;
-      padding: 0;
+      margin: 3.5em 0 2em;
+      padding: 24px 20px 20px;
+      background: #f4f6ff;
+      border-top: 4px solid {THEME_COLOR};
+      border-radius: 0 0 16px 16px;
     }}
     .il-related-header {{
-      font-size: 1.05em;
-      font-weight: 700;
+      font-size: 1em;
+      font-weight: 800;
       color: #0d1b4b;
-      margin: 0 0 1.1em;
-      padding-bottom: 0.5em;
-      border-bottom: 2px solid #e8ecf4;
-      position: relative;
+      margin: 0 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      letter-spacing: -0.3px;
     }}
-    .il-related-header::after {{
-      content: '';
-      position: absolute;
-      bottom: -2px;
-      left: 0;
-      width: 80px;
-      height: 2px;
+    .il-related-header-icon {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
       background: {THEME_COLOR};
+      border-radius: 8px;
+      font-size: 0.85em;
     }}
     .il-grid {{
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 14px;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
     }}
     .il-card {{
       display: block;
       text-decoration: none;
       color: inherit;
-      background: #f8f9ff;
-      border: 1px solid #e0e6ff;
+      background: #fff;
+      border: 1.5px solid #dde4ff;
       border-radius: 12px;
       transition: box-shadow 0.18s, border-color 0.18s, transform 0.15s;
+      overflow: hidden;
     }}
     .il-card:hover {{
-      box-shadow: 0 4px 18px rgba(79,110,247,0.15);
+      box-shadow: 0 6px 20px rgba(79,110,247,0.18);
       border-color: {THEME_COLOR};
-      transform: translateY(-2px);
+      transform: translateY(-3px);
       text-decoration: none;
     }}
     .il-card-inner {{
       display: flex;
-      align-items: center;
-      padding: 14px 16px;
-      gap: 10px;
+      align-items: stretch;
+      gap: 0;
+    }}
+    .il-card-accent {{
+      width: 5px;
+      flex-shrink: 0;
+      background: {THEME_COLOR};
+      border-radius: 0;
+      transition: background 0.15s;
+    }}
+    .il-card:hover .il-card-accent {{
+      background: #2a4fff;
     }}
     .il-card-body {{
       flex: 1;
       min-width: 0;
+      padding: 13px 14px;
     }}
     .il-card-title {{
-      font-size: 0.93em;
-      font-weight: 600;
+      font-size: 0.9em;
+      font-weight: 700;
       color: #1a237e;
       margin: 0 0 5px;
       line-height: 1.45;
@@ -354,36 +372,44 @@ def build_related_section(related_posts: list) -> str:
       overflow: hidden;
     }}
     .il-card-desc {{
-      font-size: 0.78em;
-      color: #666;
+      font-size: 0.76em;
+      color: #777;
       margin: 0;
       line-height: 1.5;
       display: -webkit-box;
-      -webkit-line-clamp: 2;
+      -webkit-line-clamp: 1;
       -webkit-box-orient: vertical;
       overflow: hidden;
     }}
     .il-arrow {{
-      font-size: 1.2em;
+      font-size: 1.1em;
       color: {THEME_COLOR};
       flex-shrink: 0;
       font-weight: 700;
+      padding: 13px 12px 13px 0;
       transition: transform 0.15s;
+      align-self: center;
     }}
     .il-card:hover .il-arrow {{
       transform: translateX(4px);
     }}
     @media (max-width: 500px) {{
+      .il-related-section {{
+        padding: 18px 14px 16px;
+      }}
       .il-grid {{
         grid-template-columns: 1fr;
-        gap: 10px;
+        gap: 9px;
       }}
       .il-card-title {{
-        font-size: 0.88em;
+        font-size: 0.86em;
       }}
     }}
   </style>
-  <p class="il-related-header">📚 이 글도 읽어보세요</p>
+  <p class="il-related-header">
+    <span class="il-related-header-icon">📚</span>
+    함께 읽으면 좋은 글
+  </p>
   <div class="il-grid">{cards_html}
   </div>
 </div>
@@ -503,36 +529,41 @@ def inject_anchor_links(html: str, related_posts: list, max_anchors: int = 2) ->
 # ══════════════════════════════════════════════════════════════════════════════
 
 def find_insert_position(html: str) -> int:
-    """관련 글 섹션 삽입 위치 결정
-    
+    """관련 글 섹션 삽입 위치 결정 v2
+
+    목표: 본문이 끝난 직후, 광고보다 앞, FAQ보다 앞
+    → 독자가 글을 다 읽은 시점에 연관글 노출 → 클릭률 최대화
+    → 광고 바로 위에 배치하면 AdSense 정책상 광고와 혼동 문제 우려 → 광고 앞 배치
+
     우선순위:
-      1. FAQ 섹션 (<h2>자주 묻는 질문 / FAQ) 바로 직전
-      2. 마지막 광고 블록 직전
-      3. </div> 마지막 직전 (ak-post 래퍼)
+      1. FAQ 섹션 h2 바로 직전 (가장 이상적)
+      2. 첫 번째 AdSense 광고 블록 직전 (본문 후 첫 광고)
+      3. 마지막 </div> (ak-post / gg-post 래퍼) 직전
       4. HTML 끝
     """
-    # 1. FAQ 섹션 탐색
+    # 1. FAQ h2 탐색 (자주 묻는 질문 / FAQ / Q&A)
     faq_match = re.search(
-        r'<h2[^>]*>[^<]*(?:자주\s*묻|FAQ|Q&amp;A|자주하는)[^<]*</h2>',
+        r'<h2[^>]*>[^<]*(?:자주\s*묻|FAQ|Q&amp;A|자주하는|마치며|정리하며)[^<]*</h2>',
         html, re.I | re.S
     )
     if faq_match:
         return faq_match.start()
 
-    # 2. 마지막 AdSense ins 블록 직전
-    ad_matches = list(re.finditer(r'<div[^>]*class="adsbygoogle"', html, re.I))
+    # 2. 첫 번째 AdSense ins 블록 직전 (본문 뒤 광고 앞)
+    ad_matches = list(re.finditer(r'<ins\s[^>]*class="adsbygoogle"', html, re.I))
     if ad_matches:
-        # 마지막 광고 블록의 부모 <div> 찾기 (il-ad-wrap 또는 margin:2.5em)
-        last_ad = ad_matches[-1]
-        # 광고 div 전체 블록 찾기 (앞 <div style="margin:...)
-        pre_ad = html[:last_ad.start()].rfind('<div style="margin:')
+        first_ad = ad_matches[0]
+        # 광고 감싸는 <div style="margin:..."> 찾기
+        pre_ad = html[:first_ad.start()].rfind('<div style="margin:')
         if pre_ad != -1:
             return pre_ad
+        return first_ad.start()
 
-    # 3. ak-post 닫는 태그 직전
-    ak_close = html.rfind('</div>')
-    if ak_close != -1:
-        return ak_close
+    # 3. ak-post / gg-post 닫는 태그 직전
+    for cls in ['</div>\n</div>', '</div>\n\n</div>', '</div>']:
+        pos = html.rfind(cls)
+        if pos != -1:
+            return pos
 
     return len(html)
 

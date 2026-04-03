@@ -79,7 +79,7 @@ def build_quick_buy_bar(products: list) -> str:
             f'line-height:1.3;">{name}</p>'
             f'<p style="margin:0 0 8px;font-size:1em;font-weight:800;color:{COLOR_PRIMARY};">'
             f'{price}</p>'
-            f'<a href="{url}" rel="noopener noreferrer" target="_blank" '
+            f'<a href="{url}" rel="noopener noreferrer" '
             f'style="display:inline-block;background:{COLOR_PRIMARY};color:#fff;'
             f'font-size:0.78em;font-weight:700;padding:7px 14px;border-radius:20px;'
             f'text-decoration:none;">구매하기</a>'
@@ -125,7 +125,7 @@ def build_inline_card(product: dict, rank: int, title_seed: str = "") -> str:
 background:#f8f9ff;">
   <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px;">
     <!-- 상품 이미지 -->
-    <a href="{buy_url}" rel="noopener noreferrer" target="_blank"
+    <a href="{buy_url}" rel="noopener noreferrer"
        style="flex-shrink:0;display:block;">
       <img src="{img_url}" alt="{name}"
            style="width:130px;height:130px;object-fit:contain;border-radius:12px;
@@ -146,7 +146,7 @@ background:#f8f9ff;">
     </div>
   </div>
   <!-- CTA 버튼 (풀 너비) -->
-  <a href="{buy_url}" rel="noopener noreferrer" target="_blank"
+  <a href="{buy_url}" rel="noopener noreferrer"
      style="display:block;text-align:center;background:{COLOR_PRIMARY};color:#fff;
      font-size:1.02em;font-weight:700;padding:14px 20px;border-radius:12px;
      text-decoration:none;letter-spacing:-0.2px;">
@@ -161,7 +161,7 @@ def build_section_buy_btn(product: dict, title_seed: str = "") -> str:
     btn_text = _pick(BUY_BUTTON_TEXTS, title_seed + product.get("productName","") + "btn")
     return (
         f'<div style="text-align:center;margin:0.8em 0 2.2em;">'
-        f'<a href="{url}" rel="noopener noreferrer" target="_blank" '
+        f'<a href="{url}" rel="noopener noreferrer" '
         f'style="display:inline-block;background:{COLOR_SECONDARY};color:#fff;'
         f'font-size:0.98em;font-weight:700;padding:13px 34px;border-radius:30px;'
         f'text-decoration:none;">{btn_text}</a></div>'
