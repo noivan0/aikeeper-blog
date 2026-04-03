@@ -13,12 +13,13 @@ from coupang_api import get_products_with_shorten
 from generate_post_ggultongmon import generate_post, build_full_html
 
 # ── 환경변수 ──────────────────────────────────────────────────────
-TOPIC       = os.environ.get("TOPIC", "에어프라이어 가성비 추천 TOP5")
-SEARCH_KW   = os.environ.get("SEARCH_KW") or os.environ.get("search_keyword", "에어프라이어")
-ANGLE       = os.environ.get("ANGLE", "")
-LABELS_STR  = os.environ.get("LABELS") or os.environ.get("labels", "에어프라이어 추천,에어프라이어 가성비")
-META_DESC   = os.environ.get("META_DESC") or os.environ.get("meta_desc", "")
-BLOG_ID     = os.environ.get("TARGET_BLOG_ID", "4422596386410826373")
+TOPIC           = os.environ.get("TOPIC", "에어프라이어 가성비 추천 TOP5")
+SEARCH_KW       = os.environ.get("SEARCH_KW") or os.environ.get("search_keyword", "에어프라이어")
+ANGLE           = os.environ.get("ANGLE", "")
+LABELS_STR      = os.environ.get("LABELS") or os.environ.get("labels", "에어프라이어 추천,에어프라이어 가성비")
+META_DESC       = os.environ.get("META_DESC") or os.environ.get("meta_desc", "")
+BLOG_ID         = os.environ.get("TARGET_BLOG_ID", "4422596386410826373")
+PRODUCTS_JSON   = os.environ.get("PRODUCTS_JSON") or os.environ.get("products_json", "")
 
 BLOGGER_CLIENT_ID     = os.environ["BLOGGER_CLIENT_ID"]
 BLOGGER_CLIENT_SECRET = os.environ["BLOGGER_CLIENT_SECRET"]
@@ -82,12 +83,25 @@ def main():
     print(f"[INFO] 주제: {TOPIC}")
     print(f"[INFO] 검색 키워드: {SEARCH_KW}")
     
-    # 1. 상품 수집
-    print(f"[INFO] 쿠팡 상품 검색: {SEARCH_KW}")
-    products = get_products_with_shorten(SEARCH_KW, limit=5)
-    print(f"[INFO] 수집 완료: {len(products)}개")
+    # 1. 상품 수집 (bestcategories 결과 우선, 없으면 키워드 검색 fallback)
+    if PRODUCTS_JSON:
+        try:
+            products = json.loads(PRODUCTS_JSON)
+            # rank 필드 정규화
+            for i, p in enumerate(products):
+                p.setdefault("rank", i + 1)
+                p["productPrice"] = int(float(p.get("productPrice", 0)))
+            print(f"[INFO] bestcategories 상품 {len(products)}개 사용")
+        except Exception as e:
+            print(f"[WARN] products_json 파싱 실패 ({e}), 키워드 검색으로 fallback")
+            products = get_products_with_shorten(SEARCH_KW, limit=5)
+    else:
+        print(f"[INFO] 쿠팡 상품 검색: {SEARCH_KW}")
+        products = get_products_with_shorten(SEARCH_KW, limit=5)
+
+    print(f"[INFO] 상품 {len(products)}개 준비 완료")
     for p in products:
-        print(f"       [{p['rank']}] {p['productName'][:40]} / {p['productPrice']:,}원 / {p.get('shortenUrl','')[:50]}")
+        print(f"       [{p.get('rank','-')}] {p['productName'][:40]} / {int(p['productPrice']):,}원 / {p.get('shortenUrl','')[:50]}")
     
     # 2. 포스트 생성
     print(f"[INFO] Claude 포스트 생성 중...")

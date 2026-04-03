@@ -39,6 +39,7 @@ ANGLE=$(grep '^angle=' "$TOPIC_FILE" | cut -d= -f2-)
 CATEGORY=$(grep '^category=' "$TOPIC_FILE" | cut -d= -f2-)
 LABELS=$(grep '^labels=' "$TOPIC_FILE" | cut -d= -f2-)
 META_DESC=$(grep '^meta_desc=' "$TOPIC_FILE" | cut -d= -f2-)
+PRODUCTS_JSON=$(grep '^products_json=' "$TOPIC_FILE" | cut -d= -f2-)
 rm -f "$TOPIC_FILE"
 
 echo "[$(date '+%H:%M:%S')] 주제: $TOPIC" | tee -a "$LOG_FILE"
@@ -47,7 +48,7 @@ echo "[$(date '+%H:%M:%S')] 검색키워드: $SEARCH_KW" | tee -a "$LOG_FILE"
 # Step 2: 포스트 생성 + 발행
 echo "[$(date '+%H:%M:%S')] Step 2: 포스트 생성 및 발행" | tee -a "$LOG_FILE"
 
-export TOPIC SEARCH_KW ANGLE CATEGORY LABELS META_DESC
+export TOPIC SEARCH_KW ANGLE CATEGORY LABELS META_DESC PRODUCTS_JSON
 export TARGET_BLOG_ID="4422596386410826373"
 export TARGET_BLOG_URL="https://ggultongmon.allsweep.xyz"
 export BLOG_TYPE="COUPANG"
