@@ -382,8 +382,12 @@ async def type_body(page, content: str):
     await page.wait_for_timeout(500)
 
 
-# ── 발행 ─────────────────────────────────────────────────────────
-async def publish(page) -> str | None:
+# ── 발행 (즉시 또는 예약) ─────────────────────────────────────────
+async def publish(page, reserve_dt: str = None) -> str | None:
+    """
+    reserve_dt: None → 즉시 발행
+                "YYYY-MM-DD HH:MM" → 예약 발행
+    """
     await page.evaluate("""
         () => {
             document.querySelectorAll('.layer_popup__i0QOY').forEach(el=>el.style.display='none');
@@ -402,8 +406,84 @@ async def publish(page) -> str | None:
         return None
 
     await page.evaluate("btn => btn.click()", publish_btn)
-    await page.wait_for_timeout(3000)
+    await page.wait_for_timeout(2500)
 
+    # ── 예약 발행 처리 ────────────────────────────────────────────
+    if reserve_dt:
+        import datetime as _dt
+        # "예약" 라디오 클릭 (id=radio_time2, val=pre)
+        await page.evaluate("""
+            () => {
+                const r = document.querySelector('#radio_time2');
+                if (r) r.click();
+            }
+        """)
+        await page.wait_for_timeout(1500)
+
+        # 날짜/시간 입력창 분석
+        dt_inputs = await page.evaluate("""
+            () => {
+                const res = [];
+                document.querySelectorAll('input[type="text"],input[type="number"],select').forEach(el => {
+                    const r = el.getBoundingClientRect();
+                    if (r.width > 0 && r.y > 200 && r.y < 700) {
+                        res.push({cls: el.className?.substring(0,50), ph: el.placeholder||'', val: el.value, id: el.id, tag: el.tagName, x: Math.round(r.x), y: Math.round(r.y)});
+                    }
+                });
+                return res;
+            }
+        """)
+        print(f"  예약 입력 요소들: {dt_inputs}")
+        await page.screenshot(path="/tmp/naver_reserve_ui.png")
+
+        # 날짜/시간 파싱
+        try:
+            rdt = _dt.datetime.strptime(reserve_dt, "%Y-%m-%d %H:%M")
+        except:
+            print(f"  ❌ 예약 시간 파싱 실패: {reserve_dt}")
+            reserve_dt = None
+
+        if reserve_dt and rdt:
+            # 날짜/시간 JS로 직접 설정
+            set_ok = await page.evaluate(f"""
+                () => {{
+                    // 날짜 input들 찾기 (연/월/일/시/분)
+                    const inputs = Array.from(document.querySelectorAll('input'));
+                    const selects = Array.from(document.querySelectorAll('select'));
+                    let set = 0;
+
+                    // 연도
+                    const yearEl = inputs.find(el => el.placeholder?.includes('연도') || el.className?.includes('year') || el.id?.includes('year'));
+                    if (yearEl) {{ yearEl.value = '{rdt.year}'; yearEl.dispatchEvent(new Event('input',{{bubbles:true}})); yearEl.dispatchEvent(new Event('change',{{bubbles:true}})); set++; }}
+
+                    // 월
+                    const monthEl = selects.find(el => el.className?.includes('month') || el.id?.includes('month')) ||
+                                   inputs.find(el => el.placeholder?.includes('월') || el.className?.includes('month'));
+                    if (monthEl) {{ monthEl.value = '{rdt.month}'; monthEl.dispatchEvent(new Event('change',{{bubbles:true}})); set++; }}
+
+                    // 일
+                    const dayEl = selects.find(el => el.className?.includes('day') || el.id?.includes('day')) ||
+                                 inputs.find(el => el.placeholder?.includes('일') || el.className?.includes('day'));
+                    if (dayEl) {{ dayEl.value = '{rdt.day}'; dayEl.dispatchEvent(new Event('change',{{bubbles:true}})); set++; }}
+
+                    // 시
+                    const hourEl = selects.find(el => el.className?.includes('hour') || el.id?.includes('hour')) ||
+                                  inputs.find(el => el.placeholder?.includes('시') || el.className?.includes('hour'));
+                    if (hourEl) {{ hourEl.value = '{rdt.hour}'; hourEl.dispatchEvent(new Event('change',{{bubbles:true}})); set++; }}
+
+                    // 분
+                    const minEl = selects.find(el => el.className?.includes('min') || el.id?.includes('min')) ||
+                                 inputs.find(el => el.placeholder?.includes('분') || el.className?.includes('min'));
+                    if (minEl) {{ minEl.value = '{rdt.minute}'; minEl.dispatchEvent(new Event('change',{{bubbles:true}})); set++; }}
+
+                    return set;
+                }}
+            """)
+            print(f"  예약 시간 설정: {reserve_dt} (설정된 필드: {set_ok}개)")
+            await page.wait_for_timeout(1000)
+            await page.screenshot(path="/tmp/naver_reserve_set.png")
+
+    # ── 발행/예약 확인 버튼 ──────────────────────────────────────
     confirm_btn = await page.query_selector(".confirm_btn__WEaBq")
     if not confirm_btn:
         confirm_btn = await page.query_selector("button[class*='confirm_btn']")
@@ -414,6 +494,13 @@ async def publish(page) -> str | None:
     await page.wait_for_timeout(6000)
 
     url = page.url
+    if reserve_dt:
+        # 예약 발행은 리다이렉트 없이 에디터에 남음 — URL에서 logNo 추출 시도
+        log_no = await page.evaluate("() => { const m = location.href.match(/logNo=(\d+)/); return m ? m[1] : ''; }")
+        if not log_no:
+            # 예약 발행 목록에서 확인
+            return f"[예약발행 완료] {reserve_dt}"
+        return url
     return url if ("PostView" in url or "logNo" in url) else None
 
 
