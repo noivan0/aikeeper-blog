@@ -353,7 +353,24 @@ def build_full_html(title: str, content: str, products: list,
     quick_bar_html = build_quick_buy_bar(products)
 
     # 히든 썸네일 (Blogger 미리보기)
+    # 구글 디스커버: 카테고리별 Unsplash 폴백 (1200x630 보장)
+    DISCOVER_FALLBACK_IMAGES = {
+        "주방":    "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=1200&h=630&fit=crop&auto=format",
+        "가전":    "https://images.unsplash.com/photo-1585771724684-38269d6639fd?w=1200&h=630&fit=crop&auto=format",
+        "뷰티":    "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=1200&h=630&fit=crop&auto=format",
+        "건강":    "https://images.unsplash.com/photo-1505576399279-565b52d4ac71?w=1200&h=630&fit=crop&auto=format",
+        "패션":    "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1200&h=630&fit=crop&auto=format",
+        "스포츠":  "https://images.unsplash.com/photo-1517649763962-0c623066013b?w=1200&h=630&fit=crop&auto=format",
+        "출산":    "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=1200&h=630&fit=crop&auto=format",
+        "반려":    "https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=1200&h=630&fit=crop&auto=format",
+        "default": "https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=1200&h=630&fit=crop&auto=format",
+    }
+    _cat_key = next((k for k in DISCOVER_FALLBACK_IMAGES if k != "default" and k in title), "default")
+    _discover_img = DISCOVER_FALLBACK_IMAGES[_cat_key]
+
     hero_img = products[0].get("productImage", "") if products else ""
+    # og:image은 디스커버 폴백 이미지 사용 (1200px 보장), 히든 썸네일은 쿠팡 상품 이미지 유지
+    og_hero_img = _discover_img
     thumb_html = (
         f'<img src="{hero_img}" alt="{title}" '
         f'style="position:absolute;width:1px;height:1px;overflow:hidden;'
@@ -452,7 +469,9 @@ def build_full_html(title: str, content: str, products: list,
         f'<meta property="og:title" content="{title.replace(chr(34),"&quot;")}">\n'
         f'<meta property="og:description" content="{meta_desc[:160].replace(chr(34),"&quot;")}">\n'
         f'<meta property="og:type" content="article">\n'
-        f'<meta property="og:image" content="{hero_img}">\n'
+        f'<meta property="og:image" content="{og_hero_img}">\n'
+        f'<meta property="og:image:width" content="1200">\n'
+        f'<meta property="og:image:height" content="630">\n'
         f'<meta name="twitter:card" content="summary_large_image">\n'
         f"{css}\n\n"
         f'<div class="gg-post" lang="ko">\n\n'
