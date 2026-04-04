@@ -2,15 +2,14 @@ name: AI Auto Post to Blogger
 
 on:
   schedule:
-    - cron: '0 22 * * *'
-    - cron: '30 0 * * *'
-    - cron: '0 2 * * *'
-    - cron: '30 3 * * *'
-    - cron: '0 5 * * *'
-    - cron: '30 6 * * *'
-    - cron: '0 8 * * *'
-    - cron: '0 10 * * *'
-    - cron: '30 12 * * *'
+    # UTC 기준 (KST = UTC+9) — 하루 6회 (Helpful Content 과잉발행 리스크 회피)
+    # KST: 07:00, 09:30, 12:00, 15:00, 18:30, 21:00
+    - cron: '0  22 * * *'   # KST 07:00
+    - cron: '30 0  * * *'   # KST 09:30
+    - cron: '0  3  * * *'   # KST 12:00
+    - cron: '0  6  * * *'   # KST 15:00
+    - cron: '30 9  * * *'   # KST 18:30
+    - cron: '0  12 * * *'   # KST 21:00
   workflow_dispatch:
     inputs:
       topic:

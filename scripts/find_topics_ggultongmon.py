@@ -1,11 +1,12 @@
 """
-꿀통몬스터 블로그 주제 발굴 v3
+꿀통몬스터 블로그 주제 발굴 v4
 - bestcategories API로 전체 카테고리 실시간 베스트 상품 수집
 - Claude가 상품명 분석 → 블로그 최적 주제 + 검색 키워드 도출
 - 가격 필터링: 로켓배송 우선, 카테고리별 최소 가격 적용
 - 요일별 카테고리 테마 + 시즌 키워드 선점 전략 적용
+- 중복 주제 방지: Blogger API로 최근 30개 포스트 제목 수집 → 유사도 차단
 """
-import os, sys, json, random, time, urllib.request, urllib.parse, anthropic
+import os, sys, json, random, time, re, hashlib, urllib.request, urllib.parse, urllib.error, anthropic
 from datetime import datetime, timezone, timedelta
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,6 +17,63 @@ from coupang_api import _get, search_products
 ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "")
 ANTHROPIC_MODEL    = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 COUPANG_SUB_ID     = os.environ.get("COUPANG_SUB_ID", "ggultongmon")
+
+# ── 중복 주제 방지 유틸 ──────────────────────────────────────────────────
+def get_words(text: str) -> set:
+    return set(re.findall(r"[\w가-힣]{2,}", text.lower()))
+
+def bigrams(text: str) -> set:
+    words = re.findall(r"[\w가-힣]{2,}", text.lower())
+    return {(words[i], words[i+1]) for i in range(len(words)-1)}
+
+def topic_similarity(a: str, b: str) -> float:
+    wa, wb = get_words(a), get_words(b)
+    ba, bb = bigrams(a), bigrams(b)
+    ws = len(wa & wb) / len(wa | wb) if wa and wb else 0.0
+    bs = len(ba & bb) / len(ba | bb) if ba and bb else 0.0
+    return (ws + bs) / 2.0
+
+def is_duplicate_topic(topic: str, used_titles: list, threshold: float = 0.30) -> bool:
+    """기존 포스트 제목과 유사도가 threshold 이상이면 중복으로 판단"""
+    t = topic.lower()
+    for u in used_titles:
+        sim = topic_similarity(t, u)
+        if sim >= threshold:
+            return True
+        # 핵심 키워드 3개 이상 겹쳐도 중복
+        if len(get_words(t) & get_words(u)) >= 3:
+            return True
+    return False
+
+def load_recent_post_titles(blog_id: str, refresh_token: str, client_id: str, client_secret: str, max_posts: int = 50) -> list:
+    """Blogger API로 최근 포스트 제목 수집"""
+    try:
+        # access token 발급
+        token_url = "https://oauth2.googleapis.com/token"
+        body = urllib.parse.urlencode({
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        }).encode()
+        req = urllib.request.Request(token_url, data=body, method="POST",
+                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            token_data = json.loads(r.read())
+        access_token = token_data["access_token"]
+
+        # 포스트 목록 가져오기
+        api_url = (f"https://www.googleapis.com/blogger/v3/blogs/{blog_id}/posts"
+                   f"?maxResults={max_posts}&fields=items(title)&fetchBodies=false")
+        req2 = urllib.request.Request(api_url, headers={"Authorization": f"Bearer {access_token}"})
+        with urllib.request.urlopen(req2, timeout=10) as r2:
+            data = json.loads(r2.read())
+        titles = [item["title"] for item in data.get("items", []) if item.get("title")]
+        print(f"[중복방지] 최근 포스트 {len(titles)}개 로드")
+        return titles
+    except Exception as e:
+        print(f"[WARN] 포스트 제목 로드 실패: {e}")
+        return []
 
 # ── 카테고리 정의 (공식 API 기준) ──────────────────────────────────────
 CATEGORIES = {
@@ -187,12 +245,15 @@ def pick_category_and_products() -> tuple[int, str, list]:
     return 1016, "가전디지털", get_best_products(1016, limit=30)
 
 
-def generate_topic_with_claude(cat_id: int, cat_name: str, products: list) -> dict:
+def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
+                               used_titles: list = None) -> dict:
     """
     Claude에게 베스트 상품 목록을 주고 블로그 포스트 최적 주제 선정 요청
     - 단순 카테고리명이 아닌 실제 상품명 기반으로 구체적 검색 키워드 도출
+    - used_titles: 기존 포스트 제목 목록 (중복방지용)
     """
     today = datetime.now(timezone(timedelta(hours=9))).strftime("%Y년 %m월 %d일")
+    used_titles = used_titles or []
 
     # 상위 15개 상품 요약
     product_summary = "\n".join([
@@ -212,8 +273,14 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list) -> di
     if season:
         season_hint = f"\n[시즌 힌트] 이번 달 주목할 키워드: '{season['keyword']}' ({season['angle']})\n위 상품과 연결 가능하면 시즌 키워드를 반영하세요.\n"
 
+    # 최근 포스트 제목 컨텍스트 (중복 방지)
+    recent_context = ""
+    if used_titles:
+        recent_list = "\n".join(f"- {t}" for t in used_titles[:20])
+        recent_context = f"\n[⚠️ 중복 금지] 아래 제목들과 유사한 주제는 절대 선정하지 마세요:\n{recent_list}\n"
+
     prompt = f"""오늘은 {today}. 쿠팡 '{cat_name}' 카테고리 실시간 베스트 상품 목록입니다.
-{season_hint}
+{season_hint}{recent_context}
 {product_summary}
 
 이 상품들을 분석해서 쿠팡 파트너스 블로그 '꿀통 몬스터' 포스트 주제를 선정하세요.
@@ -223,6 +290,7 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list) -> di
 - 소비자가 실제로 검색할 법한 구체적 키워드 (예: "탈모샴푸 추천" O, "뷰티" X)
 - 단순 소모품/식재료보다 정보성 포스트 가능한 상품 우선 (예: 기기/용품/건강식품)
 - 같은 카테고리라도 묶일 수 있는 상품이면 OK
+- [중복 금지] 목록의 제목과 주제·키워드가 겹치면 반드시 다른 주제 선정
 
 ===TOPIC===
 포스트 제목 (50자 이내, 이모지 금지, 숫자/비교/추천 포함)
@@ -237,40 +305,60 @@ SEO 라벨 6~9개 (쉼표 구분, 실제 검색어 기반)
 ===META===
 검색결과 설명 (150~160자)"""
 
-    msg = client.messages.create(
-        model=ANTHROPIC_MODEL,
-        max_tokens=600,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    text = msg.content[0].text
-
-    def extract(tag):
+    def extract(text, tag):
         s = text.find(f"==={tag}===")
         if s == -1: return ""
         s += len(f"==={tag}===")
         e = text.find("===", s)
         return text[s:e if e != -1 else None].strip()
 
-    # Claude가 선택한 상품 인덱스로 실제 상품 추출
-    try:
-        ids = [int(x.strip())-1 for x in extract("PRODUCT_IDS").split(",") if x.strip().isdigit()]
-        selected = [products[i] for i in ids if 0 <= i < len(products)]
-    except Exception:
-        selected = products[:3]
+    def parse_result(text):
+        topic = extract(text, "TOPIC")
+        try:
+            ids = [int(x.strip())-1 for x in extract(text, "PRODUCT_IDS").split(",") if x.strip().isdigit()]
+            selected = [products[i] for i in ids if 0 <= i < len(products)]
+        except Exception:
+            selected = products[:3]
+        if len(selected) < 3:
+            selected = products[:3]
+        return {
+            "topic":             topic,
+            "search_keyword":    extract(text, "SEARCH_KEYWORD") or cat_name,
+            "angle":             extract(text, "ANGLE"),
+            "labels":            [l.strip() for l in extract(text, "LABELS").split(",") if l.strip()],
+            "meta_desc":         extract(text, "META"),
+            "category":          cat_name,
+            "cat_id":            cat_id,
+            "selected_products": selected,
+        }
 
-    if len(selected) < 3:
-        selected = products[:3]
+    # 첫 시도
+    msg = client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=600,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    result = parse_result(msg.content[0].text)
 
-    return {
-        "topic":          extract("TOPIC"),
-        "search_keyword": extract("SEARCH_KEYWORD") or cat_name,
-        "angle":          extract("ANGLE"),
-        "labels":         [l.strip() for l in extract("LABELS").split(",") if l.strip()],
-        "meta_desc":      extract("META"),
-        "category":       cat_name,
-        "cat_id":         cat_id,
-        "selected_products": selected,  # ← Claude가 직접 선택한 상품 (재검색 불필요)
-    }
+    # 중복 감지 → 최대 2회 재시도
+    for attempt in range(2):
+        if not is_duplicate_topic(result["topic"], used_titles):
+            break
+        print(f"  [중복감지] '{result['topic'][:40]}' → 재시도 ({attempt+1}/2)")
+        retry_prompt = (prompt +
+            f"\n\n[필수] 방금 제안한 '{result['topic']}'는 기존 포스트와 너무 유사합니다. "
+            f"완전히 다른 상품 조합과 주제로 다시 선정하세요.")
+        msg2 = client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=600,
+            messages=[{"role": "user", "content": retry_prompt}]
+        )
+        result = parse_result(msg2.content[0].text)
+
+    if is_duplicate_topic(result["topic"], used_titles):
+        print(f"  [WARN] 재시도 후에도 유사 주제 — 그대로 진행")
+
+    return result
 
 
 def enrich_with_shorten(products: list) -> list:
@@ -295,6 +383,13 @@ if __name__ == "__main__":
     manual_topic    = os.environ.get("MANUAL_TOPIC", "").strip()
     manual_category = os.environ.get("MANUAL_CATEGORY", "").strip()
 
+    # Step 0: 기존 포스트 제목 수집 (중복방지)
+    blog_id       = os.environ.get("TARGET_BLOG_ID", "4422596386410826373")
+    refresh_token = os.environ.get("BLOGGER_REFRESH_TOKEN", "")
+    client_id     = os.environ.get("BLOGGER_CLIENT_ID", "")
+    client_secret = os.environ.get("BLOGGER_CLIENT_SECRET", "")
+    used_titles = load_recent_post_titles(blog_id, refresh_token, client_id, client_secret, max_posts=50)
+
     # Step 1: 카테고리 베스트 상품 수집
     if manual_category:
         # 카테고리 이름으로 ID 찾기
@@ -309,11 +404,11 @@ if __name__ == "__main__":
     # Step 2: Claude 주제 선정 (수동 주제 지정 시 스킵)
     if manual_topic:
         print(f"[수동] 주제 고정: {manual_topic}")
-        topic_data = generate_topic_with_claude(cat_id, cat_name, products)
+        topic_data = generate_topic_with_claude(cat_id, cat_name, products, used_titles)
         topic_data["topic"] = manual_topic  # 주제만 덮어쓰기
     else:
         print(f"Claude 주제 선정 중...")
-        topic_data = generate_topic_with_claude(cat_id, cat_name, products)
+        topic_data = generate_topic_with_claude(cat_id, cat_name, products, used_titles)
     print(f"\n선정 주제: {topic_data['topic']}")
     print(f"검색 키워드: {topic_data['search_keyword']}")
     print(f"라벨: {topic_data['labels']}")
