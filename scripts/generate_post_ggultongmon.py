@@ -411,7 +411,11 @@ def build_full_html(title: str, content: str, products: list,
                       "url": "https://ggultongmon.allsweep.xyz"},
         "inLanguage": "ko-KR",
         "articleSection": "쿠팡 상품 추천",
-        "image": hero_img,
+        "image": [
+            {"@type": "ImageObject", "url": hero_img, "width": 1200, "height": 1200},  # 1:1 — 홈피드 최적화
+            {"@type": "ImageObject", "url": hero_img, "width": 1200, "height": 900},   # 4:3
+            {"@type": "ImageObject", "url": hero_img, "width": 1200, "height": 630},   # 16:9 — 구글 디스커버
+        ],
     }, ensure_ascii=False, indent=2)
 
     json_ld_faq = ""
