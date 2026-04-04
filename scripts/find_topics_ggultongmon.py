@@ -33,15 +33,16 @@ def topic_similarity(a: str, b: str) -> float:
     bs = len(ba & bb) / len(ba | bb) if ba and bb else 0.0
     return (ws + bs) / 2.0
 
-def is_duplicate_topic(topic: str, used_titles: list, threshold: float = 0.30) -> bool:
-    """기존 포스트 제목과 유사도가 threshold 이상이면 중복으로 판단"""
+def is_duplicate_topic(topic: str, used_titles: list, threshold: float = 0.55) -> bool:
+    """기존 포스트 제목과 유사도가 threshold 이상이면 중복으로 판단
+    - 쿠팡 블로그는 상품 다양성이 있어 관대한 기준 적용 (0.55)
+    - 단순 카테고리/시즌 키워드 공유는 중복 아님 (제품이 다르면 OK)
+    - 진짜 중복: 거의 동일한 제목 구조 + 동일 상품군 + 동일 구매의도
+    """
     t = topic.lower()
     for u in used_titles:
         sim = topic_similarity(t, u)
         if sim >= threshold:
-            return True
-        # 핵심 키워드 3개 이상 겹쳐도 중복
-        if len(get_words(t) & get_words(u)) >= 3:
             return True
     return False
 
@@ -212,14 +213,33 @@ def get_best_products(cat_id: int, limit: int = 20) -> list:
         return []
 
 
+def load_last_category() -> int:
+    """직전 발행 카테고리 ID 로드 (연속 중복 방지)"""
+    state_file = os.path.join(BASE_DIR, "posts-ggultongmon", ".last_category.json")
+    try:
+        with open(state_file, encoding="utf-8") as f:
+            return json.load(f).get("cat_id", 0)
+    except Exception:
+        return 0
+
+def save_last_category(cat_id: int):
+    """직전 발행 카테고리 ID 저장"""
+    state_file = os.path.join(BASE_DIR, "posts-ggultongmon", ".last_category.json")
+    os.makedirs(os.path.dirname(state_file), exist_ok=True)
+    with open(state_file, "w", encoding="utf-8") as f:
+        json.dump({"cat_id": cat_id, "updated": datetime.now(timezone(timedelta(hours=9))).isoformat()}, f)
+
 def pick_category_and_products() -> tuple[int, str, list]:
     """
     요일별 테마 카테고리 우선 선택 → 시즌 키워드 힌트 반영 → 베스트 상품 수집
     상품이 5개 미만이면 다음 우선순위 카테고리로 재시도
+    연속 같은 카테고리 방지: 직전 카테고리와 같으면 다음 순위로 이동
     """
+    last_cat_id = load_last_category()
+
     # 시즌 힌트 확인 (50% 확률로 시즌 키워드 우선 적용 — 과도한 고정 방지)
     season = get_season_hint()
-    if season and random.random() < 0.5:
+    if season and random.random() < 0.5 and season["cat_id"] != last_cat_id:
         cat_id = season["cat_id"]
         cat_name = CATEGORIES.get(cat_id, "기타")
         products = get_best_products(cat_id, limit=30)
@@ -227,13 +247,17 @@ def pick_category_and_products() -> tuple[int, str, list]:
             print(f"[시즌] 카테고리: {cat_name}({cat_id}) | 키워드: {season['keyword']} | 상품 {len(products)}개")
             return cat_id, cat_name, products
 
-    # 요일별 테마 카테고리 순서대로 시도
+    # 요일별 테마 카테고리 순서대로 시도 (직전 카테고리 건너뜀)
     candidates = get_weekday_categories()
     weekday_names = ["월", "화", "수", "목", "금", "토", "일"]
     wd = datetime.now(timezone(timedelta(hours=9))).weekday()
     print(f"[요일테마] {weekday_names[wd]}요일 → 우선 카테고리: {[CATEGORIES.get(c,'?') for c in candidates[:3]]}")
+    if last_cat_id:
+        print(f"[연속방지] 직전 카테고리: {CATEGORIES.get(last_cat_id,'?')}({last_cat_id}) → 건너뜀")
 
-    for cat_id in candidates[:7]:  # 최대 7개 카테고리 시도
+    for cat_id in candidates[:8]:
+        if cat_id == last_cat_id:
+            continue  # 직전과 같은 카테고리 스킵
         cat_name = CATEGORIES.get(cat_id, "기타")
         products = get_best_products(cat_id, limit=30)
         if len(products) >= 5:
@@ -241,8 +265,10 @@ def pick_category_and_products() -> tuple[int, str, list]:
             return cat_id, cat_name, products
         time.sleep(0.3)
 
-    # fallback: 가전디지털 (항상 풍부)
-    return 1016, "가전디지털", get_best_products(1016, limit=30)
+    # fallback: 가전디지털 (직전 카테고리가 가전이면 주방으로)
+    fallback_id = 1013 if last_cat_id == 1016 else 1016
+    fallback_name = CATEGORIES.get(fallback_id, "가전디지털")
+    return fallback_id, fallback_name, get_best_products(fallback_id, limit=30)
 
 
 def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
@@ -273,11 +299,17 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
     if season:
         season_hint = f"\n[시즌 힌트] 이번 달 주목할 키워드: '{season['keyword']}' ({season['angle']})\n위 상품과 연결 가능하면 시즌 키워드를 반영하세요.\n"
 
-    # 최근 포스트 제목 컨텍스트 (중복 방지)
+    # 최근 포스트 제목 컨텍스트 (동일 제품군 중복 방지)
     recent_context = ""
     if used_titles:
         recent_list = "\n".join(f"- {t}" for t in used_titles[:20])
-        recent_context = f"\n[⚠️ 중복 금지] 아래 제목들과 유사한 주제는 절대 선정하지 마세요:\n{recent_list}\n"
+        recent_context = (
+            f"\n[참고: 기존 포스트 제목 목록]\n{recent_list}\n"
+            f"→ 같은 카테고리/시즌 키워드(캠핑, 봄 등)가 겹쳐도 괜찮습니다.\n"
+            f"→ 단, 거의 동일한 제품군을 동일한 구매의도로 다루는 경우만 피하세요.\n"
+            f"  (예: '에어프라이어 TOP3'가 이미 있으면 '에어프라이어 추천' 금지,\n"
+            f"   하지만 '봄 캠핑 버너'가 있어도 '봄 캠핑 랜턴'은 OK)\n"
+        )
 
     prompt = f"""오늘은 {today}. 쿠팡 '{cat_name}' 카테고리 실시간 베스트 상품 목록입니다.
 {season_hint}{recent_context}
@@ -290,7 +322,7 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
 - 소비자가 실제로 검색할 법한 구체적 키워드 (예: "탈모샴푸 추천" O, "뷰티" X)
 - 단순 소모품/식재료보다 정보성 포스트 가능한 상품 우선 (예: 기기/용품/건강식품)
 - 같은 카테고리라도 묶일 수 있는 상품이면 OK
-- [중복 금지] 목록의 제목과 주제·키워드가 겹치면 반드시 다른 주제 선정
+- 기존 포스트와 동일 제품군 + 동일 구매의도인 경우만 피하세요 (카테고리·시즌 키워드 공유는 OK)
 
 ===TOPIC===
 포스트 제목 (50자 이내, 이모지 금지, 숫자/비교/추천 포함)
@@ -418,6 +450,9 @@ if __name__ == "__main__":
 
     # Step 3: shortenUrl 추가
     topic_data["selected_products"] = enrich_with_shorten(topic_data["selected_products"])
+
+    # Step 3-1: 선택된 카테고리 저장 (연속 중복 방지)
+    save_last_category(topic_data["cat_id"])
 
     # Step 4: CI output
     output_file = os.environ.get("GITHUB_OUTPUT", "/tmp/ggultongmon_topic.txt")
