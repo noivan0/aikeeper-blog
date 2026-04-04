@@ -113,6 +113,11 @@ def main():
         meta_desc=META_DESC,
     )
     title = post_data["title"]
+    # 제목이 비어있거나 이상하면 TOPIC으로 fallback (빈 제목 → Blogger가 JSON-LD 첫줄을 slug로 사용하는 버그 방지)
+    if not title or len(title.strip()) < 5 or title.strip().startswith(("{", "@", "<", "http")):
+        print(f"[WARN] 제목 파싱 실패 ('{title[:30]}'), TOPIC으로 대체")
+        title = TOPIC
+    title = title.strip()
     print(f"[INFO] 파싱 완료: {title}")
     print(f"[INFO] 글자수: {post_data['char_count']:,}자")
     

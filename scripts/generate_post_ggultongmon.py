@@ -271,6 +271,10 @@ A4:
 
     # 이모지 제거 (제목만)
     title = re.sub(r'[\U00010000-\U0010ffff\U00002600-\U000027BF\U0001F300-\U0001F9FF]', '', title).strip()
+    # 제목 파싱 실패 시 topic으로 fallback (빈 제목 → Blogger가 JSON-LD 첫줄로 slug 생성하는 버그 방지)
+    if not title or len(title) < 5 or title.startswith(("{", "@", "<", "http")):
+        print(f"   [WARN] 제목 파싱 실패 → topic으로 대체")
+        title = topic
     char_count = len(content.replace(' ', '').replace('\n', ''))
     print(f"   생성 완료: {char_count:,}자 | 제목: {title[:40]}")
 
