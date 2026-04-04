@@ -44,92 +44,47 @@ def build_naver_content(
     labels: list, coupang_links: list, coupang_prices: list
 ) -> str:
     """
-    네이버 VIEW탭 / 스마트블록 최적화 전략:
-    1. 체류시간 확보 — 충분한 본문 길이 (500자 이상)
-    2. 키워드 반복 — 제목 키워드를 본문 3회 이상 자연스럽게
-    3. 쿠팡 링크 중간 삽입 (1~2개) — 체류 중 전환 유도
-    4. 백링크는 하단 1개 — 자연스러운 외부 연결
-    5. 볼드 강조 — 스크롤 중 핵심 키워드 눈에 띄게
-    6. 공감 유도 문구 — 마지막에 배치
-    7. 해시태그 — 본문 끝, 8개 이하
+    네이버 VIEW탭 최적화 포맷 v6 (링크 텍스트 방식)
+    구조:
+      파트너스 고지
+      인트로
+      요약
+      안내 문구
+      LINK_TEXT:쿠팡 바로가기 (7,360원)|https://link.coupang.com/...
+      LINK_TEXT:쿠팡 바로가기 (12,900원)|https://link.coupang.com/...
+      LINK_TEXT:꼼꼼한 비교 분석 전체 보기|https://ggultongmon...
+      공감 유도
+      해시태그
+
+    LINK_TEXT 방식:
+      - "텍스트" 입력 → Home → Shift+End (선택) → se-link-toolbar-button 클릭
+      - URL 입력창에 URL 입력 → Enter 확인
+      - URL 노출 없이 깔끔한 하이퍼링크 텍스트로 표시됨
     """
     label_str = " ".join([f"#{l.replace(' ','')}" for l in labels[:8]]) if labels \
                 else "#쿠팡추천 #가성비 #쿠팡파트너스"
-    
-    # 쿠팡 링크 블록 구성 (최대 2개 — 중간 삽입용)
-    coupang_mid = ""
-    if coupang_links:
-        link_lines = []
-        for i, (link, price) in enumerate(zip(coupang_links[:2], coupang_prices[:2] or [""] * 2)):
-            price_str = f" — {price}" if price else ""
-            link_lines.append(f"  → 쿠팡 최저가 확인{price_str}: {link}")
-        coupang_mid = "\n".join(link_lines)
 
-    # 3번째 링크 (있을 경우 하단 추가)
-    coupang_bottom = ""
-    if len(coupang_links) >= 3:
-        p = coupang_prices[2] if len(coupang_prices) > 2 else ""
-        price_str = f" ({p})" if p else ""
-        coupang_bottom = f"\n  → 3번째 상품 쿠팡 바로가기{price_str}: {coupang_links[2]}"
+    # 쿠팡 링크 블록: 텍스트|URL 형식
+    coupang_block = ""
+    for i, link in enumerate(coupang_links[:3]):
+        price = coupang_prices[i] if i < len(coupang_prices) else ""
+        label = f"쿠팡 바로가기 ({price})" if price else "쿠팡 바로가기"
+        coupang_block += f"LINK_TEXT:{label}|{link}\n"
 
-    content = f"""안녕하세요, 쇼핑정보 모아보기 소모입니다 :)
+    content = f"""이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.
 
-오늘은 **{title}** 정보를 정리해 드리려고요.
-쿠팡에서 직접 비교해 보면 생각보다 가격 차이나 성분 차이가 꽤 크더라고요.
-구매 전에 이 글 한 번만 읽으시면 후회 없는 선택 하실 수 있을 거예요!
+안녕하세요, 쇼핑정보 모아보기입니다.
 
-이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.
-
-
-◆ 핵심 요약 ◆
+{title}를 찾고 계신가요?
 
 {summary}
 
+직접 비교한 상세 후기와 쿠팡 최저가 링크를 아래에서 확인하세요.
 
-◆ 이런 분들께 추천드려요 ◆
+{coupang_block}
+LINK_TEXT:꼼꼼한 비교 분석 전체 보기 (꿀통몬스터)|{original_url}
 
-✔ **{title.split(' ')[0]}** 구매를 고민 중이신 분
-✔ 여러 제품을 비교하고 싶은데 시간이 없는 분
-✔ 가성비와 품질 두 마리 토끼를 잡고 싶은 분
-✔ 실제 사용자 후기와 성분 정보가 궁금한 분
-"""
-
-    # 쿠팡 링크 중간 삽입
-    if coupang_mid:
-        content += f"""
-
-◆ 쿠팡 최저가 바로 확인 ◆
-
-{coupang_mid}
-"""
-
-    content += f"""
-
-◆ 상품 선택 팁 ◆
-
-**첫 번째로 확인할 것은 가격 대비 용량**입니다.
-같은 브랜드라도 묶음 구성에 따라 장당 단가가 크게 달라집니다.
-쿠팡에서는 정기배송을 활용하면 추가 5~10% 할인을 받을 수 있어요.
-
-**두 번째는 성분과 인증 여부**입니다.
-민감한 피부라면 알레르기 유발 성분이 없는지 꼭 확인하세요.
-KC 인증 / 무형광 / 무향 여부를 체크하는 습관을 들이면 좋습니다.
-
-**세 번째는 시트 두께와 사이즈**입니다.
-한 장으로 넓은 면적을 닦을 수 있는 두껍고 큰 시트가 실용적이에요.
-실제 리뷰 사진을 꼭 확인해 보시길 권장드립니다.{coupang_bottom}
-
-
-◆ 자세한 비교 분석 보기 ◆
-
-더 꼼꼼한 상품 비교, 실제 사용 후기, 쿠팡 최저가 정보는
-아래 꿀통몬스터 포스팅에서 확인하실 수 있어요.
-
-▶ {original_url}
-
-
-오늘도 현명한 쇼핑 되세요! 😊
-도움이 됐다면 공감 꾹 눌러주세요 — 다음 포스팅에 큰 힘이 됩니다 ♥
+도움이 됐다면 공감 눌러주세요 :)
 
 {label_str}"""
 
@@ -245,29 +200,112 @@ async def type_title(page, title: str):
     await page.wait_for_timeout(300)
 
 
+async def insert_text_link(page, text: str, url: str):
+    """
+    텍스트 입력 후 se-link-toolbar-button으로 하이퍼링크 연결
+    1. 텍스트 타이핑
+    2. Home → Shift+End (현재 줄 전체 선택)
+    3. se-link-toolbar-button 클릭 (mousedown preventDefault로 선택 유지)
+    4. URL 입력 → Enter 확인
+    5. End → Enter (다음 줄)
+    """
+    await page.keyboard.type(text, delay=25)
+    await page.wait_for_timeout(200)
+    await page.keyboard.press("Home")
+    await page.wait_for_timeout(100)
+    await page.keyboard.press("Shift+End")
+    await page.wait_for_timeout(200)
+    # 링크 버튼 클릭 (포커스/선택 유지)
+    await page.evaluate("""
+        () => {
+            const btn = document.querySelector('.se-link-toolbar-button');
+            if (!btn) return;
+            btn.addEventListener('mousedown', (e) => e.preventDefault(), {once: true});
+            btn.click();
+        }
+    """)
+    await page.wait_for_timeout(1500)
+    url_input = await page.query_selector(".se-custom-layer-link-input")
+    if url_input:
+        await url_input.click()
+        await page.keyboard.type(url, delay=10)
+        await page.wait_for_timeout(300)
+        await page.keyboard.press("Enter")
+        await page.wait_for_timeout(400)
+    else:
+        await page.keyboard.press("Escape")
+    await page.keyboard.press("End")
+    await page.keyboard.press("Enter")
+    await page.wait_for_timeout(100)
+
+
 async def type_body(page, content: str):
+    """
+    본문 입력 전략:
+    - 일반 텍스트/빈 줄: 타이핑 후 Enter
+    - "LINK_TEXT:텍스트|URL" 줄: insert_text_link() 호출
+    """
     await page.mouse.click(400, 340)
     await page.wait_for_timeout(400)
     lines = content.split('\n')
     for i, line in enumerate(lines):
-        if line:
+        stripped = line.strip()
+        if stripped.startswith("LINK_TEXT:"):
+            payload = stripped[len("LINK_TEXT:"):]
+            if "|" in payload:
+                link_text, link_url = payload.split("|", 1)
+                await insert_text_link(page, link_text.strip(), link_url.strip())
+            else:
+                # | 없으면 그냥 텍스트로 처리
+                await page.keyboard.type(payload, delay=20)
+                await page.keyboard.press("Enter")
+        elif line:
             await page.keyboard.type(line, delay=20)
-        if i < len(lines) - 1:
-            await page.keyboard.press("Enter")
-    await page.wait_for_timeout(300)
+            if i < len(lines) - 1:
+                await page.keyboard.press("Enter")
+                await page.wait_for_timeout(80)
+        else:
+            if i < len(lines) - 1:
+                await page.keyboard.press("Enter")
+                await page.wait_for_timeout(80)
+    await page.wait_for_timeout(500)
 
 
 async def publish(page) -> str | None:
-    # layer_popup 한번 더 제거 후 JS 클릭
-    await page.evaluate("document.querySelectorAll('.layer_popup__i0QOY').forEach(el=>el.style.display='none')")
-    await page.evaluate("document.querySelector('.publish_btn__m9KHH').click()")
+    # layer_popup + 도움말 패널 모두 제거
+    await page.evaluate("""
+        () => {
+            document.querySelectorAll('.layer_popup__i0QOY').forEach(el => el.style.display='none');
+            // 우측 도움말 패널 닫기
+            const helpPanel = document.querySelector('.se-help-panel-close-button');
+            if (helpPanel) helpPanel.click();
+            // 도움말 컨테이너 자체 숨기기
+            const container = document.querySelector('.container__HW_tc, .se-help-panel');
+            if (container) container.style.display = 'none';
+        }
+    """)
+    await page.wait_for_timeout(800)
+
+    # 발행 버튼 탐색 (클래스명 변경 대비 fallback)
+    publish_btn = await page.query_selector(".publish_btn__m9KHH")
+    if not publish_btn:
+        publish_btn = await page.query_selector("button[class*='publish_btn']")
+    if not publish_btn:
+        print("  ❌ 발행 버튼 없음 — 페이지 상태 확인")
+        await page.screenshot(path="/tmp/naver_publish_fail.png")
+        return None
+
+    # JS click으로 오버레이 무시
+    await page.evaluate("btn => btn.click()", publish_btn)
     await page.wait_for_timeout(3000)
 
     confirm_btn = await page.query_selector(".confirm_btn__WEaBq")
     if not confirm_btn:
+        confirm_btn = await page.query_selector("button[class*='confirm_btn']")
+    if not confirm_btn:
         print("  ❌ 확인 버튼 없음")
         return None
-    await page.evaluate("document.querySelector('.confirm_btn__WEaBq').click()")
+    await page.evaluate("btn => btn.click()", confirm_btn)
     await page.wait_for_timeout(6000)
 
     url = page.url
