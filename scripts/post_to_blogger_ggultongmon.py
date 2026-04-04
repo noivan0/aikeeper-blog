@@ -211,6 +211,14 @@ def main():
     except Exception as e:
         print(f"[WARN] GitHub push 실패 (포스팅은 완료됨): {e}")
 
+    # 7. GitHub Actions output 내보내기 (크로스포스팅용)
+    gh_out = os.environ.get("GITHUB_OUTPUT", "")
+    if gh_out and post_url:
+        with open(gh_out, "a") as f:
+            f.write(f"post_url={post_url}\n")
+            f.write(f"post_title={title}\n")
+        print(f"[INFO] GitHub output 저장: post_url={post_url[:60]}")
+
 
 if __name__ == "__main__":
     main()
