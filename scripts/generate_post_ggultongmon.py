@@ -448,7 +448,7 @@ def build_full_html(title: str, content: str, products: list,
         f"{json_ld_faq}\n"
         f'<meta name="description" content="{meta_desc[:160].replace(chr(34),"&quot;")}">\n'
         f'<meta name="keywords" content="{keywords_str}">\n'
-        f'<meta name="robots" content="index, follow">\n'
+        f'<meta name="robots" content="index, follow, max-image-preview:large">\n'
         f'<meta property="og:title" content="{title.replace(chr(34),"&quot;")}">\n'
         f'<meta property="og:description" content="{meta_desc[:160].replace(chr(34),"&quot;")}">\n'
         f'<meta property="og:type" content="article">\n'

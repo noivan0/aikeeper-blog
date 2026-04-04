@@ -547,7 +547,7 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 <!-- canonical은 Blogger 테마가 포스트별 올바른 URL로 자동 삽입 — 여기서 중복 추가 안 함 -->
 <meta name="description" content="{safe_meta}">
 <meta name="keywords" content="{keywords}">
-<meta name="robots" content="index, follow">
+<meta name="robots" content="index, follow, max-image-preview:large">
 <meta name="author" content="{BLOG_NAME}">
 {f'<meta name="naver-site-verification" content="{NAVER_SITE_VERIFICATION}">' if NAVER_SITE_VERIFICATION else ''}
 
