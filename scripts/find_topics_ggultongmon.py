@@ -198,12 +198,29 @@ def enrich_with_shorten(products: list) -> list:
 
 
 if __name__ == "__main__":
-    # Step 1: 카테고리 베스트 상품 수집
-    cat_id, cat_name, products = pick_category_and_products()
+    # 수동 실행 시 env var로 주제/카테고리 지정 가능 (workflow_dispatch 지원)
+    manual_topic    = os.environ.get("MANUAL_TOPIC", "").strip()
+    manual_category = os.environ.get("MANUAL_CATEGORY", "").strip()
 
-    # Step 2: Claude 주제 선정
-    print(f"Claude 주제 선정 중...")
-    topic_data = generate_topic_with_claude(cat_id, cat_name, products)
+    # Step 1: 카테고리 베스트 상품 수집
+    if manual_category:
+        # 카테고리 이름으로 ID 찾기
+        cat_id   = next((cid for cid, name in CATEGORIES.items() if manual_category in name), None)
+        cat_name = manual_category if cat_id else "가전디지털"
+        cat_id   = cat_id or 1016
+        products = get_best_products(cat_id, limit=30)
+        print(f"[수동] 카테고리: {cat_name}({cat_id})")
+    else:
+        cat_id, cat_name, products = pick_category_and_products()
+
+    # Step 2: Claude 주제 선정 (수동 주제 지정 시 스킵)
+    if manual_topic:
+        print(f"[수동] 주제 고정: {manual_topic}")
+        topic_data = generate_topic_with_claude(cat_id, cat_name, products)
+        topic_data["topic"] = manual_topic  # 주제만 덮어쓰기
+    else:
+        print(f"Claude 주제 선정 중...")
+        topic_data = generate_topic_with_claude(cat_id, cat_name, products)
     print(f"\n선정 주제: {topic_data['topic']}")
     print(f"검색 키워드: {topic_data['search_keyword']}")
     print(f"라벨: {topic_data['labels']}")

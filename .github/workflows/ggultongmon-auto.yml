@@ -1,0 +1,104 @@
+name: ggultongmon 자동 포스팅
+
+on:
+  schedule:
+    # UTC 기준 (KST = UTC+9)
+    # KST: 08:00, 13:30, 20:00
+    - cron: '0  23 * * *'   # KST 08:00
+    - cron: '30 4  * * *'   # KST 13:30
+    - cron: '0  11 * * *'   # KST 20:00
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: '주제 (비워두면 자동)'
+        required: false
+        default: ''
+      category:
+        description: '카테고리 (비워두면 자동)'
+        required: false
+        default: ''
+      skip_delay:
+        description: '랜덤 딜레이 스킵 (true/false)'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  auto-post:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: self-hosted
+
+    env:
+      # 공통 API
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+      ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
+      BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      # Blogger OAuth
+      BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+      BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+      BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+      # 쿠팡 파트너스
+      COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+      COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+      # ggultongmon 블로그 설정
+      TARGET_BLOG_ID: "4422596386410826373"
+      TARGET_BLOG_URL: "https://ggultongmon.allsweep.xyz"
+      TARGET_BLOG_NAME: "꿀통 몬스터"
+      ADSENSE_PUB: "ca-pub-2597570939533872"
+      ADSENSE_IN_ARTICLE_SLOT: "6675974233"
+      ADSENSE_DISPLAY_SLOT: "8117048415"
+      POSTS_DIR: "posts-ggultongmon"
+      BLOG_TYPE: "COUPANG"
+      BLOG_NAME: "꿀통 몬스터"
+      COUPANG_SUB_ID: "ggultongmon"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 의존성 설치
+        run: pip3 install -r requirements.txt -q
+
+      - name: 랜덤 딜레이
+        if: github.event.inputs.skip_delay != 'true'
+        run: |
+          python3 -c "
+          import random, time
+          delay = random.randint(0, 10 * 60)
+          print(f'딜레이: {delay//60}분 {delay%60}초')
+          time.sleep(delay)
+          print('딜레이 완료')
+          "
+
+      - name: 주제 발굴 및 상품 선정
+        id: topic
+        env:
+          MANUAL_TOPIC: ${{ github.event.inputs.topic }}
+          MANUAL_CATEGORY: ${{ github.event.inputs.category }}
+        run: |
+          mkdir -p posts-ggultongmon
+          python3 scripts/find_topics_ggultongmon.py
+
+      - name: 포스트 생성 및 발행
+        id: post
+        env:
+          TOPIC: ${{ steps.topic.outputs.topic }}
+          SEARCH_KW: ${{ steps.topic.outputs.search_keyword }}
+          ANGLE: ${{ steps.topic.outputs.angle }}
+          CATEGORY: ${{ steps.topic.outputs.category }}
+          LABELS: ${{ steps.topic.outputs.labels }}
+          META_DESC: ${{ steps.topic.outputs.meta_desc }}
+          PRODUCTS_JSON: ${{ steps.topic.outputs.products_json }}
+          POSTS_OUTPUT_DIR: posts-ggultongmon
+        run: python3 scripts/post_to_blogger_ggultongmon.py
+
+      - name: Git 커밋 & 푸시
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add posts-ggultongmon/
+          git diff --staged --quiet || git commit -m "auto[ggultongmon]: $(date +'%Y-%m-%d %H:%M KST')"
+          git push || true
