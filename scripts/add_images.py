@@ -641,12 +641,96 @@ def collect_images(query: str, labels: list = None) -> list:
 
     # 최종 폴백: FALLBACK_IMAGES (Unsplash 고정 URL, 항상 안정적)
     if not all_images:
-        seed = int(hashlib.md5((query + datetime.date.today().isoformat()).encode()).hexdigest(), 16)
+        # query(제목) 기반 hash — 같은 날이라도 포스팅마다 다른 이미지
+        seed = int(hashlib.md5(query.encode()).hexdigest(), 16)
         fallback = FALLBACK_IMAGES[seed % len(FALLBACK_IMAGES)]
         all_images.append(fallback)
         print(f"  🔄 Fallback 이미지 사용: {fallback['url'][:60]}...")
 
     return all_images[:2]
+
+
+def insert_body_images(body: str, images: list, title: str = "") -> str:
+    """
+    본문 마크다운에 이미지 2개를 자연스럽게 삽입
+    - 1번째 이미지: 본문 2~3번째 h2 섹션 시작 직후
+    - 2번째 이미지: 본문 후반부 (h2 섹션 4~5번째 또는 본문 70% 지점)
+    이미 이미지가 있는 섹션은 건너뜀
+    """
+    if len(images) < 2:
+        return body
+
+    lines = body.split("\n")
+    h2_positions = [i for i, l in enumerate(lines) if l.startswith("## ")]
+
+    if len(h2_positions) < 2:
+        return body  # h2가 2개 미만이면 삽입 불가
+
+    # 삽입 위치: 2번째 h2 뒤, 4번째 h2 뒤 (없으면 마지막에서 30줄 전)
+    insert_positions = []
+
+    # 1번째 이미지: 2번째 h2 다음 빈 줄 이후
+    pos1_h2 = h2_positions[1] if len(h2_positions) > 1 else h2_positions[0]
+    # 해당 h2 뒤 첫 빈 줄 찾기
+    for i in range(pos1_h2 + 1, min(pos1_h2 + 5, len(lines))):
+        if lines[i].strip() == "":
+            insert_positions.append(i + 1)
+            break
+    else:
+        insert_positions.append(pos1_h2 + 2)
+
+    # 2번째 이미지: 4번째 h2 또는 후반 70% 지점
+    if len(h2_positions) >= 4:
+        pos2_h2 = h2_positions[3]
+    elif len(h2_positions) >= 3:
+        pos2_h2 = h2_positions[2]
+    else:
+        pos2_h2 = len(lines) - 30
+
+    for i in range(pos2_h2 + 1, min(pos2_h2 + 5, len(lines))):
+        if lines[i].strip() == "":
+            insert_positions.append(i + 1)
+            break
+    else:
+        insert_positions.append(max(pos2_h2 + 2, len(lines) - 20))
+
+    # 두 위치가 너무 가까우면 2번째 위치 조정
+    if len(insert_positions) == 2 and insert_positions[1] <= insert_positions[0] + 5:
+        insert_positions[1] = insert_positions[0] + max(20, len(lines) // 3)
+
+    # 이미지 HTML 생성 (마크다운 raw HTML 블록으로)
+    def make_img_md(img: dict, is_hero: bool = False) -> str:
+        url = img["url"]
+        alt = img.get("alt", title or "관련 이미지")[:100]
+        credit = img.get("credit", "")
+        credit_url = img.get("credit_url", "")
+        source_label = img.get("source_label", "📷 출처")
+
+        credit_html = (
+            f'<a href="{credit_url}" target="_blank" rel="noopener noreferrer"'
+            f' style="color:#4f6ef7;text-decoration:none;">{credit}</a>'
+            if credit_url else credit
+        )
+        return (
+            f'\n<figure style="margin:2em 0;text-align:center;">'
+            f'<img src="{url}" alt="{alt}" '
+            f'width="800" height="450" '
+            f'style="width:100%;max-width:760px;height:auto;aspect-ratio:16/9;'
+            f'border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.12);object-fit:cover;" '
+            f'loading="lazy" decoding="async"/>'
+            f'<figcaption style="font-size:.82em;color:#888;margin-top:.6em;line-height:1.5;">'
+            f'{source_label}: {credit_html}'
+            f'</figcaption></figure>\n'
+        )
+
+    # 역순으로 삽입 (인덱스 밀림 방지)
+    for idx, (pos, img) in enumerate(
+        sorted(zip(insert_positions, images[1:3]), key=lambda x: -x[0])
+    ):
+        img_md = make_img_md(img)
+        lines.insert(min(pos, len(lines)), img_md)
+
+    return "\n".join(lines)
 
 
 def inject_images(file_path: str) -> str:
@@ -661,23 +745,37 @@ def inject_images(file_path: str) -> str:
 
     print(f"  🔍 이미지 검색: {query}")
 
+    # 본문용 이미지 3개 수집 (hero 1 + 본문 2)
     images = collect_images(query, labels)
+    # 부족하면 추가 수집 시도
+    if len(images) < 3:
+        extra = collect_images(query + " technology", labels)
+        for img in extra:
+            if img["url"] not in {i["url"] for i in images}:
+                images.append(img)
+            if len(images) >= 3:
+                break
 
     hero = images[0]
     print(f"  ✅ 대표 이미지 확보 ({hero['source']})")
 
-    # ── front matter에 hero 정보만 저장 (본문에 이미지 HTML 직접 삽입 안 함) ──
-    # post_to_blogger.py가 hero_image_url을 읽어 본문 최상단에 단 1개 렌더링
-    hero_url   = hero["url"]
-    hero_alt   = hero.get("alt", "")
+    # ── 본문 이미지 삽입 (h2 섹션 사이) ─────────────────────────────
+    if len(images) >= 2:
+        body = insert_body_images(body, images, title)
+        print(f"  ✅ 본문 이미지 {min(len(images)-1, 2)}개 삽입")
+    else:
+        print(f"  ⚠️  이미지 부족 — 본문 삽입 스킵")
+
+    # ── front matter에 hero 정보 저장 ──────────────────────────────
+    hero_url          = hero["url"]
+    hero_alt          = hero.get("alt", "")
     hero_credit       = hero.get("credit", "")
     hero_credit_url   = hero.get("credit_url", "")
     hero_source_label = hero.get("source_label", "")
 
     if content.startswith("---"):
         parts = content.split("---", 2)
-        fm_text   = parts[1]
-        body_text = body  # 원본 body (이미지 HTML 미삽입)
+        fm_text = parts[1]
 
         def _set_fm(fm, key, val):
             val_escaped = val.replace('"', '\\"')
@@ -693,12 +791,12 @@ def inject_images(file_path: str) -> str:
         fm_text = _set_fm(fm_text, "hero_credit_url",   hero_credit_url)
         fm_text = _set_fm(fm_text, "hero_source_label", hero_source_label)
 
-        new_content = "---" + fm_text + "---\n\n" + body_text
+        new_content = "---" + fm_text + "---\n\n" + body
     else:
         new_content = body
 
     Path(file_path).write_text(new_content, encoding="utf-8")
-    print(f"  ✅ 이미지 삽입 완료 (front matter 저장, 본문 미삽입)")
+    print(f"  ✅ 이미지 처리 완료 (hero + 본문 {min(len(images)-1,2)}개)")
     return file_path
 
 

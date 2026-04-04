@@ -59,7 +59,7 @@ def build_naver_content(
     if coupang_prices:
         for i, price in enumerate(coupang_prices[:3]):
             rank = ["1위", "2위", "3위"][i]
-            price_summary += f"- {rank}: {price}\n"
+            price_summary += f"{rank}: {price}\n"
 
     content = f"""이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.
 
