@@ -848,22 +848,6 @@ def post_to_blogger(file_path: str):
                 print(f"  ✅ Indexing API 색인 요청 완료")
             except Exception as _ie:
                 print(f"  ℹ️  Indexing API 스킵 (비치명적): {_ie}")
-        # 3. 네이버 IndexNow — 네이버 검색 즉시 색인 요청
-        if post_url:
-            try:
-                import sys as _sys
-                _sys.path.insert(0, _os.path.join(_script_dir, "scripts"))
-                import naver_indexing as _naver
-                _naver.BLOG_URL = _os.environ.get("TARGET_BLOG_URL", _naver.BLOG_URL)
-                _result = _naver.request_indexnow(post_url)
-                if _result.get("status") == "ok":
-                    print(f"  ✅ 네이버 IndexNow 색인 요청 완료")
-                elif _result.get("status") == "skip":
-                    print(f"  ℹ️  네이버 IndexNow 스킵: {_result.get('reason','키 없음')}")
-                else:
-                    print(f"  ℹ️  네이버 IndexNow [{_result.get('http','')}]: {_result.get('reason','')}")
-            except Exception as _ne:
-                print(f"  ℹ️  네이버 IndexNow 스킵 (비치명적): {_ne}")
         return result
     except Exception as e:
         print(f"[ERROR] Blogger API 실패: {e}")

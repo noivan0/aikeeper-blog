@@ -124,8 +124,6 @@ jobs:
 
       - name: Deploy RSS and sitemap
         continue-on-error: true
-        env:
-          NAVER_INDEXNOW_KEY: ${{ secrets.NAVER_INDEXNOW_KEY }}
         run: |
           python3 scripts/generate_rss.py /tmp/rss.xml
           python3 scripts/generate_sitemap.py /tmp/sitemap.xml
