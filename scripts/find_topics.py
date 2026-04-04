@@ -1760,6 +1760,39 @@ def expand_domains(used_history, needed):
 
 # ── 최적 주제 선정 (Claude) ───────────────────────────────────────────────────
 
+def get_timeslot_angle() -> str:
+    """현재 KST 시간대에 맞는 앵글 지침 반환 — 카니발리제이션 방지"""
+    import datetime as _dt
+    hour = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=9))).hour
+    if 6 <= hour < 8:
+        return ("📰 핫뉴스형: 오늘 새벽~아침에 발표된 AI 뉴스/발표를 빠르게 정리하는 포스트. "
+                "제목에 '오늘', '방금', '발표' 등 시의성 표현 포함. 분량 1,500~2,000자.")
+    elif 8 <= hour < 10:
+        return ("🛠️ 실전활용형: 독자가 지금 당장 따라할 수 있는 튜토리얼/실습 가이드. "
+                "'하는 법', '따라하기', '설정하는 방법' 등 How-to 위주. 분량 2,500~3,500자.")
+    elif 10 <= hour < 12:
+        return ("📊 비교분석형: 두 AI 도구/모델/서비스를 실제 사용 관점에서 비교. "
+                "'vs', '비교', '차이', '선택 기준' 필수 포함. 분량 3,000~4,000자.")
+    elif 12 <= hour < 14:
+        return ("🔍 롱테일 Q&A형: 독자의 아주 구체적인 질문에 답하는 포스트. "
+                "제목이 질문 형태이거나 '~하면 어떻게 되나요?', '~가 가능한가요?' 식. 분량 2,000자.")
+    elif 14 <= hour < 16:
+        return ("📚 개념정리형: AI 기술 개념을 초보자도 이해하는 방식으로 설명. "
+                "'이란?', '뜻', '원리', '쉽게 설명' 포함. 분량 2,500~3,000자.")
+    elif 16 <= hour < 18:
+        return ("🌐 해외트렌드형: 해외 AI 커뮤니티(HN, Reddit, X)의 화제 내용을 한국어로 요약. "
+                "'해외', '실리콘밸리', '이번 주', '글로벌' 포함. 분량 2,000자.")
+    elif 18 <= hour < 20:
+        return ("💡 프롬프트/팁형: 실제 프롬프트 예시나 AI 활용 꿀팁. "
+                "'프롬프트', '꿀팁', '고수', '패턴', '방법' 포함. 분량 2,000~2,500자.")
+    elif 20 <= hour < 22:
+        return ("🧪 논문/연구형: 최신 AI 논문이나 연구 결과를 한국 독자가 이해하기 쉽게 해설. "
+                "'논문', '연구', '발표', '실험 결과' 포함. 분량 2,500~3,000자.")
+    else:
+        return ("📈 전망/인사이트형: AI 산업 동향이나 미래 전망을 분석하는 포스트. "
+                "'전망', '예측', '트렌드', '방향성', '2026' 포함. 분량 2,000~2,500자.")
+
+
 def select_best_topic(news_items, used_history):
     today_str     = datetime.date.today().strftime("%Y년 %m월 %d일")
     domain_queries = generate_domain_queries(used_history)
@@ -1803,10 +1836,16 @@ def select_best_topic(news_items, used_history):
                      if c >= 3 and len(w) >= 3 and w not in {"2026","있다","하는","이다","위한","대한"}]
     oversaturated_text = ", ".join(oversaturated[:15]) if oversaturated else "없음"
 
+    timeslot_angle = get_timeslot_angle()
+
     prompt = f"""오늘은 {today_str}입니다.
 
 당신은 구글 SEO 전문가이자 한국어 AI 콘텐츠 전략가입니다.
 AI키퍼 블로그(신생 한국어 AI 전문 블로그)의 다음 포스트 주제를 선정하세요.
+
+## ⏰ 이번 시간대 지정 앵글 (반드시 준수)
+{timeslot_angle}
+이 앵글에 맞는 주제를 선정하세요. 다른 유형과 중복되지 않도록 합니다.
 
 ---
 

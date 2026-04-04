@@ -1,8 +1,9 @@
 """
-꿀통몬스터 블로그 주제 발굴 v2
+꿀통몬스터 블로그 주제 발굴 v3
 - bestcategories API로 전체 카테고리 실시간 베스트 상품 수집
 - Claude가 상품명 분석 → 블로그 최적 주제 + 검색 키워드 도출
 - 가격 필터링: 로켓배송 우선, 카테고리별 최소 가격 적용
+- 요일별 카테고리 테마 + 시즌 키워드 선점 전략 적용
 """
 import os, sys, json, random, time, urllib.request, urllib.parse, anthropic
 from datetime import datetime, timezone, timedelta
@@ -57,6 +58,79 @@ MIN_PRICE = {
 # 블로그에 적합하지 않은 카테고리 (필요 시 비활성화)
 SKIP_CATEGORIES = {1019}  # 도서/음반 — 쿠팡 파트너스 수수료 낮음
 
+# ── 요일별 카테고리 테마 (0=월, 1=화, ..., 6=일) ───────────────────────
+# 각 요일에 우선 탐색할 카테고리 ID 리스트 (순서 = 우선순위)
+WEEKDAY_THEME = {
+    0: [1013, 1016, 1015],        # 월: 주방용품, 가전디지털, 홈인테리어
+    1: [1010, 1024, 1011],        # 화: 뷰티, 헬스/건강식품, 출산/유아동
+    2: [1001, 1002, 1030],        # 수: 여성패션, 남성패션, 유아동패션
+    3: [1017, 1018, 1020],        # 목: 스포츠/레저, 자동차용품, 완구/취미
+    4: [1016, 1013, 1014],        # 금: 가전디지털, 주방용품, 생활용품
+    5: [1011, 1012, 1029],        # 토: 출산/유아동, 식품, 반려동물용품
+    6: [1029, 1012, 1024],        # 일: 반려동물용품, 식품, 헬스/건강식품
+}
+
+# ── 시즌 키워드 우선순위 테이블 ────────────────────────────────────────
+# (월, 카테고리ID, 검색 키워드, 앵글)
+SEASON_KEYWORDS = [
+    # 4월
+    (4,  1017, "캠핑 장비 추천",          "봄 캠핑 시즌 선점"),
+    (4,  1014, "공기청정기 추천 미세먼지", "봄철 미세먼지 대비"),
+    (4,  1001, "봄 여성 가디건 추천",      "봄 패션 시즌"),
+    (4,  1002, "봄 남성 아우터 추천",      "봄 패션 시즌"),
+    # 5월
+    (5,  1020, "어버이날 선물 추천",       "어버이날 선물 성수기"),
+    (5,  1024, "스승의날 선물 건강식품",   "스승의날 선물 성수기"),
+    (5,  1016, "에어컨 추천 2026",         "여름 에어컨 사전 구매"),
+    (5,  1017, "등산 용품 추천",           "봄 등산 시즌"),
+    # 6월
+    (6,  1015, "냉감 침구 여름 추천",      "여름 침구 성수기"),
+    (6,  1014, "제습기 추천 장마",         "장마 대비 제습기"),
+    (6,  1017, "수영복 물놀이 용품",       "여름 물놀이 시즌"),
+    # 7월
+    (7,  1016, "선풍기 추천 가성비",       "여름 냉방 성수기"),
+    (7,  1012, "여름 간식 냉동식품",       "여름 식품 성수기"),
+    # 8월
+    (8,  1001, "가을 여성 패션 추천",      "가을 패션 사전 수요"),
+    (8,  1017, "홈트 운동기구 추천",       "운동 의지 시즌"),
+    # 9월
+    (9,  1012, "추석 선물세트 추천",       "추석 선물 성수기"),
+    (9,  1015, "가을 인테리어 소품",       "가을 인테리어 수요"),
+    # 10월
+    (10, 1001, "가을 여성 코트 추천",      "가을 패션 피크"),
+    (10, 1017, "등산 등 아웃도어 가을",    "단풍 시즌 아웃도어"),
+    # 11월
+    (11, 1015, "겨울 전기장판 추천",       "겨울 난방용품 성수기"),
+    (11, 1016, "공기청정기 추천 겨울",     "겨울 실내 공기질"),
+    # 12월
+    (12, 1020, "크리스마스 선물 장난감",   "크리스마스 선물 성수기"),
+    (12, 1016, "노트북 추천 연말 선물",    "연말 선물 성수기"),
+]
+
+def get_season_hint() -> dict | None:
+    """현재 월 기준 시즌 키워드 힌트 반환 (있을 경우)"""
+    now = datetime.now(timezone(timedelta(hours=9)))
+    month = now.month
+    candidates = [s for s in SEASON_KEYWORDS if s[0] == month]
+    if not candidates:
+        return None
+    # 당일 날짜 기반 결정론적 선택 (같은 날은 같은 시즌 힌트)
+    idx = now.day % len(candidates)
+    cat_id_season, kw_season, angle_season = candidates[idx][1], candidates[idx][2], candidates[idx][3]
+    return {"cat_id": cat_id_season, "keyword": kw_season, "angle": angle_season}
+
+
+def get_weekday_categories() -> list[int]:
+    """오늘 요일에 맞는 우선 카테고리 리스트 반환"""
+    weekday = datetime.now(timezone(timedelta(hours=9))).weekday()
+    theme = WEEKDAY_THEME.get(weekday, [])
+    # 나머지 카테고리도 fallback으로 포함
+    all_cats = [cid for cid in CATEGORIES if cid not in SKIP_CATEGORIES]
+    for cid in all_cats:
+        if cid not in theme:
+            theme.append(cid)
+    return theme
+
 
 def get_best_products(cat_id: int, limit: int = 20) -> list:
     """bestcategories API로 카테고리 베스트 상품 수집 + 가격 필터"""
@@ -82,14 +156,27 @@ def get_best_products(cat_id: int, limit: int = 20) -> list:
 
 def pick_category_and_products() -> tuple[int, str, list]:
     """
-    랜덤 카테고리 선택 → 베스트 상품 수집
-    상품이 5개 미만이면 다른 카테고리로 재시도
+    요일별 테마 카테고리 우선 선택 → 시즌 키워드 힌트 반영 → 베스트 상품 수집
+    상품이 5개 미만이면 다음 우선순위 카테고리로 재시도
     """
-    candidates = [cid for cid in CATEGORIES if cid not in SKIP_CATEGORIES]
-    random.shuffle(candidates)
+    # 시즌 힌트 확인 (50% 확률로 시즌 키워드 우선 적용 — 과도한 고정 방지)
+    season = get_season_hint()
+    if season and random.random() < 0.5:
+        cat_id = season["cat_id"]
+        cat_name = CATEGORIES.get(cat_id, "기타")
+        products = get_best_products(cat_id, limit=30)
+        if len(products) >= 5:
+            print(f"[시즌] 카테고리: {cat_name}({cat_id}) | 키워드: {season['keyword']} | 상품 {len(products)}개")
+            return cat_id, cat_name, products
 
-    for cat_id in candidates[:5]:  # 최대 5개 카테고리 시도
-        cat_name = CATEGORIES[cat_id]
+    # 요일별 테마 카테고리 순서대로 시도
+    candidates = get_weekday_categories()
+    weekday_names = ["월", "화", "수", "목", "금", "토", "일"]
+    wd = datetime.now(timezone(timedelta(hours=9))).weekday()
+    print(f"[요일테마] {weekday_names[wd]}요일 → 우선 카테고리: {[CATEGORIES.get(c,'?') for c in candidates[:3]]}")
+
+    for cat_id in candidates[:7]:  # 최대 7개 카테고리 시도
+        cat_name = CATEGORIES.get(cat_id, "기타")
         products = get_best_products(cat_id, limit=30)
         if len(products) >= 5:
             print(f"카테고리: {cat_name}({cat_id}) | 상품 {len(products)}개 수집")
@@ -119,8 +206,14 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list) -> di
         base_url=ANTHROPIC_BASE_URL,
     )
 
-    prompt = f"""오늘은 {today}. 쿠팡 '{cat_name}' 카테고리 실시간 베스트 상품 목록입니다.
+    # 시즌 힌트 추가 정보
+    season = get_season_hint()
+    season_hint = ""
+    if season:
+        season_hint = f"\n[시즌 힌트] 이번 달 주목할 키워드: '{season['keyword']}' ({season['angle']})\n위 상품과 연결 가능하면 시즌 키워드를 반영하세요.\n"
 
+    prompt = f"""오늘은 {today}. 쿠팡 '{cat_name}' 카테고리 실시간 베스트 상품 목록입니다.
+{season_hint}
 {product_summary}
 
 이 상품들을 분석해서 쿠팡 파트너스 블로그 '꿀통 몬스터' 포스트 주제를 선정하세요.

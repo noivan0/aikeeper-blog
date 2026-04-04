@@ -585,6 +585,22 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 <strong>📌 이 글 핵심 요약</strong><br>{safe_summary}
 </div>
 {hero_figure}{processed}
+
+<!-- ── E-E-A-T 저자 박스 (구글 신뢰도 신호) ── -->
+<div style="border:1px solid #e8eaf6;border-radius:14px;padding:18px 22px;margin:2.5em 0 1em;
+background:linear-gradient(135deg,#f8f9ff 0%,#fff 100%);display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+  <div style="flex-shrink:0;width:52px;height:52px;border-radius:50%;
+  background:linear-gradient(135deg,#4361ee,#7c3aed);display:flex;align-items:center;
+  justify-content:center;font-size:1.4em;">🤖</div>
+  <div style="flex:1;min-width:200px;">
+    <p style="margin:0 0 4px;font-weight:700;font-size:0.95em;color:#1a237e;">{BLOG_NAME} 에디터</p>
+    <p style="margin:0 0 6px;font-size:0.8em;color:#757575;">전문 콘텐츠 팀 · 검증된 정보와 실용적 인사이트 제공</p>
+    <p style="margin:0;font-size:0.8em;color:#9e9e9e;">
+      ✅ 최신 AI 뉴스·논문 기반 &nbsp;|&nbsp; ✅ 실전 검증 정보 &nbsp;|&nbsp;
+      ✅ 업데이트: {datetime.date.today().strftime("%Y년 %m월 %d일")}
+    </p>
+  </div>
+</div>
 </div>
 """
 
@@ -832,6 +848,22 @@ def post_to_blogger(file_path: str):
                 print(f"  ✅ Indexing API 색인 요청 완료")
             except Exception as _ie:
                 print(f"  ℹ️  Indexing API 스킵 (비치명적): {_ie}")
+        # 3. 네이버 IndexNow — 네이버 검색 즉시 색인 요청
+        if post_url:
+            try:
+                import sys as _sys
+                _sys.path.insert(0, _os.path.join(_script_dir, "scripts"))
+                import naver_indexing as _naver
+                _naver.BLOG_URL = _os.environ.get("TARGET_BLOG_URL", _naver.BLOG_URL)
+                _result = _naver.request_indexnow(post_url)
+                if _result.get("status") == "ok":
+                    print(f"  ✅ 네이버 IndexNow 색인 요청 완료")
+                elif _result.get("status") == "skip":
+                    print(f"  ℹ️  네이버 IndexNow 스킵: {_result.get('reason','키 없음')}")
+                else:
+                    print(f"  ℹ️  네이버 IndexNow [{_result.get('http','')}]: {_result.get('reason','')}")
+            except Exception as _ne:
+                print(f"  ℹ️  네이버 IndexNow 스킵 (비치명적): {_ne}")
         return result
     except Exception as e:
         print(f"[ERROR] Blogger API 실패: {e}")

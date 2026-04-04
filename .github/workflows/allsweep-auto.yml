@@ -50,6 +50,8 @@ jobs:
       BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
       BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
       BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+      # 네이버 IndexNow
+      NAVER_INDEXNOW_KEY: ${{ secrets.NAVER_INDEXNOW_KEY }}
       # allsweep 블로그 설정
       TARGET_BLOG_ID: "8772490249452917821"
       TARGET_BLOG_URL: "https://www.allsweep.xyz"
@@ -122,6 +124,33 @@ jobs:
               print(f'완료: {min(5,len(urls))}개')
           except Exception as e:
               print(f'색인 요청 스킵: {e}')
+          "
+
+      - name: 네이버 IndexNow 색인 요청
+        continue-on-error: true
+        run: |
+          python3 -c "
+          import urllib.request, re, sys, os
+          sys.path.insert(0, 'scripts')
+          try:
+              import naver_indexing as naver
+              naver.BLOG_URL = 'https://www.allsweep.xyz'
+              naver.ATOM_URL = 'https://www.allsweep.xyz/atom.xml'
+              with urllib.request.urlopen('https://www.allsweep.xyz/atom.xml', timeout=10) as r:
+                  content = r.read().decode()
+              urls = re.findall(r\"href='(https://www\.allsweep\.xyz/\d{4}/[^']+)'\", content)
+              for url in urls[:5]:
+                  result = naver.request_indexnow(url)
+                  status = result.get('status')
+                  if status == 'ok':
+                      print(f'✅ 네이버 색인: {url[:60]}')
+                  elif status == 'skip':
+                      print(f'ℹ️  스킵: {result.get(\"reason\",\"\")}')
+                      break
+                  else:
+                      print(f'ℹ️  [{result.get(\"http\",\"\")}] {url[:60]}')
+          except Exception as e:
+              print(f'네이버 IndexNow 스킵: {e}')
           "
 
       - name: Git 커밋 & 푸시
