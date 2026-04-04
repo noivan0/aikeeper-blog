@@ -297,6 +297,34 @@ def build_full_html(title: str, content: str, products: list,
         '', content, flags=re.IGNORECASE
     ).strip()
 
+    # TOC(목차) 자동 생성 — h2 헤딩 추출
+    h2_list = re.findall(r'^## (.+)$', content, re.MULTILINE)
+    toc_html = ""
+    if len(h2_list) >= 3:
+        toc_items = []
+        for i, h in enumerate(h2_list):
+            anchor = re.sub(r'[^\w가-힣]', '-', h).strip('-').lower()
+            toc_items.append(
+                f'<li style="margin:5px 0;">'
+                f'<a href="#{anchor}" style="color:{COLOR_ACCENT};text-decoration:none;'
+                f'font-size:0.93em;">▸ {h}</a></li>'
+            )
+        toc_html = (
+            f'<div style="background:#f0f4ff;border:1px solid #c5cae9;border-radius:12px;'
+            f'padding:16px 20px;margin:0 0 2em;">'
+            f'<p style="margin:0 0 10px;font-weight:700;color:{COLOR_ACCENT};font-size:0.95em;">'
+            f'📋 목차</p>'
+            f'<ul style="margin:0;padding-left:10px;list-style:none;">'
+            + "\n".join(toc_items) +
+            f'</ul></div>'
+        )
+        # 앵커 ID를 h2에 삽입 (Markdown 처리 전)
+        def add_anchor(m):
+            h = m.group(1)
+            anchor = re.sub(r'[^\w가-힣]', '-', h).strip('-').lower()
+            return f'## <span id="{anchor}"></span>{h}'
+        content = re.sub(r'^## (.+)$', add_anchor, content, flags=re.MULTILINE)
+
     # Markdown → HTML
     body_html = md_lib.markdown(
         content,
@@ -376,6 +404,15 @@ def build_full_html(title: str, content: str, products: list,
 .gg-post tr td:first-child{{font-weight:600;}}
 .gg-post blockquote{{background:#e8f5e9;border-left:4px solid #43a047;
   padding:12px 16px;margin:1.5em 0;border-radius:0 8px 8px 0;}}
+/* 비교표 추천 행 강조 */
+.gg-post table tr.best-pick td{{background:#fff8e1!important;font-weight:700;
+  border-left:3px solid {COLOR_PRIMARY};}}
+.gg-post table tr td:has(span.best){{background:#fff8e1;}}
+/* FAQ 섹션 스타일 */
+.gg-post .faq-item{{border:1px solid #e8eaf6;border-radius:10px;margin:10px 0;
+  padding:14px 18px;background:#fafafa;}}
+.gg-post .faq-q{{font-weight:700;color:{COLOR_ACCENT};margin:0 0 6px;}}
+.gg-post .faq-a{{color:#444;margin:0;font-size:0.95em;line-height:1.7;}}
 /* 모바일 상품카드 최적화 */
 @media(max-width:480px){{
   .gg-post .prod-card img{{width:100px!important;height:100px!important;}}
@@ -384,6 +421,26 @@ def build_full_html(title: str, content: str, products: list,
     border-bottom:1px solid #e8eaf6;}}
 }}
 </style>"""
+
+    # FAQ → 구조화된 HTML 카드 (JSON-LD와 별도로 시각적으로도 렌더링)
+    faq_html = ""
+    if faq_items:
+        faq_card_items = "".join(
+            f'<div class="faq-item">'
+            f'<p class="faq-q">Q. {item["name"]}</p>'
+            f'<p class="faq-a">{item["acceptedAnswer"]["text"]}</p>'
+            f'</div>'
+            for item in faq_items
+        )
+        faq_html = (
+            f'<h2 id="faq"><span id="faq"></span>자주 묻는 질문 (FAQ)</h2>\n'
+            f'<div class="faq-section">{faq_card_items}</div>\n'
+        )
+        # body_html 내 기존 FAQ h2 중복 제거 (Claude가 본문에 넣은 경우)
+        body_html = re.sub(
+            r'<h2[^>]*>[^<]*FAQ[^<]*</h2>.*?(?=<h2|$)',
+            '', body_html, flags=re.DOTALL | re.IGNORECASE
+        )
 
     return (
         f"{thumb_html}"
@@ -401,7 +458,9 @@ def build_full_html(title: str, content: str, products: list,
         f'<div class="gg-post" lang="ko">\n\n'
         f"{PARTNERS_NOTICE_HTML}\n\n"
         f"{quick_bar_html}\n\n"
+        f"{toc_html}\n\n"
         f"{body_html}\n\n"
+        f"{faq_html}\n\n"
         f"</div>\n"
     )
 

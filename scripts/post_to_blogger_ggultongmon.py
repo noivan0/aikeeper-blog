@@ -155,7 +155,21 @@ def main():
     print(f"✅ 포스팅 완료: {title}")
     print(f"   URL: {post_url}")
     
-    # 5. 마크다운 백업
+    # 5. Google Indexing API — 즉시 색인 요청
+    if post_url:
+        try:
+            sys.path.insert(0, str(BASE_DIR / "scripts"))
+            import indexing_api as idx
+            idx_token = idx.get_indexing_token()
+            idx_result = idx.request_indexing(post_url, idx_token)
+            if "error" in idx_result:
+                print(f"  ℹ️  Indexing API [{idx_result['error']}]: {idx_result.get('message','')[:80]}")
+            else:
+                print(f"  ✅ Indexing API 색인 요청 완료: {post_url[:60]}")
+        except Exception as e:
+            print(f"  ℹ️  Indexing API 스킵 (비치명적): {e}")
+
+    # 6. 마크다운 백업
     md_path = save_markdown(title, post_data["content"], LABELS, products)
     print(f"[INFO] 마크다운 저장: {md_path}")
     

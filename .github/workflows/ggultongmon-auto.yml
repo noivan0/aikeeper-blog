@@ -95,6 +95,29 @@ jobs:
           POSTS_OUTPUT_DIR: posts-ggultongmon
         run: python3 scripts/post_to_blogger_ggultongmon.py
 
+      - name: Google Indexing API
+        continue-on-error: true
+        run: |
+          python3 -c "
+          import urllib.request, re, sys
+          sys.path.insert(0, 'scripts')
+          try:
+              import indexing_api as idx
+              token = idx.get_indexing_token()
+              with urllib.request.urlopen('https://ggultongmon.allsweep.xyz/atom.xml', timeout=10) as r:
+                  content = r.read().decode()
+              urls = re.findall(r\"href='(https://ggultongmon\.allsweep\.xyz/\d{4}/[^']+)'\", content)
+              for url in urls[:3]:
+                  result = idx.request_indexing(url, token)
+                  if 'error' in result:
+                      print(f'ℹ️  [{result[\"error\"]}] {url[:60]}')
+                  else:
+                      print(f'✅ 색인 요청: {url[:60]}')
+              print(f'완료: {min(3,len(urls))}개')
+          except Exception as e:
+              print(f'색인 요청 스킵: {e}')
+          "
+
       - name: Git 커밋 & 푸시
         run: |
           git config user.name "github-actions[bot]"
