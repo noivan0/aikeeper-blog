@@ -1,30 +1,23 @@
 """
-꿀통몬스터 → prosweep 네이버 블로그 크로스포스팅 v2
-- 네이버 C-RANK / VIEW탭 / 스마트블록 최적화 포맷
-- 쿠팡 파트너스 링크 직접 삽입 + 백링크 병행 전략
-- Xvfb + headed Playwright (SE 에디터 렌더링)
-
-사용법:
-  NAVER_ID=xxx NAVER_PW=xxx \\
-  POST_TITLE="제목" POST_URL="https://..." POST_SUMMARY="요약" \\
-  COUPANG_LINKS="url1|url2|url3" COUPANG_PRICES="7,360원|12,900원|10,900원" \\
-  LABELS="태그1,태그2" \\
-  python3 post_to_naver_prosweep.py
+꿀통몬스터 → prosweep 네이버 블로그 크로스포스팅 v9
+- OG 카드: 꿀통몬스터 원본 포스팅 URL 1개
+- 쿠팡 링크: 본문 텍스트 가격 정보로 표시 (LINK_TEXT 방식)
+- URL 텍스트 줄 삭제: JS DOM 직접 제거
+- 서버 cron 직접 실행 (GitHub Actions 제외)
 """
 import os, sys, asyncio, json, time, re
 from pathlib import Path
 
-# ── 환경변수 ──────────────────────────────────────────────────────
 NAVER_ID        = os.environ.get("NAVER_ID", "")
 NAVER_PW        = os.environ.get("NAVER_PW", "")
 BLOG_ID         = os.environ.get("NAVER_BLOG_ID", "prosweep")
 CATEGORY_NO     = os.environ.get("NAVER_CATEGORY_NO", "6")
 POST_TITLE      = os.environ.get("POST_TITLE", "")
-POST_URL        = os.environ.get("POST_URL", "")           # ggultongmon 원본 URL (백링크)
+POST_URL        = os.environ.get("POST_URL", "")
 POST_SUMMARY    = os.environ.get("POST_SUMMARY", "")
 LABELS_STR      = os.environ.get("LABELS", "")
-COUPANG_LINKS   = os.environ.get("COUPANG_LINKS", "")      # "|" 구분 쿠팡 링크들
-COUPANG_PRICES  = os.environ.get("COUPANG_PRICES", "")     # "|" 구분 가격들
+COUPANG_LINKS   = os.environ.get("COUPANG_LINKS", "")
+COUPANG_PRICES  = os.environ.get("COUPANG_PRICES", "")
 SESSION_FILE    = os.environ.get("NAVER_SESSION_FILE",
                    str(Path(__file__).parent.parent / "naver_session.json"))
 
@@ -38,129 +31,112 @@ LAUNCH_ARGS  = [
 WRITE_URL = f"https://blog.naver.com/{BLOG_ID}/postwrite?categoryNo={CATEGORY_NO}"
 
 
-# ── 네이버 C-RANK / VIEW탭 최적화 포맷 v2 ─────────────────────────
+# ── 본문 빌더 ────────────────────────────────────────────────────
 def build_naver_content(
     title: str, summary: str, original_url: str,
     labels: list, coupang_links: list, coupang_prices: list
 ) -> str:
     """
-    네이버 VIEW탭 최적화 포맷 v6 (링크 텍스트 방식)
     구조:
       파트너스 고지
-      인트로
-      요약
-      안내 문구
-      LINK_TEXT:쿠팡 바로가기 (7,360원)|https://link.coupang.com/...
-      LINK_TEXT:쿠팡 바로가기 (12,900원)|https://link.coupang.com/...
-      LINK_TEXT:꼼꼼한 비교 분석 전체 보기|https://ggultongmon...
-      공감 유도
+      후킹 인트로
+      요약 (summary)
+      쿠팡 가격 정보 텍스트 (링크는 LINK_TEXT 방식으로 별도 처리)
+      CARD_URL:{original_url}   ← 꿀통몬스터 원본 OG 카드 1개
+      공감 요청
       해시태그
 
-    LINK_TEXT 방식:
-      - "텍스트" 입력 → Home → Shift+End (선택) → se-link-toolbar-button 클릭
-      - URL 입력창에 URL 입력 → Enter 확인
-      - URL 노출 없이 깔끔한 하이퍼링크 텍스트로 표시됨
+    본문에 쿠팡 링크는 LINK_TEXT:텍스트|URL 형식으로 삽입
     """
     label_str = " ".join([f"#{l.replace(' ','')}" for l in labels[:8]]) if labels \
                 else "#쿠팡추천 #가성비 #쿠팡파트너스"
 
-    # 쿠팡 링크 블록: 텍스트|URL 형식
-    coupang_block = ""
+    # 쿠팡 가격 정보 블록 (LINK_TEXT 방식)
+    price_block = ""
     for i, link in enumerate(coupang_links[:3]):
         price = coupang_prices[i] if i < len(coupang_prices) else ""
-        label = f"쿠팡 바로가기 ({price})" if price else "쿠팡 바로가기"
-        coupang_block += f"LINK_TEXT:{label}|{link}\n"
+        rank = ["1위", "2위", "3위"][i]
+        label = f"쿠팡에서 확인하기 ({price})" if price else "쿠팡에서 확인하기"
+        price_block += f"💰 {rank}: LINK_TEXT:{label}|{link}\n"
 
     content = f"""이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.
 
-안녕하세요, 쇼핑정보 모아보기입니다.
+안녕하세요, 쇼핑정보 모아보기입니다 😊
 
-{title}를 찾고 계신가요?
+{title}를 찾고 계신가요? 저도 고민 많이 했는데 직접 비교해봤습니다.
 
 {summary}
 
-직접 비교한 상세 후기와 쿠팡 최저가 링크를 아래에서 확인하세요.
+가격 비교 먼저 보실 분들을 위해 쿠팡 최저가 링크부터 공유드립니다 👇
 
-{coupang_block}
-LINK_TEXT:꼼꼼한 비교 분석 전체 보기 (꿀통몬스터)|{original_url}
+{price_block}
+더 꼼꼼한 성분 비교, 사용 후기, 가성비 분석이 궁금하다면 아래 포스팅을 확인해 주세요. 실제로 써보고 정리한 내용입니다.
 
-도움이 됐다면 공감 눌러주세요 :)
+CARD_URL:{original_url}
+
+도움이 됐다면 공감 ❤️ 한 번 눌러주시면 큰 힘이 됩니다!
 
 {label_str}"""
-
     return content.strip()
 
 
 # ── atom.xml에서 쿠팡 링크/가격 추출 ─────────────────────────────
 def extract_coupang_data_from_blogger(post_url: str) -> tuple[list, list]:
-    """ggultongmon 포스트에서 쿠팡 링크·가격 추출"""
-    import urllib.request
+    import urllib.request, xml.etree.ElementTree as ET
     try:
-        feed_req = urllib.request.Request(
+        req = urllib.request.Request(
             "https://ggultongmon.allsweep.xyz/atom.xml",
             headers={"User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache"}
         )
-        import xml.etree.ElementTree as ET
-        with urllib.request.urlopen(feed_req, timeout=10) as r:
+        with urllib.request.urlopen(req, timeout=10) as r:
             raw = r.read().decode()
         root = ET.fromstring(raw)
         ns = {'atom': 'http://www.w3.org/2005/Atom'}
         entries = root.findall('atom:entry', ns)
-
-        # URL로 매칭되는 entry 탐색 (없으면 최신글)
         target = None
         for e in entries:
             c = e.findtext('atom:content', namespaces=ns) or ''
-            canon = re.search(r'"url"\s*:\s*"(' + re.escape(post_url) + r')"', c)
-            if canon:
-                target = e
-                break
+            if re.search(re.escape(post_url), c):
+                target = e; break
         if not target:
             target = entries[0]
-
         content = target.findtext('atom:content', namespaces=ns) or ''
-
-        # 유니크 쿠팡 링크
         all_links = re.findall(r'href=["\']+(https://link\.coupang\.com/[^"\'>\s]+)', content)
         unique_links = list(dict.fromkeys(all_links))[:3]
-
-        # 가격
         prices_raw = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+)원', content)
         unique_prices = [p + "원" for p in list(dict.fromkeys(prices_raw))[:3]]
-
         return unique_links, unique_prices
     except Exception as ex:
         print(f"  [warn] 쿠팡 데이터 추출 실패: {ex}")
         return [], []
 
 
-# ── 로그인 & 세션 관리 ────────────────────────────────────────────
+# ── 로그인 & 세션 ─────────────────────────────────────────────────
 async def ensure_session(context, page) -> bool:
     await page.goto("https://blog.naver.com", timeout=20000)
     await page.wait_for_timeout(2000)
-    for frame in page.frames:
-        try:
-            logout = await frame.query_selector("a[href*='nidlogin.logout']")
-            if logout:
-                print("  세션 유효 ✅")
-                return True
-        except:
-            pass
-    print("  세션 만료 → 재로그인...")
+    login_ok = await page.evaluate("() => document.cookie.includes('NID_SES')")
+    if login_ok:
+        print("  세션 유효 ✅")
+        return True
     return await do_login(page, context)
-
 
 async def do_login(page, context) -> bool:
     if not NAVER_ID or not NAVER_PW:
         print("  ❌ NAVER_ID/PW 없음")
         return False
-    await page.goto("https://nid.naver.com/nidlogin.login", timeout=20000)
+    await page.goto("https://nid.naver.com/nidlogin.login?mode=form&url=https://www.naver.com", timeout=20000)
     await page.wait_for_timeout(3000)
     await page.locator("#id").click()
-    await page.keyboard.type(NAVER_ID, delay=100)
+    for c in NAVER_ID:
+        await page.keyboard.press(c); await asyncio.sleep(0.12)
+    await page.wait_for_timeout(400)
     await page.locator("#pw").click()
-    await page.keyboard.type(NAVER_PW, delay=100)
-    await page.locator(".btn_login").first.click()
+    for c in NAVER_PW:
+        await page.keyboard.press(c); await asyncio.sleep(0.1)
+    await page.wait_for_timeout(400)
+    btn = await page.query_selector(".btn_login")
+    if btn: await btn.click()
     await page.wait_for_timeout(5000)
     if "nidlogin" not in page.url:
         await context.storage_state(path=SESSION_FILE)
@@ -170,52 +146,47 @@ async def do_login(page, context) -> bool:
     return False
 
 
-# ── SE 에디터 조작 ───────────────────────────────────────────────
+# ── 팝업 처리 ─────────────────────────────────────────────────────
 async def handle_popups(page):
-    try:
-        close_btn = await page.query_selector(".se-help-panel-close-button")
-        if close_btn:
-            await close_btn.click()
-            await page.wait_for_timeout(300)
-    except:
-        pass
     await page.evaluate("""
         () => {
             const p = document.querySelector('.__se-pop-layer');
-            if (!p) return;
-            const btns = p.querySelectorAll('button');
-            for (const b of btns) { if (b.innerText.trim() === '취소') { b.click(); break; } }
+            if (p) {
+                for (const b of p.querySelectorAll('button')) {
+                    if (b.innerText.trim() === '취소') { b.click(); break; }
+                }
+            }
         }
     """)
-    await page.wait_for_timeout(1500)
-    # layer_popup 제거
-    await page.evaluate("document.querySelectorAll('.layer_popup__i0QOY').forEach(el=>el.style.display='none')")
+    await page.wait_for_timeout(1200)
+    hb = await page.query_selector(".se-help-panel-close-button")
+    if hb: await hb.click(); await page.wait_for_timeout(400)
+    await page.evaluate("() => document.querySelectorAll('.layer_popup__i0QOY').forEach(el=>el.style.display='none')")
     await page.wait_for_timeout(300)
 
 
+# ── 제목 입력 ─────────────────────────────────────────────────────
 async def type_title(page, title: str):
-    await page.mouse.click(400, 232)
+    title_comp = await page.query_selector(".se-component.se-documentTitle")
+    if title_comp:
+        box = await title_comp.bounding_box()
+        await page.mouse.click(box['x'] + 200, box['y'] + box['height'] / 2)
+    else:
+        await page.mouse.click(590, 232)
     await page.wait_for_timeout(400)
-    await page.keyboard.type(title, delay=50)
+    await page.keyboard.type(title, delay=40)
     await page.wait_for_timeout(300)
 
 
+# ── LINK_TEXT 하이퍼링크 삽입 ─────────────────────────────────────
 async def insert_text_link(page, text: str, url: str):
-    """
-    텍스트 입력 후 se-link-toolbar-button으로 하이퍼링크 연결
-    1. 텍스트 타이핑
-    2. Home → Shift+End (현재 줄 전체 선택)
-    3. se-link-toolbar-button 클릭 (mousedown preventDefault로 선택 유지)
-    4. URL 입력 → Enter 확인
-    5. End → Enter (다음 줄)
-    """
+    """텍스트 입력 → se-link-toolbar-button으로 하이퍼링크 연결"""
     await page.keyboard.type(text, delay=25)
     await page.wait_for_timeout(200)
     await page.keyboard.press("Home")
     await page.wait_for_timeout(100)
     await page.keyboard.press("Shift+End")
     await page.wait_for_timeout(200)
-    # 링크 버튼 클릭 (포커스/선택 유지)
     await page.evaluate("""
         () => {
             const btn = document.querySelector('.se-link-toolbar-button');
@@ -239,63 +210,136 @@ async def insert_text_link(page, text: str, url: str):
     await page.wait_for_timeout(100)
 
 
+# ── OG 카드 삽입 (꿀통몬스터 URL) ────────────────────────────────
+async def insert_og_card(page, url: str):
+    """
+    URL 타이핑 → Enter → OG 카드 자동 생성 → URL 텍스트 DOM 직접 제거
+    """
+    await page.keyboard.type(url, delay=12)
+    await page.keyboard.press("Enter")
+    await page.wait_for_timeout(7000)  # 카드 생성 대기
+
+    # ── URL 텍스트 단락 DOM 직접 제거 (JS) ────────────────────────
+    # SE 에디터의 React 상태를 건드리지 않고 DOM만 제거하면
+    # 발행 시 서버에서 재렌더링되므로 실제 포스트에서는 사라짐
+    # URL 텍스트 단락 삭제 — 단락이 한 줄(h≈29)이므로 Home→Shift+End→Backspace 정확히 삭제
+    for attempt in range(5):
+        info = await page.evaluate("""
+            () => {
+                const paras = Array.from(document.querySelectorAll('.se-text-paragraph'));
+                for (const para of paras) {
+                    const txt = para.innerText || '';
+                    if (txt.trim().match(/^https?:\\/\\//) && txt.trim().length > 5) {
+                        const r = para.getBoundingClientRect();
+                        if (r.width < 10) continue;
+                        return {
+                            x: Math.round(r.x + 60),
+                            y: Math.round(r.y + r.height / 2),  // 단락 중앙
+                            h: Math.round(r.height)
+                        };
+                    }
+                }
+                return null;
+            }
+        """)
+        if not info:
+            break
+        # 단락 중앙 클릭 → Home → Shift+End → Backspace
+        await page.mouse.click(info['x'], info['y'])
+        await page.wait_for_timeout(150)
+        await page.keyboard.press("Home")
+        await page.wait_for_timeout(60)
+        await page.keyboard.press("Shift+End")
+        await page.wait_for_timeout(60)
+        await page.keyboard.press("Backspace")
+        await page.wait_for_timeout(300)
+        print(f"    URL 단락 삭제 (attempt {attempt+1}, h={info['h']})")
+    await page.wait_for_timeout(300)
+
+    # 커서를 마지막 빈 단락으로 이동
+    last_empty = await page.evaluate("""
+        () => {
+            const paras = Array.from(document.querySelectorAll('.se-text-paragraph'));
+            for (let i = paras.length - 1; i >= 0; i--) {
+                const txt = (paras[i].innerText || '').trim();
+                const r = paras[i].getBoundingClientRect();
+                if (txt === '' && r.width > 0 && r.y > 200) {
+                    return {x: Math.round(r.x + 60), y: Math.round(r.y + 5)};
+                }
+            }
+            return null;
+        }
+    """)
+    if last_empty:
+        await page.mouse.click(last_empty['x'], last_empty['y'])
+        await page.wait_for_timeout(200)
+        await page.keyboard.press("End")
+
+
+# ── 본문 입력 ─────────────────────────────────────────────────────
 async def type_body(page, content: str):
-    """
-    본문 입력 전략:
-    - 일반 텍스트/빈 줄: 타이핑 후 Enter
-    - "LINK_TEXT:텍스트|URL" 줄: insert_text_link() 호출
-    """
-    await page.mouse.click(400, 340)
-    await page.wait_for_timeout(400)
+    # 본문 첫 단락 클릭
+    body_comp = await page.query_selector(".se-component.se-text")
+    if body_comp:
+        box = await body_comp.bounding_box()
+        await page.mouse.click(box['x'] + 200, box['y'] + box['height'] / 2)
+    else:
+        await page.mouse.click(590, 380)
+    await page.wait_for_timeout(500)
+
     lines = content.split('\n')
     for i, line in enumerate(lines):
         stripped = line.strip()
-        if stripped.startswith("LINK_TEXT:"):
-            payload = stripped[len("LINK_TEXT:"):]
+
+        if stripped.startswith("CARD_URL:"):
+            url = stripped[len("CARD_URL:"):]
+            await insert_og_card(page, url)
+
+        elif "LINK_TEXT:" in stripped:
+            # 줄 앞 텍스트 처리
+            before = stripped[:stripped.index("LINK_TEXT:")]
+            payload = stripped[stripped.index("LINK_TEXT:") + len("LINK_TEXT:"):]
+            if before:
+                await page.keyboard.type(before, delay=18)
             if "|" in payload:
                 link_text, link_url = payload.split("|", 1)
                 await insert_text_link(page, link_text.strip(), link_url.strip())
             else:
-                # | 없으면 그냥 텍스트로 처리
-                await page.keyboard.type(payload, delay=20)
+                await page.keyboard.type(payload, delay=18)
                 await page.keyboard.press("Enter")
+
         elif line:
-            await page.keyboard.type(line, delay=20)
+            await page.keyboard.type(line, delay=18)
             if i < len(lines) - 1:
                 await page.keyboard.press("Enter")
-                await page.wait_for_timeout(80)
+                await page.wait_for_timeout(70)
         else:
             if i < len(lines) - 1:
                 await page.keyboard.press("Enter")
-                await page.wait_for_timeout(80)
+                await page.wait_for_timeout(70)
+
     await page.wait_for_timeout(500)
 
 
+# ── 발행 ─────────────────────────────────────────────────────────
 async def publish(page) -> str | None:
-    # layer_popup + 도움말 패널 모두 제거
     await page.evaluate("""
         () => {
-            document.querySelectorAll('.layer_popup__i0QOY').forEach(el => el.style.display='none');
-            // 우측 도움말 패널 닫기
-            const helpPanel = document.querySelector('.se-help-panel-close-button');
-            if (helpPanel) helpPanel.click();
-            // 도움말 컨테이너 자체 숨기기
-            const container = document.querySelector('.container__HW_tc, .se-help-panel');
-            if (container) container.style.display = 'none';
+            document.querySelectorAll('.layer_popup__i0QOY').forEach(el=>el.style.display='none');
+            const hp = document.querySelector('.container__HW_tc, .se-help-panel');
+            if (hp) hp.style.display = 'none';
         }
     """)
-    await page.wait_for_timeout(800)
+    await page.wait_for_timeout(600)
 
-    # 발행 버튼 탐색 (클래스명 변경 대비 fallback)
     publish_btn = await page.query_selector(".publish_btn__m9KHH")
     if not publish_btn:
         publish_btn = await page.query_selector("button[class*='publish_btn']")
     if not publish_btn:
-        print("  ❌ 발행 버튼 없음 — 페이지 상태 확인")
+        print("  ❌ 발행 버튼 없음")
         await page.screenshot(path="/tmp/naver_publish_fail.png")
         return None
 
-    # JS click으로 오버레이 무시
     await page.evaluate("btn => btn.click()", publish_btn)
     await page.wait_for_timeout(3000)
 
@@ -319,8 +363,6 @@ async def main():
         sys.exit(1)
 
     labels = [l.strip() for l in LABELS_STR.split(",") if l.strip()] if LABELS_STR else []
-
-    # 쿠팡 링크/가격 우선순위: 환경변수 > atom.xml 자동 추출
     coupang_links = [l for l in COUPANG_LINKS.split("|") if l.strip()] if COUPANG_LINKS else []
     coupang_prices = [p for p in COUPANG_PRICES.split("|") if p.strip()] if COUPANG_PRICES else []
     if not coupang_links:
@@ -331,9 +373,8 @@ async def main():
 
     print(f"[포스팅 준비]")
     print(f"  제목: {POST_TITLE[:50]}")
-    print(f"  원본(백링크): {POST_URL[:60]}")
-    print(f"  쿠팡 링크: {len(coupang_links)}개")
-    print(f"  가격: {coupang_prices}")
+    print(f"  원본(OG카드): {POST_URL[:60]}")
+    print(f"  쿠팡 링크: {len(coupang_links)}개 / 가격: {coupang_prices}")
     print(f"  본문 길이: {len(content)}자")
 
     os.environ['DISPLAY'] = ':99'
@@ -355,24 +396,33 @@ async def main():
 
         session_ok = await ensure_session(context, page)
         if not session_ok:
-            await browser.close()
-            sys.exit(1)
+            await browser.close(); sys.exit(1)
 
         print(f"\n[에디터 로드] {WRITE_URL}")
         await page.goto(WRITE_URL, timeout=30000)
-        await page.wait_for_timeout(8000)
+        await page.wait_for_selector(".se-oglink-toolbar-button", timeout=20000)
+        await page.wait_for_timeout(3000)
+
+        if "nidlogin" in page.url or "login" in page.url.lower():
+            if not await do_login(page, context):
+                await browser.close(); sys.exit(1)
+
         await handle_popups(page)
 
-        print("[입력 중...]")
+        print("[제목 입력...]")
         await type_title(page, POST_TITLE)
+
+        print("[본문 입력 중...]")
         await type_body(page, content)
 
+        await page.screenshot(path="/tmp/naver_before_publish.png")
         print("[발행 중...]")
         result_url = await publish(page)
 
         if result_url:
             print(f"\n✅ 발행 성공!")
             print(f"  URL: {result_url}")
+            await context.storage_state(path=SESSION_FILE)
             out = {
                 "success": True,
                 "naver_url": result_url,
@@ -390,6 +440,7 @@ async def main():
             print(f"  로그: {out_path}")
         else:
             print("\n❌ 발행 실패")
+            await page.screenshot(path="/tmp/naver_fail.png")
             sys.exit(1)
 
         await browser.close()
