@@ -60,8 +60,13 @@ def publish_to_blogger(title: str, html: str, labels: list, token: str) -> dict:
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json;charset=UTF-8",
     })
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode('utf-8', errors='replace')[:500]
+        print(f"[ERROR] Blogger API {e.code}: {err_body}")
+        raise
 
 
 def save_markdown(title: str, content: str, labels: list, products: list) -> Path:
