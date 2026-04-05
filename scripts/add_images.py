@@ -564,7 +564,7 @@ def build_image_html(img: dict, is_hero: bool = True) -> str:
     source_label = img.get("source_label", "📷 출처")
 
     credit_html = (
-        f'<a href="{credit_url}" target="_blank" rel="noopener noreferrer"'
+        f'<a href="{credit_url}" rel="nofollow noopener"'
         f' style="color:#4f6ef7;text-decoration:none;">{credit}</a>'
         if credit_url else credit
     )
@@ -707,7 +707,7 @@ def insert_body_images(body: str, images: list, title: str = "") -> str:
         source_label = img.get("source_label", "📷 출처")
 
         credit_html = (
-            f'<a href="{credit_url}" target="_blank" rel="noopener noreferrer"'
+            f'<a href="{credit_url}" rel="nofollow noopener"'
             f' style="color:#4f6ef7;text-decoration:none;">{credit}</a>'
             if credit_url else credit
         )
