@@ -97,15 +97,8 @@ def collect_all_posts(max_posts: int = 200) -> list:
                 continue
             posts.append({"url": url, **m})
         else:
-            # atom에 없는 글 — URL만으로 기본 정보 구성
-            # 2025년 이전 단품글은 제외
-            if '/2025/08/' in url or '/2025/04/' in url:
-                continue
-            title = url.split('/')[-1].replace('.html','').replace('-',' ').replace('_',' ')
-            posts.append({
-                "url": url, "title": title,
-                "summary": "", "coupang_links": [], "coupang_prices": [], "coupang_images": [], "labels": []
-            })
+            # atom에 없는 글 — 제목을 알 수 없으므로 발행 제외 (이상한 제목 방지)
+            continue
 
     print(f"  발행 대상 후보: {len(posts)}개 (최대 {max_posts}개)")
     return posts
