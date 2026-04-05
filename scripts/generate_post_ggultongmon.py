@@ -182,7 +182,7 @@ def build_quick_buy_bar(products: list) -> str:
             f'line-height:1.3;">{name}</p>'
             f'<p style="margin:0 0 8px;font-size:1em;font-weight:800;color:{COLOR_PRIMARY};">'
             f'{price}</p>'
-            f'<a href="{url}" rel="noopener noreferrer" '
+            f'<a href="{url}" rel="nofollow sponsored noopener" '
             f'style="display:inline-block;background:{COLOR_PRIMARY};color:#fff;'
             f'font-size:0.78em;font-weight:700;padding:7px 14px;border-radius:20px;'
             f'text-decoration:none;">구매하기</a>'
@@ -228,7 +228,7 @@ def build_inline_card(product: dict, rank: int, title_seed: str = "") -> str:
 background:#f8f9ff;">
   <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px;">
     <!-- 상품 이미지 -->
-    <a href="{buy_url}" rel="noopener noreferrer"
+    <a href="{buy_url}" rel="nofollow sponsored noopener"
        style="flex-shrink:0;display:block;">
       <img src="{img_url}" alt="{name}"
            style="width:130px;height:130px;object-fit:contain;border-radius:12px;
@@ -249,7 +249,7 @@ background:#f8f9ff;">
     </div>
   </div>
   <!-- CTA 버튼 (풀 너비) -->
-  <a href="{buy_url}" rel="noopener noreferrer"
+  <a href="{buy_url}" rel="nofollow sponsored noopener"
      style="display:block;text-align:center;background:{COLOR_PRIMARY};color:#fff;
      font-size:1.02em;font-weight:700;padding:14px 20px;border-radius:12px;
      text-decoration:none;letter-spacing:-0.2px;">
@@ -264,7 +264,7 @@ def build_section_buy_btn(product: dict, title_seed: str = "") -> str:
     btn_text = _pick(BUY_BUTTON_TEXTS, title_seed + product.get("productName","") + "btn")
     return (
         f'<div style="text-align:center;margin:0.8em 0 2.2em;">'
-        f'<a href="{url}" rel="noopener noreferrer" '
+        f'<a href="{url}" rel="nofollow sponsored noopener" '
         f'style="display:inline-block;background:{COLOR_SECONDARY};color:#fff;'
         f'font-size:0.98em;font-weight:700;padding:13px 34px;border-radius:30px;'
         f'text-decoration:none;">{btn_text}</a></div>'
@@ -290,6 +290,11 @@ SYSTEM_PROMPT_COUPANG = """\
 - 가격 정보: 현재 쿠팡 가격 기준으로 "원래 OOO원 → 현재 OOO원 할인" 형식 (가능 시)
 - 분량: 최소 4,000자 이상
 
+## 도입부(200~300자) 규칙
+- 독자가 겪는 구체적 상황 묘사로 시작 (예: "에어프라이어를 새로 살까 고민 중인데 어떤 걸 골라야 할지 막막하셨나요?")
+- "안녕하세요", "오늘은 ~에 대해 알아보겠습니다" 절대 금지
+- 문제 제시 → 해결 예고 구조
+
 ## 포스트 구조 (반드시 준수)
 1. 도입부 훅 (200~300자): 독자가 공감할 상황으로 시작
 2. 선택 기준 (h2): 구매 시 체크할 핵심 포인트 3~5개
@@ -298,8 +303,11 @@ SYSTEM_PROMPT_COUPANG = """\
    - 상세 설명 300~500자 (장점 2~3개 불릿, 추천 대상)
    - 섹션 끝에 [BUY_N] 마커 한 줄
 4. 비교표 (h2): 가격/특징/추천대상 3열 이상, 추천 상품 강조
-5. FAQ (h2): 실제 네이버·구글 검색창에 칠 법한 질문 4~5개
-   - 구어체·단답 검색어 형태 ("~하면 어때요?", "~차이 뭐예요?" 등)
+5. FAQ (h2): 실제 구글 검색창에 치는 구어체 질문 4~5개
+   - "~는 얼마인가요?" (가격 검색 → 고CPC 유도)
+   - "~와 ~의 차이는?" (비교 검색 → 고CTR)
+   - "~하면 부작용/단점 있나요?" (우려 해소 → 전환율 높음)
+   - "~를 사면 후회하나요?" (구매 결정 직전 검색)
    - 각 답변 150자 이상
 6. 마무리 (h2): 한 줄 정리 + 구체적 구매 권유
 
@@ -339,6 +347,7 @@ def generate_post(topic: str, search_keyword: str, products: list,
 제목 작성 지침:
 아래 패턴을 사용하세요: {title_pattern}
 (패턴 참고만, 실제 상품에 맞게 창의적으로 작성)
+제목 규칙: 숫자 포함, 연도(2026) 권장, 40자 이내, "추천/비교/완전정리/후회없는" 등 클릭 유도어 활용
 
 ===TITLE===
 최종 포스트 제목 (50자 이내, 이모지 금지)
@@ -393,6 +402,9 @@ A4:
         title = topic
     char_count = len(content.replace(' ', '').replace('\n', ''))
     print(f"   생성 완료: {char_count:,}자 | 제목: {title[:40]}")
+    # 1-3. 최소 글자수 경고 (2,000자 미만)
+    if char_count < 2000:
+        print(f"   [WARN] 본문 글자수 {char_count:,}자 — 2,000자 미만입니다. 콘텐츠 품질을 확인하세요.")
 
     return {
         "title": title, "content": content,

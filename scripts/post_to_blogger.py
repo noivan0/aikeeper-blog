@@ -282,16 +282,29 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
             "cssSelector": ["h1", "h2", ".post-summary"]
         },
     }
-    if hero_image_url:
-        # 구글 공식: 다중 비율 이미지 배열 권장 (1x1, 4x3, 16x9) → Rich Result eligibility 향상
-        # 실제 이미지 URL이 1개이므로 배열로 제공 (크롤러가 적합한 비율 선택)
-        blogposting["image"] = [
-            {"@type": "ImageObject", "url": hero_image_url, "width": 1200, "height": 1200},  # 1:1
-            {"@type": "ImageObject", "url": hero_image_url, "width": 1200, "height": 900},   # 4:3
-            {"@type": "ImageObject", "url": hero_image_url, "width": 1200, "height": 630},   # 16:9
-        ]
-        # 네이버 웹문서 썸네일: thumbnailUrl 명시
-        blogposting["thumbnailUrl"] = hero_image_url
+    # 3-3. JSON-LD image fallback — 이미지 없으면 블로그 대표 이미지 사용
+    _OG_FALLBACK = {
+        "aikeeper": "https://aikeeper.allsweep.xyz/img/og-default.jpg",
+        "allsweep": "https://www.allsweep.xyz/img/og-default.jpg",
+        "ggultongmon": "https://ggultongmon.allsweep.xyz/img/og-default.jpg",
+    }
+    # BLOG_URL 기반으로 블로그 판별 후 fallback 선택
+    if "aikeeper" in BLOG_URL:
+        _fallback_img = _OG_FALLBACK["aikeeper"]
+    elif "allsweep" in BLOG_URL:
+        _fallback_img = _OG_FALLBACK["allsweep"]
+    else:
+        _fallback_img = _OG_FALLBACK["aikeeper"]  # 기본값
+    _img_url = hero_image_url or _fallback_img
+    # 구글 공식: 다중 비율 이미지 배열 권장 (1x1, 4x3, 16x9) → Rich Result eligibility 향상
+    # 실제 이미지 URL이 1개이므로 배열로 제공 (크롤러가 적합한 비율 선택)
+    blogposting["image"] = [
+        {"@type": "ImageObject", "url": _img_url, "width": 1200, "height": 1200},  # 1:1
+        {"@type": "ImageObject", "url": _img_url, "width": 1200, "height": 900},   # 4:3
+        {"@type": "ImageObject", "url": _img_url, "width": 1200, "height": 630},   # 16:9
+    ]
+    # 네이버 웹문서 썸네일: thumbnailUrl 명시
+    blogposting["thumbnailUrl"] = _img_url
     if word_count:
         blogposting["wordCount"] = word_count
     if read_time:
