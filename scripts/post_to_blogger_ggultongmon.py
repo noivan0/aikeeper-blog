@@ -44,9 +44,15 @@ def get_oauth_token() -> str:
 
 
 def publish_to_blogger(title: str, html: str, labels: list, token: str) -> dict:
+    # Blogger API는 제목에 큰따옴표 등 특수문자가 있으면 400 반환 → 치환
+    safe_title = (title
+                  .replace('"', "'")
+                  .replace('\u201c', "'").replace('\u201d', "'")  # 좌우 큰따옴표
+                  .replace('\u300c', "").replace('\u300d', "")    # 일본어 괄호
+                  .strip())
     url = f"https://www.googleapis.com/blogger/v3/blogs/{BLOG_ID}/posts/"
     body = json.dumps({
-        "title": title,
+        "title": safe_title,
         "content": html,
         "labels": labels,
     }).encode("utf-8")

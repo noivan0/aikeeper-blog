@@ -1,5 +1,5 @@
 ---
-title: "무조건 OpenAI 임베딩\" 착각을 깨는 임베딩 모델 비교 4가지 선택 기준"
+title: "무조건 'OpenAI 임베딩' 착각을 깨는 임베딩 모델 비교 4가지 선택 기준"
 labels: ["임베딩 모델 비교", "RAG 임베딩 선택", "OpenAI embedding vs Cohere", "벡터 임베딩 추천", "RAG 구축 방법", "임베딩 모델 가격", "텍스트 임베딩 성능", "OpenAI API 비용", "Cohere 사용법", "벡터 데이터베이스 활용"]
 draft: false
 meta_description: "임베딩 모델 비교를 통해 RAG 프로젝트 담당자가 OpenAI와 Cohere 중 최적의 선택을 할 수 있도록 성능·비용·언어·다국어 지원 4가지 기준으로 2026년 최신 정보를 정리했습니다."

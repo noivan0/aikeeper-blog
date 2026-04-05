@@ -426,6 +426,8 @@ A5: 상세 답변
     # 제목 이모지 강제 제거 (Claude가 지시 무시 시 후처리)
     title = re.sub(r'[\U00010000-\U0010ffff\U00002600-\U000027BF\U0001F300-\U0001F9FF]', '', title_raw).strip()
     title = re.sub(r'^\s*[\W_]+\s*', '', title).strip()  # 앞 특수문자 제거
+    # Blogger API 400 방지: 제목 내 큰따옴표 → 작은따옴표 (YAML 파싱 후 API 전달 시 문제)
+    title = title.replace('"', "'").replace('\u201c', "'").replace('\u201d', "'")
 
     labels = [l.strip() for l in extract_section(text, "LABELS").split(",") if l.strip()]
     meta_desc = extract_section(text, "META")
