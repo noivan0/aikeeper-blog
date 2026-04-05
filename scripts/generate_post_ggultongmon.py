@@ -21,12 +21,29 @@ from coupang_api import get_products_with_shorten
 ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "")
 ANTHROPIC_MODEL    = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
+# ── AdSense 설정 (ggultongmon 블로그) ────────────────────────────────
+_ADSENSE_PUB_GG       = "ca-pub-2597570939533872"
+_DISPLAY_SLOT_GG      = "8117048415"
+_IN_ARTICLE_SLOT_GG   = "6675974233"
+
 # ── 파트너스 고지문 (최상단 1회만) ─────────────────────────────────────
-PARTNERS_NOTICE_HTML = """\
+# 쿠팡 링크 클릭 전 광고 최대 노출 전략:
+# 파트너스 고지문 바로 다음에 디스플레이 광고 삽입
+PARTNERS_NOTICE_HTML = f"""\
 <div style="background:#fff8e1;border:1px solid #ffc107;border-radius:10px;\
-padding:10px 16px;margin:0 0 1.6em;font-size:0.82em;color:#6d4c41;line-height:1.5;">
+padding:10px 16px;margin:0 0 1.2em;font-size:0.82em;color:#6d4c41;line-height:1.5;">
 <strong>📢 파트너스 안내</strong>&nbsp;
 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.
+</div>
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={_ADSENSE_PUB_GG}" crossorigin="anonymous"></script>
+<div style="margin:0 0 1.6em;min-height:100px;">
+<ins class="adsbygoogle"
+ style="display:block"
+ data-ad-client="{_ADSENSE_PUB_GG}"
+ data-ad-slot="{_DISPLAY_SLOT_GG}"
+ data-ad-format="auto"
+ data-full-width-responsive="true"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({{}});</script>
 </div>"""
 
 # ── 버튼 텍스트 7종 (A/B 랜덤) ────────────────────────────────────────

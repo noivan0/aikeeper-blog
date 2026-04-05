@@ -89,7 +89,8 @@ AD_IN_ARTICLE_INS = """
  data-ad-layout="in-article"
  data-ad-format="fluid"
  data-ad-client="ca-pub-2597570939533872"
- data-ad-slot="6675974233"></ins>
+ data-ad-slot="6675974233"
+ data-full-width-responsive="true"></ins>
 <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
 </div>
 """
@@ -322,43 +323,81 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
 
 
 def inject_ads(html: str) -> str:
-    """본문 HTML에 AdSense 광고 자동 삽입
-    
-    배치 전략:
-      - 인아티클 ①: 전체 h2 섹션 중 1/3 지점 (독자 몰입 직후)
-      - 인아티클 ②: 2/3 지점 (본문 후반부 진입 시)  
-      - 디스플레이:  본문 최하단 (읽기 완료 후)
+    """본문 HTML에 AdSense 광고 자동 삽입 — 블로그 타입별 최적 배치
+
+    배치 전략 (CTR 최대화):
+      ① h1 직후       — 디스플레이 광고 (독자 첫 스크롤 시 노출)
+      ② 본문 1/3 h2 앞 — 인아티클 광고 (모든 블로그 공통)
+      ③ FAQ 섹션 직후  — 인아티클 광고 (FAQ h2 다음 위치)
+      ④ 본문 최하단    — 디스플레이 광고 (읽기 완료 후)
+
+    블로그 타입별 차별화 (BLOG_TYPE 환경변수):
+      - NEWS (allsweep):  상단 노출 필수 → ①③④ (빠르게 읽고 나가므로 상단 집중)
+      - AI (aikeeper):    글이 길어 중간 광고 효과 높음 → ①②③④ 전부 삽입
+      - COUPANG (ggultongmon): 쿠팡 링크 전 광고 최대 노출 → ①②③④ 전부 삽입
     """
-    # h2 태그 위치 모두 수집
-    h2_positions = [(m.start(), m.end()) for m in re.finditer(r'<h2[^>]*>.*?</h2>', html, re.DOTALL)]
-    total = len(h2_positions)
+    blog_type = BLOG_TYPE.upper()  # "NEWS" | "AI" | "COUPANG"
+
+    # ── ① h1 직후 디스플레이 광고 ─────────────────────────────────────
+    # (post_process_html 에서 h1을 이미 제거하므로, h1이 없으면 스킵)
+    h1_match = re.search(r'</h1>', html)
+    if h1_match:
+        insert_pos = h1_match.end()
+        html = html[:insert_pos] + AD_DISPLAY + html[insert_pos:]
+
+    # ── h2 위치 목록 수집 (h1 삽입 후 재계산) ──────────────────────────
+    h2_matches = list(re.finditer(r'<h2[^>]*>(.*?)</h2>', html, re.DOTALL))
+    total = len(h2_matches)
 
     if total < 2:
-        # 섹션이 너무 적으면 중간 + 하단에만 삽입
+        # h2가 부족하면 중간 + 하단만
         mid = len(html) // 2
         html = html[:mid] + AD_IN_ARTICLE + html[mid:]
         html = html + AD_DISPLAY
         return html
 
-    # 1/3 지점 h2 앞에 인아티클 ①
-    idx1 = max(1, total // 3)
-    pos1 = h2_positions[idx1][0]
-
-    # 2/3 지점 h2 앞에 인아티클 ②
-    idx2 = max(idx1 + 1, (total * 2) // 3)
-    idx2 = min(idx2, total - 1)
-
-    # 역순으로 삽입 (앞 삽입이 뒤 위치에 영향 주지 않도록)
-    pos2 = h2_positions[idx2][0]
-
-    # pos2 > pos1 보장
-    if pos2 > pos1:
-        html = html[:pos2] + AD_IN_ARTICLE + html[pos2:]
+    # ── ② 본문 1/3 지점 h2 앞 — 인아티클 (AI·COUPANG만) ──────────────
+    # NEWS 블로그는 빠른 스크롤 패턴 → 1/3 인아티클 생략, 상단 집중
+    if blog_type != "NEWS":
+        idx1 = max(1, total // 3)
+        pos1 = h2_matches[idx1].start()
         html = html[:pos1] + AD_IN_ARTICLE + html[pos1:]
+        # 삽입 후 h2 위치 재계산 필요
+        h2_matches = list(re.finditer(r'<h2[^>]*>(.*?)</h2>', html, re.DOTALL))
+        total = len(h2_matches)
+
+    # ── ③ FAQ 섹션 직후 — 인아티클 ───────────────────────────────────
+    # h2 텍스트에 "FAQ", "자주", "질문" 포함된 섹션 찾기
+    faq_match = None
+    for m in h2_matches:
+        h2_text = re.sub(r'<[^>]+>', '', m.group(1))  # 태그 제거 후 텍스트
+        if any(kw in h2_text for kw in ("FAQ", "자주", "질문")):
+            faq_match = m
+            break
+
+    if faq_match:
+        # FAQ h2 태그 끝 위치 이후에 삽입
+        faq_end = faq_match.end()
+        html = html[:faq_end] + AD_IN_ARTICLE + html[faq_end:]
     else:
-        html = html[:pos1] + AD_IN_ARTICLE + html[pos1:]
+        # FAQ 없으면 2/3 지점 h2 앞에 인아티클 ② 삽입 (AI·COUPANG 기존 동작 유지)
+        if blog_type != "NEWS":
+            h2_matches = list(re.finditer(r'<h2[^>]*>(.*?)</h2>', html, re.DOTALL))
+            total = len(h2_matches)
+            idx2 = max(2, (total * 2) // 3)
+            idx2 = min(idx2, total - 1)
+            pos2 = h2_matches[idx2].start()
+            html = html[:pos2] + AD_IN_ARTICLE + html[pos2:]
+        else:
+            # NEWS: FAQ 없으면 2/3 지점에만 인아티클 1개 추가
+            h2_matches = list(re.finditer(r'<h2[^>]*>(.*?)</h2>', html, re.DOTALL))
+            total = len(h2_matches)
+            idx2 = max(1, (total * 2) // 3)
+            idx2 = min(idx2, total - 1)
+            pos2 = h2_matches[idx2].start()
+            html = html[:pos2] + AD_IN_ARTICLE + html[pos2:]
 
-    # 디스플레이 광고: 본문 마지막에 추가
+    # ── ④ 본문 최하단 — 디스플레이 광고 ──────────────────────────────
     html = html + AD_DISPLAY
 
     return html
