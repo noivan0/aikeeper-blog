@@ -25,6 +25,7 @@ LABELS_STR      = os.environ.get("LABELS", "")
 COUPANG_LINKS   = os.environ.get("COUPANG_LINKS", "")
 COUPANG_PRICES  = os.environ.get("COUPANG_PRICES", "")
 COUPANG_IMAGES  = os.environ.get("COUPANG_IMAGES", "")   # "|" 구분 이미지 URL 3개
+PRODUCT_DATA_STR = os.environ.get("PRODUCT_DATA", "")    # JSON 상품 데이터
 SESSION_FILE    = os.environ.get("NAVER_SESSION_FILE",
                    str(Path(__file__).parent.parent / "naver_session.json"))
 
@@ -131,105 +132,152 @@ def _build_dynamic_faq(title: str, labels: list) -> str:
     return "■ 자주 묻는 질문 (FAQ)\n\n" + "\n\n".join(faqs)
 
 
-# ── 본문 빌더 (네이버 C-RANK 최적화 v11) ─────────────────────────
+# ── 본문 빌더 (네이버 C-RANK 최적화 v13 — 실제 상품 데이터 반영) ──
 def build_naver_content(
     title: str, summary: str, original_url: str,
     labels: list, coupang_links: list, coupang_prices: list,
-    coupang_images: list = None
+    coupang_images: list = None,
+    product_data: list = None,          # ← 새로 추가: 실제 상품 데이터
 ) -> str:
     """
-    네이버 VIEW탭 C-RANK 최적화 포맷 v12
+    네이버 VIEW탭 C-RANK 최적화 포맷 v13
+    - product_data가 있으면 실제 상품명/가격/설명/이미지 사용
+    - 없으면 기존 coupang_links/prices 방식으로 fallback
+    - 이미지: IMAGE_HERE:N 마커 (파일 업로드 방식)
+    - 비교표: TABLE_HERE 마커
     - 본문 2,500자 이상 보장
-    - 제목 키워드 본문 내 2~3회 자연 등장
-    - 이미지 IMAGE_HERE:N 마커 (N=0,1,2 → 이미지 인덱스)
-    - 비교표 TABLE_HERE 마커
-    - 구조: 도입부 → 목차(TOC) → 빠른결론 → 선택기준 → 상품별소개(이미지) → 비교표 → FAQ → 마무리
-    [N-1-1] TOC 자동 삽입 — 네이버 체류시간 증가
-    [N-2-2] 키워드 밀도 — 핵심 키워드 제목/첫문단/중간/마지막 각 1회
-    [N-3]   스마트블록 — h2/h3 최소 5개, 각 섹션 첫 문장 핵심정보
     """
     if coupang_images is None:
         coupang_images = []
+    if product_data is None:
+        product_data = []
 
     label_str = " ".join([f"#{l.replace(' ','')}" for l in labels[:8]]) if labels \
                 else "#쿠팡추천 #가성비 #쿠팡파트너스"
 
-    # ── N-1-1: 목차(TOC) 자동 생성 — 체류시간 증가 핵심 ─────────────────
-    toc_sections = [
-        f"{title} 고를 때 꼭 확인할 3가지",
-        f"{title} TOP 3 상세 비교",
-        f"{title} 한눈에 비교표",
-        "자주 묻는 질문 (FAQ)",
-        "마무리",
-    ]
-    toc_items = "\n".join(f"  • {s}" for s in toc_sections)
-    toc_block = (
-        f"📋 이 글의 목차\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{toc_items}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    # ── 상품 데이터 통합 (product_data 우선, fallback: coupang_links) ──
+    RANK_MEDALS = ["🥇", "🥈", "🥉"]
+    RANK_NAMES  = ["1위", "2위", "3위"]
+
+    # product_data에서 이미지 리스트 추출 (이미지 업로드용)
+    if product_data:
+        all_images = [p.get("image", "") for p in product_data]
+    else:
+        all_images = coupang_images
+
+    # ── 서론 ──────────────────────────────────────────────────────────
+    intro = (
+        f"이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.\n\n"
+        f"{title} 찾고 계신가요? "
+        f"2026년 4월 기준 쿠팡 실구매 데이터 기반 TOP 3를 정리했습니다.\n"
+        f"가격·소재·실사용 후기를 꼼꼼히 비교해 엄선했으니 구매 전 꼭 확인해보세요!"
     )
 
-    # 쿠팡 가격 링크 블록 (상품별)
+    # ── 상품 섹션 블록 ────────────────────────────────────────────────
     product_blocks = []
-    for i, link in enumerate(coupang_links[:3]):
-        price = coupang_prices[i] if i < len(coupang_prices) else ""
-        rank = ["1위", "2위", "3위"][i]
-        rank_label = ["🥇 1위", "🥈 2위", "🥉 3위"][i]
-        price_text = f" ({price})" if price else ""
-        btn_label = f"▶ {rank} 쿠팡 최저가 확인{price_text}"
 
-        img_marker = f"IMAGE_HERE:{i}\n" if i < len(coupang_images) else ""
+    if product_data:
+        # ── product_data 사용 (실제 상품 데이터) ──────────────────────
+        for i, prod in enumerate(product_data[:3]):
+            medal = RANK_MEDALS[i]
+            rank  = RANK_NAMES[i]
+            name  = prod.get("name", f"{title} 추천 상품 {rank}")
+            price = prod.get("price", "")
+            link  = prod.get("link", "")
+            desc  = prod.get("desc", "")
 
-        block = f"""{img_marker}{rank_label} — {title} 추천 상품
+            # 상품명에서 "— 부제" 제후 전체를 사용 (h2 원문)
+            name_clean = name  # h2 전체 텍스트 그대로
 
-가격, 품질, 실사용 후기를 종합해 선정한 {rank} 상품입니다. 쿠팡 기준 실시간 최저가로 제공되며, 로켓배송으로 빠르게 받아보실 수 있어요. 리뷰 수와 최근 구매자 만족도를 함께 확인해보세요. 시즌마다 특가 행사가 진행되는 경우가 많으니 지금 바로 확인해보시는 걸 추천드립니다.
+            price_line = f"💰 {price}" if price else ""
+            link_line  = f"LINK_TEXT:▶ 쿠팡에서 최저가 확인|{link}" if link else ""
 
-LINK_TEXT:{btn_label}|{link}"""
-        product_blocks.append(block)
+            # 설명 2~3줄 (150자 → 줄바꿈 포함 자연스럽게)
+            desc_clean = desc.strip()
+            if len(desc_clean) > 120:
+                # 문장 단위로 자르기
+                sentences = re.split(r'(?<=[.。!?])\s+', desc_clean)
+                desc_short = ""
+                for s in sentences:
+                    if len(desc_short) + len(s) < 120:
+                        desc_short += s + " "
+                    else:
+                        break
+                desc_clean = desc_short.strip() or desc_clean[:120]
+
+            block_lines = [
+                f"━━━━━━━━━━━━━━━━━━━━━━━━",
+                f"{medal} {rank} | {name_clean}",
+                f"IMAGE_HERE:{i}",
+            ]
+            if price_line:
+                block_lines.append(price_line)
+            if desc_clean:
+                block_lines.append(desc_clean)
+            if link_line:
+                block_lines.append(link_line)
+
+            product_blocks.append("\n".join(block_lines))
+
+    else:
+        # ── Fallback: 기존 coupang_links 방식 ─────────────────────────
+        for i, link in enumerate(coupang_links[:3]):
+            price = coupang_prices[i] if i < len(coupang_prices) else ""
+            medal = RANK_MEDALS[i]
+            rank  = RANK_NAMES[i]
+            price_line = f"💰 {price}" if price else ""
+            link_line  = f"LINK_TEXT:▶ 쿠팡에서 최저가 확인|{link}"
+
+            block_lines = [
+                f"━━━━━━━━━━━━━━━━━━━━━━━━",
+                f"{medal} {rank} | {title} 추천 상품",
+                f"IMAGE_HERE:{i}",
+            ]
+            if price_line:
+                block_lines.append(price_line)
+            block_lines.append(
+                f"가격, 품질, 실사용 후기를 종합해 선정한 {rank} 상품입니다. "
+                f"로켓배송으로 빠르게 받아볼 수 있어요."
+            )
+            block_lines.append(link_line)
+            product_blocks.append("\n".join(block_lines))
 
     products_section = "\n\n".join(product_blocks)
 
-    # 빠른 결론 3줄 요약
-    quick_summary_lines = []
-    for i, price in enumerate(coupang_prices[:3]):
-        rank_label = ["🥇 1위", "🥈 2위", "🥉 3위"][i]
-        quick_summary_lines.append(f"  {rank_label}: {price}")
-    if not quick_summary_lines:
-        quick_summary_lines = ["  상세 가격은 아래 링크에서 확인하세요."]
-    quick_summary = "\n".join(quick_summary_lines)
+    # ── 빠른 요약 ─────────────────────────────────────────────────────
+    quick_lines = []
+    if product_data:
+        for i, prod in enumerate(product_data[:3]):
+            quick_lines.append(f"  {RANK_MEDALS[i]} {RANK_NAMES[i]}: {prod.get('name','').split('—')[0].strip()} ({prod.get('price','')})")
+    else:
+        for i, price in enumerate(coupang_prices[:3]):
+            quick_lines.append(f"  {RANK_MEDALS[i]} {RANK_NAMES[i]}: {price}")
+    if not quick_lines:
+        quick_lines = ["  상세 가격은 아래 링크에서 확인하세요."]
+    quick_summary = "\n".join(quick_lines)
 
-    # 비교표 마커 (헤더 + 데이터)
-    table_headers = ["순위", "가격", "특징", "추천대상"]
+    # ── 비교표 마커 ───────────────────────────────────────────────────
+    table_headers = ["순위", "상품명", "가격", "추천대상"]
     table_rows = []
-    for i in range(min(3, len(coupang_links))):
-        price = coupang_prices[i] if i < len(coupang_prices) else "확인필요"
-        rank = ["1위", "2위", "3위"][i]
-        features = ["가성비 최강, 대용량", "품질 우수, 중간 가격대", "프리미엄, 소량 정품"][i]
-        targets = ["자주 구매하는 분", "품질 중시하는 분", "선물·특별구매"][i]
-        table_rows.append([rank, price, features, targets])
+    if product_data:
+        for i, prod in enumerate(product_data[:3]):
+            name_short = prod.get("name", "").split("—")[0].strip()[:15]
+            price = prod.get("price", "확인필요")
+            targets = ["가성비 중시", "품질 중시", "프리미엄"][i]
+            table_rows.append([RANK_NAMES[i], name_short, price, targets])
+    else:
+        for i in range(min(3, len(coupang_links))):
+            price = coupang_prices[i] if i < len(coupang_prices) else "확인필요"
+            features = ["가성비 최강", "품질 우수", "프리미엄"][i]
+            targets = ["자주 구매하는 분", "품질 중시하는 분", "선물·특별구매"][i]
+            table_rows.append([RANK_NAMES[i], features, price, targets])
 
-    # TABLE_HERE 마커에 데이터 인코딩 (JSON)
-    table_data = json.dumps(
-        {"headers": table_headers, "rows": table_rows},
-        ensure_ascii=False
-    )
+    table_data = json.dumps({"headers": table_headers, "rows": table_rows}, ensure_ascii=False)
     table_marker = f"TABLE_HERE:{table_data}"
 
-    content = f"""이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.
+    # ── 전체 본문 조합 ────────────────────────────────────────────────
+    content = f"""{intro}
 
-안녕하세요, 쇼핑정보 모아보기입니다 😊
-
-{title}를 찾고 계신가요?
-
-막상 구매하려고 검색하면 종류가 너무 많아서 어떤 제품을 골라야 할지 막막하죠. 가격도 천차만별이고, 리뷰는 많은데 정작 내 상황에 맞는 정보는 찾기 힘드셨을 거예요.
-
-이 글에서는 2026년 4월 기준 가격, 품질, 실사용자 후기를 꼼꼼히 비교해 엄선한 {title} TOP 3를 소개해드립니다. 구매 후 후회하는 일이 없도록 핵심만 뽑아 정리했으니 끝까지 읽어보세요!
-
-{summary}
-
-
-{toc_block}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 ⚡ 바쁘신 분들을 위한 3줄 요약
@@ -243,24 +291,23 @@ LINK_TEXT:{btn_label}|{link}"""
 
 아무거나 고르다가 후회하지 않으려면 아래 세 가지는 반드시 체크하세요.
 
-첫째, 가격 대비 용량(개당 단가)입니다. 단순히 가격만 보면 안 됩니다. {title}는 묶음 구매 시 개당 단가가 크게 달라지므로, 단위 가격을 반드시 비교해보세요. 쿠팡 상품 페이지에서 수량과 총가격을 확인하면 쉽게 계산할 수 있습니다.
+첫째, 가격 대비 용량(개당 단가)입니다. 단순히 가격만 보면 안 됩니다. {title}는 묶음 구매 시 개당 단가가 크게 달라지므로, 단위 가격을 반드시 비교해보세요.
 
-둘째, 성분·소재 안전성입니다. 특히 피부가 예민하거나 아이가 있는 가정에서는 성분표를 꼭 확인해야 합니다. 자극 성분이나 유해물질 여부를 체크하는 것이 중요하고, KC 인증 여부도 확인해보시면 더 안심할 수 있어요.
+둘째, 성분·소재 안전성입니다. 특히 피부가 예민하거나 아이가 있는 가정에서는 성분표와 KC 인증 여부를 꼭 확인하세요.
 
-셋째, 최신 구매자 리뷰입니다. 리뷰 수와 별점도 중요하지만, 최근 3개월 이내 리뷰가 많은지, 실제 사용자가 어떤 점을 불편해하는지 꼭 확인해보세요. 1,000개 이상의 리뷰가 쌓인 {title} 제품이라면 검증된 선택으로 볼 수 있습니다.
+셋째, 최신 구매자 리뷰입니다. 최근 3개월 이내 리뷰가 많은지, 실제 사용자 불편 사항은 없는지 확인해보세요.
 
-
-■ {title} TOP 3 상세 비교
 
 {products_section}
+
+━━━━━━━━━━━━━━━━━━━━━━━━
 
 
 ■ {title} 한눈에 비교표
 
 {table_marker}
 
-※ 위 가격은 쿠팡 기준이며, 쿠팡 회원 할인·적립금 적용 전 기준입니다.
-실제 결제 시 쿠폰·카드 혜택으로 더 저렴하게 구매할 수 있으니 꼭 확인해보세요!
+※ 위 가격은 쿠팡 기준이며, 쿠폰·카드 혜택으로 더 저렴하게 구매 가능합니다.
 
 
 {_build_dynamic_faq(title, labels)}
@@ -283,23 +330,13 @@ CARD_URL:{original_url}
 ☑ KC 인증 — 안전 인증 제품인지 확인 (어린이·생활용품)
 
 
-■ 쿠팡 파트너스 & 구매 안내
-
-위 링크를 통해 구매하시면 쿠팡 파트너스 수수료가 발생하며, 구매자에게 추가 비용은 없습니다. 쿠팡 회원 가입 및 로그인 후 구매하시면 쿠팡캐시 적립, 카드 청구 할인, 쿠폰 혜택 등을 모두 받으실 수 있습니다.
-
-상품 가격 및 재고는 쿠팡 실시간 정보 기준이며, 프로모션·할인 행사에 따라 수시로 변경될 수 있습니다. 구매 전 상품 페이지에서 현재 가격과 배송 일정을 반드시 확인해주세요.
-
-
 ■ 마무리
 
 오늘 소개해드린 {title} 제품들은 모두 쿠팡에서 빠르게 받아볼 수 있고, 실제 구매자 리뷰도 많아 신뢰할 수 있는 상품들입니다.
 
-{title} 구매를 고민하고 계신 분들께 이 글이 조금이라도 도움이 됐으면 좋겠습니다 😊
+{title} 구매를 고민하고 계신 분들께 이 글이 도움이 됐으면 좋겠습니다 😊
 
-사용해보신 분들은 댓글로 후기 남겨주시면 저도 참고하겠습니다!
 도움이 됐다면 공감 ❤️ 한 번 눌러주시면 큰 힘이 됩니다!
-
-앞으로도 가성비 좋은 쿠팡 최저가 정보를 꾸준히 올릴 예정입니다.
 블로그 이웃추가 해두시면 새 글 알림을 받아보실 수 있어요 🔔
 
 {label_str}"""
@@ -447,61 +484,105 @@ async def insert_text_link(page, text: str, url: str):
     await page.wait_for_timeout(100)
 
 
-# ── 이미지 URL 삽입 (네이버 SE 에디터) ───────────────────────────
+# ── 이미지 파일 다운로드 후 업로드 (네이버 SE 에디터) ───────────
+import tempfile
+import urllib.request as _urllib_req
+
+async def _insert_image_file(page, img_url: str) -> bool:
+    """
+    이미지를 임시 파일로 다운로드 → input[type=file]로 업로드.
+    네이버 스마트에디터 ONE은 외부 URL 직접 입력이 차단되므로
+    파일 업로드 방식을 사용한다.
+    """
+    import os as _os
+    tmp_path = None
+    try:
+        # 1. 이미지 다운로드 → 임시 파일
+        suffix = ".jpg"
+        if ".png" in img_url.lower():
+            suffix = ".png"
+        elif ".webp" in img_url.lower():
+            suffix = ".webp"
+        elif ".gif" in img_url.lower():
+            suffix = ".gif"
+
+        tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+
+        req = _urllib_req.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
+        with _urllib_req.urlopen(req, timeout=10) as resp:
+            with open(tmp_path, "wb") as f:
+                f.write(resp.read())
+
+        file_size = _os.path.getsize(tmp_path)
+        if file_size < 500:
+            print(f"    [warn] 이미지 크기 너무 작음({file_size}B) — 스킵")
+            return False
+
+        # 2. 이미지 버튼 클릭
+        img_btn = await page.query_selector(".se-image-toolbar-button")
+        if not img_btn:
+            img_btn = await page.query_selector(
+                "button[data-name='image'], button[title*='이미지'], button[aria-label*='이미지']"
+            )
+        if not img_btn:
+            print("    [warn] 이미지 버튼 없음 — 스킵")
+            return False
+
+        await img_btn.click()
+        await page.wait_for_timeout(1500)
+
+        # 3. input[type=file] 에 파일 경로 전달
+        file_input = await page.query_selector("input[type='file']")
+        if not file_input:
+            # 숨겨진 파일 인풋 시도
+            file_input = await page.evaluate_handle("""
+                () => {
+                    const inputs = document.querySelectorAll('input[type="file"]');
+                    return inputs.length > 0 ? inputs[0] : null;
+                }
+            """)
+
+        if file_input:
+            await file_input.set_input_files(tmp_path)
+            await page.wait_for_timeout(3000)   # 업로드 완료 대기
+            print(f"    [이미지 업로드 완료] {_os.path.basename(tmp_path)} ({file_size}B)")
+            await page.keyboard.press("Enter")
+            await page.wait_for_timeout(500)
+            return True
+        else:
+            print("    [warn] input[type=file] 없음 — Escape 후 스킵")
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(500)
+            return False
+
+    except Exception as e:
+        print(f"    [warn] 이미지 업로드 실패: {e}")
+        try:
+            await page.keyboard.press("Escape")
+        except Exception:
+            pass
+        return False
+    finally:
+        if tmp_path and _os.path.exists(tmp_path):
+            try:
+                _os.unlink(tmp_path)
+            except Exception:
+                pass
+
+
 async def insert_image_by_url(page, image_url: str):
     """
-    SE 에디터 이미지 삽입: 이미지 버튼 → URL 탭 → URL 입력 → 확인
+    SE 에디터 이미지 삽입 — 파일 다운로드 후 업로드 방식.
+    네이버 스마트에디터 ONE은 외부 URL 입력 탭이 제거되었으므로
+    이미지를 로컬에 다운로드한 뒤 파일 업로드로 삽입한다.
+    실패 시 graceful fallback (이미지 없이 계속 진행).
     """
-    print(f"    [이미지 삽입] {image_url[:60]}...")
-
-    # 이미지 삽입 버튼 클릭
-    img_btn = await page.query_selector(".se-image-toolbar-button")
-    if not img_btn:
-        # fallback: 툴바에서 이미지 버튼 찾기
-        img_btn = await page.query_selector("button[data-name='image'], button[title*='이미지'], button[aria-label*='이미지']")
-    if not img_btn:
-        print("    [warn] 이미지 버튼 없음 — 스킵")
-        return
-    await img_btn.click()
-    await page.wait_for_timeout(1500)
-
-    # URL 탭 클릭
-    url_tab = await page.query_selector("button:has-text('URL')")
-    if not url_tab:
-        url_tab = await page.query_selector("li:has-text('URL'), span:has-text('URL 입력')")
-    if url_tab:
-        await url_tab.click()
-        await page.wait_for_timeout(500)
-
-    # URL 입력창
-    url_input = await page.query_selector(".se-image-url-input")
-    if not url_input:
-        url_input = await page.query_selector("input[placeholder*='URL'], input[placeholder*='url']")
-    if url_input:
-        await url_input.click()
-        await url_input.fill(image_url)
-        await page.wait_for_timeout(300)
-    else:
-        print("    [warn] URL 입력창 없음 — Escape 후 스킵")
-        await page.keyboard.press("Escape")
-        await page.wait_for_timeout(500)
-        return
-
-    # 확인 버튼
-    confirm = await page.query_selector(".se-image-url-confirm")
-    if not confirm:
-        confirm = await page.query_selector("button:has-text('확인'), button:has-text('삽입')")
-    if confirm:
-        await confirm.click()
-        await page.wait_for_timeout(2000)
-    else:
-        await page.keyboard.press("Enter")
-        await page.wait_for_timeout(2000)
-
-    # 이미지 삽입 후 엔터로 다음 줄로 이동
-    await page.keyboard.press("Enter")
-    await page.wait_for_timeout(500)
-    print("    [이미지 삽입 완료]")
+    print(f"    [이미지 삽입 시도] {image_url[:70]}...")
+    success = await _insert_image_file(page, image_url)
+    if not success:
+        print(f"    [이미지 스킵] 파일 업로드 실패, 본문 계속 진행")
 
 
 # ── 표 삽입 (네이버 SE 에디터) ───────────────────────────────────
@@ -884,20 +965,44 @@ async def main():
     coupang_prices = [p for p in COUPANG_PRICES.split("|") if p.strip()] if COUPANG_PRICES else []
     coupang_images = [u for u in COUPANG_IMAGES.split("|") if u.strip()] if COUPANG_IMAGES else []
 
-    if not coupang_links:
+    # PRODUCT_DATA 환경변수 파싱 (naver_cron_runner.py에서 전달)
+    product_data = []
+    if PRODUCT_DATA_STR:
+        try:
+            product_data = json.loads(PRODUCT_DATA_STR)
+            print(f"  ✅ PRODUCT_DATA 수신: {len(product_data)}개 상품")
+            for i, p in enumerate(product_data):
+                print(f"     [{i+1}] {p.get('name','')[:40]} / {p.get('price','')}")
+        except Exception as e:
+            print(f"  [warn] PRODUCT_DATA 파싱 실패: {e}")
+
+    # product_data에서 링크/이미지 추출 (coupang_links/images 보완)
+    if product_data and not coupang_links:
+        coupang_links = [p.get("link", "") for p in product_data if p.get("link")]
+        coupang_prices = [p.get("price", "") for p in product_data if p.get("price")]
+
+    if product_data and not coupang_images:
+        coupang_images = [p.get("image", "") for p in product_data if p.get("image")]
+
+    if not coupang_links and not product_data:
         print("  쿠팡 링크/이미지 자동 추출 중...")
         coupang_links, coupang_prices, coupang_images = extract_coupang_data_from_blogger(POST_URL)
 
     content = build_naver_content(
         POST_TITLE, POST_SUMMARY, POST_URL,
-        labels, coupang_links, coupang_prices, coupang_images
+        labels, coupang_links, coupang_prices, coupang_images,
+        product_data=product_data,
     )
+
+    # 본문 내 IMAGE_HERE에 사용할 이미지 목록 (product_data 이미지 우선)
+    body_images = coupang_images  # build_naver_content와 동일 순서 유지
 
     print(f"[포스팅 준비]")
     print(f"  제목: {POST_TITLE[:50]}")
     print(f"  원본(OG카드): {POST_URL[:60]}")
     print(f"  쿠팡 링크: {len(coupang_links)}개 / 가격: {coupang_prices}")
-    print(f"  상품 이미지: {len(coupang_images)}개")
+    print(f"  상품 이미지: {len(body_images)}개")
+    print(f"  상품 데이터: {len(product_data)}개 (product_data)")
     print(f"  본문 길이: {len(content)}자")
 
     os.environ['DISPLAY'] = ':99'
@@ -936,7 +1041,7 @@ async def main():
         await type_title(page, POST_TITLE)
 
         print("[본문 입력 중...]")
-        await type_body(page, content, coupang_images)
+        await type_body(page, content, body_images)
 
         await page.screenshot(path="/tmp/naver_before_publish.png")
         print("[발행 중...]")

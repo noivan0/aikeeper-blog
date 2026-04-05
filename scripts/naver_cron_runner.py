@@ -34,24 +34,123 @@ def log(msg: str):
     print(f"[{ts}] {msg}", flush=True)
 
 
-# ── N-2-1: 네이버 제목 최적화 (검색 앞 10자가 핵심) ──────────────────
-def optimize_naver_title(title: str, keyword: str) -> str:
-    """네이버 검색은 제목 앞 10자가 핵심 — 핵심 키워드를 앞으로 배치.
+# ── N-2-1: 네이버 제목 최적화 (40자 이내 압축) ──────────────────────
+def optimize_naver_title(title: str, keyword: str = "") -> str:
+    """ggultongmon 원본 제목을 40자 이내로 압축.
     
-    네이버 알고리즘(N-2-1): 제목 앞 10자 내 키워드 매칭 비중이 높음.
-    keyword 앞 4자가 title 앞에 없으면 keyword를 제목 앞으로 이동.
+    원본 제목이 40자 이내면 그대로 사용.
+    초과하면 핵심 키워드+연도+핵심 단어만 남겨 40자 이내로 압축.
+    예: '아기 턱받이, 비싼 게 좋을까? 거즈·실리콘 TOP3 소재별 완전비교 2026'
+        → '아기 턱받이 소재별 TOP3 비교 2026'
     """
-    if not keyword or not title:
-        return title[:50]
-    # 이미 키워드로 시작하면 그대로 (50자 제한)
-    if title.startswith(keyword[:4]):
-        return title[:50]
-    # 키워드가 이미 제목 앞 10자 안에 있으면 그대로
-    if keyword[:4] in title[:10]:
-        return title[:50]
-    # 키워드를 앞으로 — 원래 제목과 합쳐 50자 이내
-    combined = f"{keyword} — {title}"
-    return combined[:50]
+    if not title:
+        return title
+    # 40자 이내면 그대로
+    if len(title) <= 40:
+        return title
+
+    # 연도 추출 (2025, 2026 등)
+    year_match = re.search(r'(20\d\d)', title)
+    year_suffix = year_match.group(1) if year_match else ""
+
+    # 핵심 주제어: 쉼표/물음표 이전 앞부분
+    # ex) "아기 턱받이, 비싼 게 좋을까? 거즈·실리콘 TOP3 소재별 완전비교 2026"
+    #   → subject = "아기 턱받이"
+    subject_match = re.match(r'^([^,，?？!！]+)', title)
+    subject = subject_match.group(1).strip() if subject_match else title[:12].strip()
+
+    # 핵심 수식어 (중복 없이, TOP3/TOP5 등은 숫자 포함 하나로)
+    modifiers = []
+    # TOP+숫자
+    top_match = re.search(r'TOP\s*(\d+)', title)
+    if top_match:
+        modifiers.append(f"TOP{top_match.group(1)}")
+    # 단독 키워드 (순서대로, 중복 제외)
+    for kw in ['소재별', '용량별', '성분별', '가성비', '추천', '비교', '완전비교', '선택법']:
+        if kw in title and kw not in " ".join(modifiers):
+            modifiers.append(kw)
+            break  # 수식어는 1개만
+
+    # 조합: 주제 + 수식어 + 연도
+    parts = [subject]
+    if modifiers:
+        parts.append(" ".join(modifiers))
+    if year_suffix:
+        parts.append(year_suffix)
+
+    compressed = " ".join(parts)
+    # 40자 초과 시 강제 자르기 (단어 경계 고려)
+    if len(compressed) > 40:
+        compressed = compressed[:40].rsplit(' ', 1)[0]
+
+    return compressed.strip() or title[:40]
+
+
+# ── atom.xml 상품 섹션 파싱 ──────────────────────────────────────
+def parse_product_sections(html: str) -> list:
+    """h2 태그로 구분된 상품 섹션 파싱.
+    
+    반환: [{"name":..., "price":..., "link":..., "image":..., "desc":...}, ...]
+    """
+    EXCLUDE_KEYWORDS = [
+        '선택기준', '선택 기준', '비교', 'FAQ', '마무리', '자주 묻는',
+        '상황별', '조합', '안내', '정리', '한눈에', '결론',
+    ]
+
+    # 1. JSON-LD script 태그 제거
+    html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+
+    # 2. h2로 섹션 분리
+    parts = re.split(r'<h2[^>]*>(.*?)</h2>', html, flags=re.DOTALL | re.IGNORECASE)
+
+    products = []
+    i = 1
+    while i < len(parts) - 1:
+        h2_raw = parts[i]
+        body = parts[i + 1] if i + 1 < len(parts) else ''
+        h2_text = re.sub(r'<[^>]+>', '', h2_raw).strip()
+
+        # 3. 제외 키워드 섹션 건너뜀
+        skip = any(kw in h2_text for kw in EXCLUDE_KEYWORDS)
+        if skip:
+            i += 2
+            continue
+
+        # 4. 가격(원) 포함 여부로 상품 섹션 판별
+        prices_in_body = re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+원)', body)
+        if not prices_in_body:
+            i += 2
+            continue
+
+        # 5. 첫 번째 쿠팡 링크
+        links = re.findall(r'href=["\']+(https://link\.coupang\.com/[^"\'>\s]+)', body)
+        first_link = links[0] if links else ''
+
+        # 6. 첫 번째 coupangcdn 이미지
+        imgs = re.findall(r'src=["\']([^"\'> ]+coupangcdn[^"\'> ]+)["\']', body)
+        if not imgs:
+            imgs = re.findall(r'src=["\']([^"\'> ]+coupang[^"\'> ]+)["\']', body)
+        # ?w=300 같은 썸네일 파라미터 제거해 원본 이미지 URL 사용
+        first_img = imgs[0].split('?')[0] if imgs else ''
+
+        # 7. 텍스트 앞 150자 (HTML 태그 제거 후)
+        plain = re.sub(r'<[^>]+>', '', body)
+        plain = re.sub(r'\s+', ' ', plain).strip()
+        desc = plain[:150].strip()
+
+        products.append({
+            'name': h2_text,
+            'price': prices_in_body[0],
+            'link': first_link,
+            'image': first_img,
+            'desc': desc,
+        })
+
+        if len(products) >= 3:
+            break
+        i += 2
+
+    return products
 
 
 def already_posted_urls() -> set:
@@ -73,7 +172,8 @@ def already_posted_urls() -> set:
 def fetch_latest_posts(max_age_days: int = MAX_AGE_DAYS) -> list[dict]:
     """
     atom.xml에서 최신 포스팅 목록 반환
-    반환 형식: [{"url": ..., "title": ..., "summary": ..., "labels": [...], "published": ...}]
+    반환 형식: [{"url":..., "title":..., "summary":..., "labels":[...],
+                 "published":..., "images":[...], "product_data":[...]}]
     """
     log(f"atom.xml 읽는 중: {ATOM_URL}")
     try:
@@ -115,19 +215,18 @@ def fetch_latest_posts(max_age_days: int = MAX_AGE_DAYS) -> list[dict]:
         title_el = entry.find("atom:title", ns)
         title = (title_el.text or "").strip() if title_el is not None else ""
 
-        # 요약
+        # content HTML 가져오기
+        content_el = entry.find("atom:content", ns)
+        content_raw = (content_el.text or "") if content_el is not None else ""
+
+        # 요약 (JSON-LD script 제거 후)
         summary_el = entry.find("atom:summary", ns)
         summary = (summary_el.text or "").strip() if summary_el is not None else ""
         if not summary:
-            content_el = entry.find("atom:content", ns)
-            if content_el is not None:
-                raw_html = content_el.text or ""
-                # <script>...</script> 블록 전체 제거 (JSON-LD 등이 summary에 노출되는 문제 방지)
-                clean_html = re.sub(r'<script[^>]*>.*?</script>', '', raw_html, flags=re.DOTALL | re.IGNORECASE)
-                plain = re.sub(r'<[^>]+>', '', clean_html)
-                # 공백/개행 정리 후 첫 200자
-                plain = re.sub(r'\s+', ' ', plain).strip()
-                summary = plain[:200].strip()
+            clean_html = re.sub(r'<script[^>]*>.*?</script>', '', content_raw, flags=re.DOTALL | re.IGNORECASE)
+            plain = re.sub(r'<[^>]+>', '', clean_html)
+            plain = re.sub(r'\s+', ' ', plain).strip()
+            summary = plain[:200].strip()
 
         # 발행일 — 나이 계산
         published_el = entry.find("atom:published", ns)
@@ -148,13 +247,20 @@ def fetch_latest_posts(max_age_days: int = MAX_AGE_DAYS) -> list[dict]:
             if term:
                 labels.append(term)
 
-        # 이미지 URL 추출 (쿠팡 이미지 우선)
-        content_el = entry.find("atom:content", ns)
-        content_raw = (content_el.text or "") if content_el is not None else ""
-        img_urls = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', content_raw)
-        coupang_imgs = [u for u in img_urls if 'coupang' in u or 'thumbnail' in u]
-        other_imgs = [u for u in img_urls if u not in coupang_imgs]
-        product_images = (coupang_imgs + other_imgs)[:3]
+        # ── 상품 데이터 파싱 (핵심 개선) ─────────────────────────
+        product_data = parse_product_sections(content_raw)
+
+        # 상품 이미지 (product_data 우선, 없으면 기존 방식)
+        if product_data:
+            product_images = [p["image"] for p in product_data if p.get("image")][:3]
+        else:
+            img_urls = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', content_raw)
+            coupang_imgs = [u for u in img_urls if 'coupang' in u or 'thumbnail' in u]
+            other_imgs = [u for u in img_urls if u not in coupang_imgs]
+            product_images = (coupang_imgs + other_imgs)[:3]
+
+        if product_data:
+            log(f"  ✅ 상품 파싱 성공: {len(product_data)}개 — {[p['name'][:20] for p in product_data]}")
 
         posts.append({
             "url": url,
@@ -164,6 +270,7 @@ def fetch_latest_posts(max_age_days: int = MAX_AGE_DAYS) -> list[dict]:
             "published": published_str,
             "age_hours": round(age_sec / 3600, 1),
             "images": product_images,
+            "product_data": product_data,   # ← 새로 추가
         })
 
     log(f"  {max_age_days}일 이내 포스팅: {len(posts)}개")
@@ -172,25 +279,29 @@ def fetch_latest_posts(max_age_days: int = MAX_AGE_DAYS) -> list[dict]:
 
 def run_naver_post(post: dict) -> bool:
     """post_to_naver_prosweep.py 실행 — 환경변수 전달"""
-    # N-2-1: 제목 앞부분에 핵심 키워드 배치 (네이버 검색 앞 10자 최적화)
     labels = post.get("labels", [])
     primary_keyword = labels[0] if labels else ""
-    optimized_title = optimize_naver_title(post["title"], primary_keyword)
+
+    # 제목 40자 이내 압축 (잘린 채 반복 방지)
+    optimized_title = optimize_naver_title(post["title"])
     if optimized_title != post["title"]:
-        log(f"  📝 제목 최적화: [{post['title'][:30]}] → [{optimized_title}]")
+        log(f"  📝 제목 압축: [{post['title'][:40]}] → [{optimized_title}]")
+
+    # 상품 데이터 JSON 직렬화 (post_to_naver_prosweep.py에 전달)
+    product_data = post.get("product_data", [])
+    product_data_json = json.dumps(product_data, ensure_ascii=False) if product_data else ""
 
     env = os.environ.copy()
     env.update({
-        "POST_TITLE":     optimized_title,       # N-2-1: 최적화된 제목
+        "POST_TITLE":     optimized_title,
         "POST_URL":       post["url"],
         "POST_SUMMARY":   post["summary"],
         "LABELS":         ",".join(post["labels"][:7]),
         "COUPANG_IMAGES": "|".join(post.get("images", [])[:3]),
         "DISPLAY":        ":99",
-        # N-2-2: 네이버 SEO 키워드 밀도 힌트 (post_to_naver_prosweep.py가 활용 가능)
-        "NAVER_PRIMARY_KW": primary_keyword,
-        # N-3: 스마트블록 최적화 힌트 (h2/h3 최소 5개 요청)
+        "NAVER_PRIMARY_KW":   primary_keyword,
         "NAVER_MIN_HEADINGS": "5",
+        "PRODUCT_DATA":   product_data_json,    # ← 새로 추가: 상품 데이터 JSON
     })
 
     # NAVER_ID / NAVER_PW가 env에 없으면 경고
