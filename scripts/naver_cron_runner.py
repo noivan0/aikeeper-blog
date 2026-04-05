@@ -128,6 +128,14 @@ def fetch_latest_posts(max_age_days: int = MAX_AGE_DAYS) -> list[dict]:
             if term:
                 labels.append(term)
 
+        # 이미지 URL 추출 (쿠팡 이미지 우선)
+        content_el = entry.find("atom:content", ns)
+        content_raw = (content_el.text or "") if content_el is not None else ""
+        img_urls = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', content_raw)
+        coupang_imgs = [u for u in img_urls if 'coupang' in u or 'thumbnail' in u]
+        other_imgs = [u for u in img_urls if u not in coupang_imgs]
+        product_images = (coupang_imgs + other_imgs)[:3]
+
         posts.append({
             "url": url,
             "title": title,
@@ -135,6 +143,7 @@ def fetch_latest_posts(max_age_days: int = MAX_AGE_DAYS) -> list[dict]:
             "labels": labels,
             "published": published_str,
             "age_hours": round(age_sec / 3600, 1),
+            "images": product_images,
         })
 
     log(f"  {max_age_days}일 이내 포스팅: {len(posts)}개")
@@ -145,11 +154,12 @@ def run_naver_post(post: dict) -> bool:
     """post_to_naver_prosweep.py 실행 — 환경변수 전달"""
     env = os.environ.copy()
     env.update({
-        "POST_TITLE":   post["title"],
-        "POST_URL":     post["url"],
-        "POST_SUMMARY": post["summary"],
-        "LABELS":       ",".join(post["labels"][:7]),
-        "DISPLAY":      ":99",
+        "POST_TITLE":     post["title"],
+        "POST_URL":       post["url"],
+        "POST_SUMMARY":   post["summary"],
+        "LABELS":         ",".join(post["labels"][:7]),
+        "COUPANG_IMAGES": "|".join(post.get("images", [])[:3]),
+        "DISPLAY":        ":99",
     })
 
     # NAVER_ID / NAVER_PW가 env에 없으면 경고

@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
 """
-ggultongmon 기존 포스팅 → prosweep 네이버 블로그 일괄 예약발행 v2
+ggultongmon 기존 포스팅 → prosweep 네이버 블로그 일괄 예약발행 v3
 - sitemap 기반 전체 포스팅 수집 (505개+)
 - 발행 간격: 3시간 (C-RANK 최적화, 스팸 방지)
 - 중복 방지: naver_posts.jsonl 대조
 - 우선순위: 2026년 비교형 포스팅 우선, 2025년 단품 제외
+- v3: 이미지 삽입 (IMAGE_HERE 마커), 비교표 (TABLE_HERE 마커) 지원
 """
 import os, sys, asyncio, json, datetime, re, ssl, urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+# post_to_naver_prosweep.py의 공통 함수 import
+sys.path.insert(0, str(Path(__file__).parent))
+from post_to_naver_prosweep import (
+    build_naver_content,
+    insert_image_by_url,
+    insert_table_block,
+)
 
 os.environ['DISPLAY'] = ':99'
 
@@ -57,11 +66,17 @@ def collect_all_posts(max_posts: int = 200) -> list:
         text    = re.sub(r'<[^>]+>',' ', clean)
         text    = re.sub(r'\s+',' ', text).strip()
         cats    = [c.get('term','') for c in e.findall('atom:category', ns)]
+        # 이미지 URL 추출 (쿠팡 이미지 우선)
+        img_urls     = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', content)
+        coupang_imgs = [u for u in img_urls if 'coupang' in u or 'thumbnail' in u]
+        other_imgs   = [u for u in img_urls if u not in coupang_imgs]
+        images       = (coupang_imgs + other_imgs)[:3]
         meta_map[url] = {
             "title": e.findtext('atom:title', namespaces=ns) or '',
             "summary": text[:200],
             "coupang_links": links,
             "coupang_prices": prices,
+            "coupang_images": images,
             "labels": cats[:5],
         }
 
@@ -89,7 +104,7 @@ def collect_all_posts(max_posts: int = 200) -> list:
             title = url.split('/')[-1].replace('.html','').replace('-',' ').replace('_',' ')
             posts.append({
                 "url": url, "title": title,
-                "summary": "", "coupang_links": [], "coupang_prices": [], "labels": []
+                "summary": "", "coupang_links": [], "coupang_prices": [], "coupang_images": [], "labels": []
             })
 
     print(f"  발행 대상 후보: {len(posts)}개 (최대 {max_posts}개)")
@@ -131,95 +146,14 @@ def log_result(post, naver_url, reserve_dt):
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-# ─── 본문 빌더 ──────────────────────────────────────────────────
-def build_content(title, summary, original_url, labels, coupang_links, coupang_prices) -> str:
-    if labels:
-        label_str = " ".join([f"#{l.replace(' ', '')}" for l in labels[:8]])
-    else:
-        label_str = "#쿠팡추천 #가성비 #쿠팡파트너스"
-    price_block = ""
-    for i, link in enumerate(coupang_links[:3]):
-        price = coupang_prices[i] if i < len(coupang_prices) else ""
-        rank  = ["1위","2위","3위"][i]
-        btn   = f"▶ {rank} 쿠팡 최저가 확인 ({price})" if price else f"▶ {rank} 쿠팡 최저가 확인"
-        price_block += f"LINK_TEXT:{btn}|{link}\n\n"
-    price_summary = "".join([
-        ["1위","2위","3위"][i] + ": " + p + "\n"
-        for i, p in enumerate(coupang_prices[:3])
-    ])
-    no_link_note = "\n아래 원본 글에서 상품 링크를 확인하실 수 있습니다.\n" \
-                   if not coupang_links else ""
-    price_section = "아래 원본 글에서 실시간 최저가를 확인해보세요." \
-                    if not price_block else price_block
-    price_low_block = ("■ 현재 쿠팡 최저가\n\n" + price_summary + "\n") if price_summary else ""
-
-    parts = [
-        "이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.",
-        "",
-        "안녕하세요, 쇼핑정보 모아보기입니다 😊",
-        "",
-        f"오늘은 {title}에 대해 직접 비교하고 정리한 내용을 공유해드립니다.",
-        "",
-        summary,
-        "",
-        "이 글에서는 가격, 품질, 가성비를 중심으로 핵심만 뽑아 정리했습니다.",
-        no_link_note,
-        "",
-        "■ 지금 바로 가격이 궁금하다면?",
-        "",
-        price_section,
-        "※ 위 가격은 쿠팡 기준이며 실제 결제 시 할인·적립금 적용으로 더 저렴할 수 있습니다.",
-        "",
-        "",
-        f"■ {title} — 선택 전 꼭 확인할 3가지",
-        "",
-        "첫째, 가격 대비 용량입니다. 단순 가격이 아닌 개당 단가를 계산해보세요.",
-        "",
-        "둘째, 성분과 안전성입니다. 피부가 예민하거나 아이가 있는 가정이라면 성분표를 꼭 확인하세요.",
-        "",
-        "셋째, 브랜드 신뢰도와 후기입니다. 최근 3개월 이내 리뷰 비중과 실사용자 의견을 확인하세요.",
-        "",
-        price_low_block,
-        "■ 자주 묻는 질문 (FAQ)",
-        "",
-        "Q. 가성비가 가장 좋은 제품은 어느 것인가요?",
-        "A. 단가 기준으로 위 링크에서 직접 비교해보시는 걸 추천드립니다.",
-        "",
-        "Q. 로켓배송으로 받을 수 있나요?",
-        "A. 위 링크 제품들은 대부분 로켓배송이 적용돼 있습니다. 상품 페이지에서 확인하세요.",
-        "",
-        "Q. 추가 할인을 받을 수 있나요?",
-        "A. 쿠팡 회원이라면 첫 구매 할인, 카드사 할인, 쿠팡캐시 적립 등 다양한 혜택을 받을 수 있습니다.",
-        "",
-        "",
-        "■ 더 자세한 비교 분석 보기",
-        "",
-        "성분 구성, 실제 사용 후기, 항목별 가성비 비교가 더 궁금하신 분들을 위해 상세 포스팅을 정리해뒀습니다 👇",
-        "",
-        f"CARD_URL:{original_url}",
-        "",
-        "",
-        "■ 구매 전 체크리스트",
-        "",
-        "☑ 로켓배송 여부 확인",
-        "☑ 묶음 할인 적용 여부",
-        "☑ 쿠폰 적용 가능 여부",
-        "☑ 최근 3개월 이내 리뷰 비중",
-        "☑ 판매자 정보 (직영몰 여부)",
-        "",
-        "",
-        "■ 마무리",
-        "",
-        "오늘 소개해드린 제품들은 쿠팡에서 빠르게 받아볼 수 있는 신뢰할 수 있는 제품들입니다.",
-        "",
-        "도움이 됐다면 공감 ❤️ 한 번 눌러주시면 큰 힘이 됩니다!",
-        "",
-        "앞으로도 가성비 좋은 쿠팡 최저가 정보를 꾸준히 올릴 예정입니다.",
-        "블로그 이웃추가 해두시면 새 글 알림을 받아보실 수 있어요 🔔",
-        "",
-        label_str,
-    ]
-    return "\n".join(parts).strip()
+# ─── 본문 빌더 (v11 공통 함수 위임) ────────────────────────────
+def build_content(title, summary, original_url, labels, coupang_links, coupang_prices,
+                  coupang_images=None) -> str:
+    """post_to_naver_prosweep.build_naver_content에 위임 (v11 포맷)"""
+    return build_naver_content(
+        title, summary, original_url, labels, coupang_links, coupang_prices,
+        coupang_images or []
+    )
 
 
 # ─── SE 에디터 함수들 ────────────────────────────────────────────
@@ -301,7 +235,16 @@ async def insert_og_card(page, url):
         await page.mouse.click(le['x'],le['y']); await page.wait_for_timeout(200)
         await page.keyboard.press("End")
 
-async def type_body(page, content):
+async def type_body(page, content, image_urls=None):
+    """
+    content 마커:
+    - IMAGE_HERE:N  → N번 이미지 삽입
+    - TABLE_HERE:{json}  → 표 삽입
+    - CARD_URL:URL  → OG 카드
+    - LINK_TEXT:텍스트|URL  → 하이퍼링크
+    """
+    if image_urls is None:
+        image_urls = []
     bc = await page.query_selector(".se-component.se-text")
     if bc:
         box = await bc.bounding_box()
@@ -311,6 +254,27 @@ async def type_body(page, content):
     await page.wait_for_timeout(500)
     for i, line in enumerate(content.split('\n')):
         s = line.strip()
+
+        # IMAGE_HERE:N 마커
+        if s.startswith("IMAGE_HERE:"):
+            try:
+                idx = int(s[len("IMAGE_HERE:"):].strip())
+            except ValueError:
+                idx = 0
+            if idx < len(image_urls) and image_urls[idx]:
+                await insert_image_by_url(page, image_urls[idx])
+            continue
+
+        # TABLE_HERE:{json} 마커
+        if s.startswith("TABLE_HERE:"):
+            table_json = s[len("TABLE_HERE:"):].strip()
+            try:
+                table_data = json.loads(table_json)
+                await insert_table_block(page, table_data.get("headers",[]), table_data.get("rows",[]))
+            except Exception as e:
+                print(f"    [warn] 표 파싱 실패: {e}")
+            continue
+
         if s.startswith("CARD_URL:"):
             await insert_og_card(page, s[len("CARD_URL:"):])
         elif "LINK_TEXT:" in s:
@@ -442,10 +406,12 @@ async def main():
         ok_cnt = fail_cnt = 0
         for i,(post,sched) in enumerate(zip(queue,schedules)):
             print(f"[{i+1}/{len(queue)}] {sched} — {post['title'][:45]}")
+            post_images = post.get("coupang_images", [])
             content = build_content(
                 post["title"], post.get("summary",""),
                 post["url"], post.get("labels",[]),
-                post.get("coupang_links",[]), post.get("coupang_prices",[])
+                post.get("coupang_links",[]), post.get("coupang_prices",[]),
+                post_images,
             )
             try:
                 await page.goto(
@@ -455,7 +421,7 @@ async def main():
                 await handle_popups(page)
                 await type_title(page, post["title"])
                 await page.keyboard.press("Tab"); await page.wait_for_timeout(300)
-                await type_body(page, content)
+                await type_body(page, content, post_images)
                 result = await publish_reserved(page, sched)
                 if result:
                     print(f"  ✅ {result}")
