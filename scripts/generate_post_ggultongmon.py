@@ -411,9 +411,45 @@ A4:
         title = topic
     char_count = len(content.replace(' ', '').replace('\n', ''))
     print(f"   생성 완료: {char_count:,}자 | 제목: {title[:40]}")
-    # 1-3. 최소 글자수 경고 (2,000자 미만)
-    if char_count < 2000:
-        print(f"   [WARN] 본문 글자수 {char_count:,}자 — 2,000자 미만입니다. 콘텐츠 품질을 확인하세요.")
+
+    # ── 최소 글자수 3,500자 미만 → 자동 재생성 (최대 2회) ──────────────
+    MIN_CHARS = 3500
+    for _retry in range(2):
+        if char_count >= MIN_CHARS:
+            break
+        print(f"   [RETRY {_retry+1}/2] {char_count:,}자 — {MIN_CHARS:,}자 미만, 내용 보강 재생성 중...")
+        retry_prompt = (
+            prompt +
+            f"\n\n[필수] 위 글이 {char_count:,}자로 너무 짧습니다. "
+            f"최소 {MIN_CHARS:,}자 이상이 되도록 각 섹션을 더 풍부하게 작성하세요:\n"
+            "- 각 상품 설명을 500자 이상으로 확장\n"
+            "- FAQ를 5개 이상, 각 답변 200자 이상\n"
+            "- 비교표 아래 '언제 어떤 제품을 골라야 하는지' 추가 설명\n"
+            "- 마무리 섹션에 구매 결정 도움말 추가"
+        )
+        _msg = client.messages.create(
+            model=ANTHROPIC_MODEL, max_tokens=8192,
+            system=SYSTEM_PROMPT_COUPANG,
+            messages=[{"role": "user", "content": retry_prompt}]
+        )
+        _raw = _msg.content[0].text
+        def _ex(tag, src=_raw):
+            s = src.find(f"==={tag}===")
+            if s == -1: return ""
+            s += len(f"==={tag}===")
+            e = src.find("===", s)
+            return src[s:e if e != -1 else None].strip()
+        _title_new = _ex("TITLE") or title
+        _content_new = _ex("CONTENT")
+        _count_new = len(_content_new.replace(' ', '').replace('\n', ''))
+        print(f"   재생성 결과: {_count_new:,}자")
+        if _count_new > char_count:
+            title, content, char_count = _title_new, _content_new, _count_new
+        else:
+            break  # 재생성해도 안 늘면 포기
+
+    if char_count < MIN_CHARS:
+        print(f"   [WARN] 최종 {char_count:,}자 — {MIN_CHARS:,}자 미달 (그대로 진행)")
 
     return {
         "title": title, "content": content,
