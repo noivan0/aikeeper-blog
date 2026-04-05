@@ -2,10 +2,13 @@ name: AI Auto Post to Blogger
 
 on:
   schedule:
-    # UTC 기준 (KST = UTC+9) — 하루 2회 (품질 집중 전략)
-    # KST: 09:00, 19:00
-    - cron: '0  0  * * *'   # KST 09:00
-    - cron: '0  10 * * *'   # KST 19:00
+    # UTC 기준 (KST = UTC+9) — 하루 5회
+    # KST: 08:00, 11:00, 14:00, 17:00, 21:00
+    - cron: '0  23 * * *'   # KST 08:00
+    - cron: '0  2  * * *'   # KST 11:00
+    - cron: '0  5  * * *'   # KST 14:00
+    - cron: '0  8  * * *'   # KST 17:00
+    - cron: '0  12 * * *'   # KST 21:00
   workflow_dispatch:
     inputs:
       topic:
