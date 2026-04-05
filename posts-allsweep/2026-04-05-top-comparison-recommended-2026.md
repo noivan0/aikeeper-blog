@@ -12,6 +12,7 @@ hero_image_alt: "credit card comparison cashback benefits annual fee 2026"
 hero_credit: "Wired AI"
 hero_credit_url: "https://www.wired.com/story/best-portable-jump-starters/"
 hero_source_label: "📰 Wired AI"
+published: true
 ---
 
 지갑 속에 카드가 3장인데, 정작 뭘 쓰고 있는지 모르는 경험 있으신가요?

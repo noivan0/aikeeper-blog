@@ -12,6 +12,7 @@ hero_image_alt: "Perplexity AI prompt search interface comparison Google"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/salesforce-rolls-out-new-slackbot-ai-agent-as-it-battles-microsoft-and"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 구글 검색창에 뭔가를 치고, 10개의 링크를 클릭하고, 광고를 피해가며 원하는 답을 찾는 데 15분을 쓴 경험, 다들 있으시죠? 심지어 15분 동안 열심히 찾았는데 정작 원하는 답은 없고, "더 읽어보기" 버튼만 잔뜩 보이다 지쳐서 그냥 포기한 기억도요.

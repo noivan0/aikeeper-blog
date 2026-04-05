@@ -12,6 +12,7 @@ hero_image_alt: "Stable Diffusion Midjourney comparison AI image generation loca
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/infrastructure/railway-secures-usd100-million-to-challenge-aws-with-ai-native-cloud"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 "어, 미드저니로 만든 이미지가 이렇게 이쁜데, 왜 굳이 Stable Diffusion을 쓰지?"

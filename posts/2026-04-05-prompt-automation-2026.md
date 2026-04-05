@@ -12,6 +12,7 @@ hero_image_alt: "Microsoft Copilot Excel automation workflow dashboard professio
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/salesforce-rolls-out-new-slackbot-ai-agent-as-it-battles-microsoft-and"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 매주 월요일 아침, 어김없이 찾아오는 그 공포를 아시나요?

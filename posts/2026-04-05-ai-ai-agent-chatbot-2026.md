@@ -12,6 +12,7 @@ hero_image_alt: "autonomous AI agent workflow automation futuristic 2026"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/infrastructure/claude-code-costs-up-to-usd200-a-month-goose-does-the-same-thing-for-free"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 챗봇에게 "이 보고서 정리해줘"라고 했더니, 3문단짜리 요약을 돌려받은 경험 있으시죠? 그걸 받아서 다시 여러분이 직접 포맷 잡고, 팀장님 메일로 보내고, 슬랙에 공유하고, 캘린더에 리뷰 일정 잡고… 결국 정작 "일"은 다 여러분이 했던 그 경험.

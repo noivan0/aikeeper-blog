@@ -12,6 +12,7 @@ hero_image_alt: "professional workplace AI report writing laptop screen"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/salesforce-rolls-out-new-slackbot-ai-agent-as-it-battles-microsoft-and"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 보고서 마감이 3시간 남았는데, 화면엔 커서만 깜빡인다. ChatGPT 탭을 열고 "주간 팀 성과 보고서 써줘"를 입력한다. 나온 결과물을 보고 창을 닫는다. "이걸로 임원한테 보고할 수는 없잖아." 그리고 결국 혼자 두 시간 동안 빈 워드 파일과 씨름한다.

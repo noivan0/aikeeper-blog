@@ -12,6 +12,7 @@ hero_image_alt: "Korea stock market crash investor strategy 2026"
 hero_credit: "TechCrunch AI"
 hero_credit_url: "https://techcrunch.com/2026/04/03/anthropic-is-having-a-moment-in-the-private-markets-spacex-could-spoil-the-party/"
 hero_source_label: "📰 TechCrunch AI"
+published: true
 ---
 
 # 트럼프 관세 쇼크 후 한국 증시 급락, 2026년 4월 개인투자자 완전정리

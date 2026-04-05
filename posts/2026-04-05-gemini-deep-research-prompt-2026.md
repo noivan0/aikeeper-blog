@@ -12,6 +12,7 @@ hero_image_alt: "AI deep research workflow freelancer market analysis report"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/nous-researchs-nouscoder-14b-is-an-open-source-coding-model-landing-right-in"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 시장조사 보고서 하나 쓰려고 앉았다가, 어느새 3시간이 날아간 경험 있으시죠?

@@ -12,6 +12,7 @@ hero_image_alt: "Microsoft Copilot free vs paid plan comparison dashboard"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/infrastructure/claude-code-costs-up-to-usd200-a-month-goose-does-the-same-thing-for-free"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 무료로 며칠 써봤습니다. 꽤 괜찮더라고요. "이거면 충분하겠는데?"라고 생각하면서 Copilot 채팅창에서 이것저것 물어봤죠. 그런데 정작 회의 끝나고 자동으로 회의록 뽑히는 거 보고 싶었고, Word에서 보고서 초안 자동 생성하는 거 써보고 싶었고, Teams 채팅 스레드 몇 십 개 한 번에 요약하는 거 하고 싶었는데—

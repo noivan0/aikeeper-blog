@@ -12,6 +12,7 @@ hero_image_alt: "Korean pension savings IRP tax deduction comparison chart 2026"
 hero_credit: "Reddit r/artificial"
 hero_credit_url: "https://reddit.com/r/Salary/comments/1sb1ssd/29m_being_an_rn_was_the_best_decision_of_my_life/"
 hero_source_label: "💬 Reddit r/artificial"
+published: true
 ---
 
 # 2026 연금저축 IRP 비교 완전정리 — 연봉별 환급액 시뮬레이션

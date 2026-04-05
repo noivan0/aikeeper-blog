@@ -12,6 +12,7 @@ hero_image_alt: "Microsoft Teams Copilot meeting summary AI interface"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/salesforce-rolls-out-new-slackbot-ai-agent-as-it-battles-microsoft-and"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 "드디어 회의록 안 써도 되겠다!" 싶어서 Copilot 켰더니…

@@ -23,10 +23,9 @@ touch "$GITHUB_OUTPUT"
 LOG_FILE="/var/log/allsweep_cron.log"
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] ===== allsweep 포스팅 시작 =====" | tee -a "$LOG_FILE"
 
-# 랜덤 딜레이 (0~5분) — aikeeper와 26분 엇갈리므로 짧게
-DELAY=$((RANDOM % 300))
-echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 랜덤 딜레이: ${DELAY}초" | tee -a "$LOG_FILE"
-sleep "$DELAY"
+# 딜레이 제거 (병렬 즉시 실행)
+DELAY=0
+echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 딜레이 없음 (병렬 실행 모드)" | tee -a "$LOG_FILE"
 
 # Step 1: 주제 발굴 (allsweep 전용)
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] Step 1: 주제 발굴 (allsweep)" | tee -a "$LOG_FILE"
@@ -58,18 +57,28 @@ python3 scripts/ci_generate.py "$TOPIC" "$KEYWORDS" "$ANGLE" 2>&1 | tee -a "$LOG
 POST_FILE=$(grep '^file=' "$GH_OUTPUT_GEN" | cut -d= -f2- | head -1)
 rm -f "$GH_OUTPUT_GEN"
 
-# posts-allsweep 에서 오늘 날짜 파일 탐지
+# posts-allsweep 에서 오늘 날짜 중 아직 발행 안 된 파일 탐지
 if [ -z "$POST_FILE" ] || [ ! -f "$POST_FILE" ]; then
-    POST_FILE=$(ls posts-allsweep/$(date '+%Y-%m-%d')*.md 2>/dev/null | tail -1)
+    for f in $(ls posts-allsweep/$(date '+%Y-%m-%d')*.md 2>/dev/null | sort); do
+        if ! grep -q "^published: true" "$f" 2>/dev/null; then
+            POST_FILE="$f"
+            break
+        fi
+    done
 fi
-# posts/ 에서도 fallback
+# posts/ 에서도 fallback (발행 안 된 것만)
 if [ -z "$POST_FILE" ] || [ ! -f "$POST_FILE" ]; then
-    POST_FILE=$(ls posts/$(date '+%Y-%m-%d')*.md 2>/dev/null | tail -1)
+    for f in $(ls posts/$(date '+%Y-%m-%d')*.md 2>/dev/null | sort); do
+        if ! grep -q "^published: true" "$f" 2>/dev/null; then
+            POST_FILE="$f"
+            break
+        fi
+    done
 fi
 
 if [ -z "$POST_FILE" ] || [ ! -f "$POST_FILE" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 포스트 파일 없음 — 종료" | tee -a "$LOG_FILE"
-    exit 1
+    echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 발행할 새 포스트 없음 (모두 발행 완료 또는 파일 없음) — 종료" | tee -a "$LOG_FILE"
+    exit 0
 fi
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 파일: $POST_FILE" | tee -a "$LOG_FILE"

@@ -12,6 +12,7 @@ hero_image_alt: "Mistral Le Chat versus Perplexity AI comparison interface"
 hero_credit: "The Verge AI"
 hero_credit_url: "https://www.theverge.com/ai-artificial-intelligence/906525/ai-chatbot-prescribe-refill-psychiatric-drugs"
 hero_source_label: "📰 The Verge AI"
+published: true
 ---
 
 "AI 검색 도구가 이렇게 많은데, 대체 뭘 써야 하죠?"

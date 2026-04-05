@@ -12,6 +12,7 @@ hero_image_alt: "freelancer AI proposal automation comparison tools desk"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/infrastructure/claude-code-costs-up-to-usd200-a-month-goose-does-the-same-thing-for-free"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 클라이언트한테서 갑자기 연락이 옵니다. "이번 주 금요일까지 제안서 보내주실 수 있나요?" 마감은 72시간 뒤인데, 지금 손에 잡힌 작업이 세 개나 밀려 있죠. 제안서 한 건 쓰는 데 보통 40분은 족히 걸립니다. 클라이언트 업종 파악하고, 견적 항목 정리하고, 왜 나를 써야 하는지 설득하는 문장까지 넣으면 순식간에 한 시간이 사라지는 그 느낌, 프리랜서라면 누구나 알 거예요.

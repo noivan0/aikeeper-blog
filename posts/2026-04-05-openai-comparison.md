@@ -12,6 +12,7 @@ hero_image_alt: "OpenAI Cohere embedding model comparison RAG vector search"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/nous-researchs-nouscoder-14b-is-an-open-source-coding-model-landing-right-in"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 RAG 프로젝트를 시작할 때 팀 내에서 이런 대화 나눠본 적 있으신가요?

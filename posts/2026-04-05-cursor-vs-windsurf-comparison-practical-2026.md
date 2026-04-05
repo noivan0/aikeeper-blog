@@ -12,6 +12,7 @@ hero_image_alt: "AI coding tools comparison cursor windsurf developer workspace"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/anthropic-launches-cowork-a-claude-desktop-agent-that-works-in-your-files-no"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 "그냥 ChatGPT한테 코드 짜달라고 했더니, 파일을 어디에 저장해야 하는지도 모르겠고, 에러가 나면 다시 붙여넣기하고 또 에러 나고… 이게 맞나?"

@@ -16,10 +16,9 @@ touch "$GITHUB_OUTPUT"
 LOG_FILE="/var/log/aikeeper_cron.log"
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] ===== aikeeper 포스팅 시작 =====" | tee -a "$LOG_FILE"
 
-# 랜덤 딜레이 (0~5분) — 크론 간격 52분에 맞게 축소
-DELAY=$((RANDOM % 300))
-echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 랜덤 딜레이: ${DELAY}초" | tee -a "$LOG_FILE"
-sleep "$DELAY"
+# 딜레이 제거 (병렬 즉시 실행)
+DELAY=0
+echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 딜레이 없음 (병렬 실행 모드)" | tee -a "$LOG_FILE"
 
 # Step 1: 주제 발굴
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] Step 1: 주제 발굴" | tee -a "$LOG_FILE"
@@ -50,13 +49,18 @@ POST_FILE=$(grep '^file=' "$GH_OUTPUT_GEN" | cut -d= -f2- | head -1)
 rm -f "$GH_OUTPUT_GEN"
 
 if [ -z "$POST_FILE" ] || [ ! -f "$POST_FILE" ]; then
-    # 오늘 날짜 파일 자동 탐지
-    POST_FILE=$(ls posts/$(date '+%Y-%m-%d')*.md 2>/dev/null | tail -1)
+    # 오늘 날짜 파일 중 아직 발행 안 된 파일 탐지 (published: true 없는 것)
+    for f in $(ls posts/$(date '+%Y-%m-%d')*.md 2>/dev/null | sort); do
+        if ! grep -q "^published: true" "$f" 2>/dev/null; then
+            POST_FILE="$f"
+            break
+        fi
+    done
 fi
 
 if [ -z "$POST_FILE" ] || [ ! -f "$POST_FILE" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 포스트 파일 없음 — 종료" | tee -a "$LOG_FILE"
-    exit 1
+    echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 발행할 새 포스트 없음 (모두 발행 완료 또는 파일 없음) — 종료" | tee -a "$LOG_FILE"
+    exit 0
 fi
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 파일: $POST_FILE" | tee -a "$LOG_FILE"

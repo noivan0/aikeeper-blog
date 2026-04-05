@@ -12,6 +12,7 @@ hero_image_alt: "AI resume silicon valley engineer laptop code screen"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/infrastructure/claude-code-costs-up-to-usd200-a-month-goose-does-the-same-thing-for-free"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 영문 이력서를 수십 번 고쳐 써봤는데, 매번 서류에서 탈락한 경험이 있으신가요? ChatGPT한테 "이 이력서 좀 고쳐줘"라고 붙여넣었다가 돌아온 결과물이 원본보다 더 어색한 영어로 채워진 경험, 한 번쯤 있으실 거예요. 2026년 4월 첫째 주, Hacker News에 "Show HN: My AI-Native Resume Pipeline"이라는 글 하나가 올라왔습니다. 불과 48시간 만에 900개 이상의 댓글을 달며 주간 Hot 1위에 올랐고, Reddit의 r/cscareerquestions와 r/jobs에서도 동시에 퍼지기 시작했죠.

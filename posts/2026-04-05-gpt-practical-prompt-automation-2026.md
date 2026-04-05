@@ -12,6 +12,7 @@ hero_image_alt: "freelancer writing proposal with ChatGPT AI automation laptop d
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/anthropic-launches-cowork-a-claude-desktop-agent-that-works-in-your-files-no"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 제안서 한 장 쓰는 데 2시간, 견적서 계산하다 밤을 새운 적 있으신가요? 저도 그랬습니다. 클라이언트 문의가 들어오는 순간 마음이 반갑다가도, "또 제안서 써야 하네"라는 생각에 한숨부터 나오는 그 기분. 근사한 포트폴리오는 다 있는데, 그걸 설득력 있는 문서로 조립하는 일이 매번 처음처럼 어렵습니다.

@@ -12,6 +12,7 @@ hero_image_alt: "Korean savings account interest rate comparison 2026 banking"
 hero_credit: "Wired AI"
 hero_credit_url: "https://www.wired.com/story/best-portable-jump-starters/"
 hero_source_label: "📰 Wired AI"
+published: true
 ---
 
 # 2026 파킹통장 완전정리: 금리·추천·비교 후회없는 선택법

@@ -12,6 +12,7 @@ hero_image_alt: "developer writing API documentation with AI cursor interface"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/the-creator-of-claude-code-just-revealed-his-workflow-and-developers-are"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 매달 반복되는 그 고통, 여러분도 아시나요?

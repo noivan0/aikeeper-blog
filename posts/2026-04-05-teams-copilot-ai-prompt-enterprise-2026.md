@@ -12,6 +12,7 @@ hero_image_alt: "freelancer working alone AI copilot workflow productivity"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/salesforce-rolls-out-new-slackbot-ai-agent-as-it-battles-microsoft-and"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 클라이언트한테 메일 한 통 보내려고 30분을 고민한 적 있으세요?

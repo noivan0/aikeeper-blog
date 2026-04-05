@@ -911,6 +911,22 @@ def post_to_blogger(file_path: str):
             except Exception as _ue:
                 print(f"  ℹ️  URL 패치 스킵: {_ue}")
 
+        # 0. 발행 완료 마킹 — front matter에 published: true + blogger_url 기록
+        #    다음 크론에서 같은 파일을 재발행하지 않도록 방지
+        try:
+            _fp = Path(sys.argv[1]) if sys.argv[1:] else None
+            if _fp and _fp.exists():
+                _text = _fp.read_text(encoding='utf-8')
+                if _text.startswith('---'):
+                    _parts = _text.split('---', 2)
+                    _fm = _parts[1]
+                    if 'published: true' not in _fm:
+                        _fm = _fm.rstrip() + f'\npublished: true\nblogger_url: "{post_url}"\n'
+                        _fp.write_text('---' + _fm + '---' + _parts[2], encoding='utf-8')
+                        print(f"  ✅ 발행 완료 마킹: published: true")
+        except Exception as _me:
+            print(f"  ℹ️  마킹 스킵: {_me}")
+
         # 1. Search Console Sitemap 제출
         try:
             submit_sitemap_gsc(token, post_url)

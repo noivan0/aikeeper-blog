@@ -12,6 +12,7 @@ hero_image_alt: "UX researcher interview transcription automation workflow dashb
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/listen-labs-raises-usd69m-after-viral-billboard-hiring-stunt-to-scale-ai"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 60분짜리 인터뷰를 마치고 나서, 여러분은 무엇을 하고 있나요?
