@@ -443,27 +443,35 @@ if __name__ == "__main__":
     client_secret = os.environ.get("BLOGGER_CLIENT_SECRET", "")
     used_titles = load_recent_post_titles(blog_id, refresh_token, client_id, client_secret, max_posts=50)
 
-    # ── 공통 used_topics.jsonl 로그 병합 (3개 블로그 간 중복 방지) ─────
-    # search_keyword 목록도 함께 수집 → 같은 검색 키워드 차단
-    used_search_keywords: list[str] = []
-    used_product_ids: list[str] = []
+    # ── 공통 used_topics.jsonl 로그 병합 (구글 알고리즘 리스크 기준) ─────
+    # 당일 발행 검색키워드만 차단 / 3일 내 상품ID 차단
+    import datetime as _dt
+    _today = _dt.date.today()
+    _cutoff_3d = _today - _dt.timedelta(days=3)
+    used_search_keywords: list[str] = []   # 당일 사용 검색 키워드
+    used_product_ids: list[str] = []       # 3일 내 사용 상품 ID
     try:
         sys.path.insert(0, BASE_DIR)
         from scripts.used_topics_log import get_recent_topics as _get_recent
         _recent = _get_recent(days=7)
         print(f"  [공통로그] 최근 7일 발행 {len(_recent)}개 로드")
         for _entry in _recent:
+            _entry_date = _dt.date.fromisoformat(_entry.get("date", "2000-01-01"))
             _t = _entry.get("topic", "")
             if _t and _t not in used_titles:
                 used_titles.append(_t)
-            _sk = _entry.get("search_keyword", "").strip().lower()
-            if _sk and _sk not in used_search_keywords:
-                used_search_keywords.append(_sk)
-            for _pid in _entry.get("product_ids", []):
-                _pid_s = str(_pid)
-                if _pid_s not in used_product_ids:
-                    used_product_ids.append(_pid_s)
-        print(f"  [공통로그] 중복 검색키워드 {len(used_search_keywords)}개, 상품ID {len(used_product_ids)}개")
+            # 검색 키워드: 당일만
+            if _entry_date == _today:
+                _sk = _entry.get("search_keyword", "").strip().lower()
+                if _sk and _sk not in used_search_keywords:
+                    used_search_keywords.append(_sk)
+            # 상품 ID: 3일 이내
+            if _entry_date >= _cutoff_3d:
+                for _pid in _entry.get("product_ids", []):
+                    _pid_s = str(_pid)
+                    if _pid_s not in used_product_ids:
+                        used_product_ids.append(_pid_s)
+        print(f"  [공통로그] 당일 검색키워드 {len(used_search_keywords)}개, 3일내 상품ID {len(used_product_ids)}개")
     except Exception as _e:
         print(f"  [공통로그] 로드 스킵: {_e}")
 

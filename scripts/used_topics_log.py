@@ -30,22 +30,24 @@ def log_topic(blog_id: str, topic: str, keywords: str, search_keyword: str = "",
 
 def is_duplicate(topic: str, keywords: str = "", days: int = 7,
                  search_keyword: str = "", product_ids: list = None) -> bool:
-    """최근 N일 이내 유사 주제/상품 발행 여부 체크
+    """구글 알고리즘 리스크 기준 중복 체크 (완화 설정)
 
-    Args:
-        topic:          체크할 주제 제목
-        keywords:       쉼표 구분 키워드 문자열
-        days:           몇 일 이내를 중복으로 볼지 (기본 7일)
-        search_keyword: 쿠팡 검색 키워드 (같은 키워드면 같은 상품군 = 중복)
-        product_ids:    쿠팡 상품 ID 목록 (상품 레벨 중복 체크)
+    실제 구글 페널티 기준:
+    - 같은 날 동일 상품/키워드 발행 → 캐니벌라이제이션 위험
+    - 3일 내 완전 동일 상품 재발행 → Thin Content 위험
+    - 제목이 70% 이상 같으면 → 중복 콘텐츠 판정 위험
 
-    Returns:
-        True이면 중복 (발행 스킵 권장), False이면 새 주제
+    완화 기준 (불필요한 차단 최소화):
+    - 검색 키워드 동일: 당일(0일 차이)만 차단
+    - 상품 ID 겹침: 3일 이내만 차단
+    - 제목 유사도: 70% 이상 + 3일 이내만 차단
+    - 키워드 세트 완전 일치: 당일만 차단
     """
     if not LOG_FILE.exists():
         return False
 
-    cutoff = datetime.date.today() - datetime.timedelta(days=days)
+    today = datetime.date.today()
+    cutoff_3d = today - datetime.timedelta(days=3)
     topic_lower = topic.lower()
     kw_set = set(k.strip() for k in keywords.lower().split(",") if k.strip()) if keywords else set()
     check_product_ids = set(str(pid) for pid in (product_ids or []))
@@ -59,36 +61,37 @@ def is_duplicate(topic: str, keywords: str = "", days: int = 7,
             try:
                 entry = json.loads(line)
                 entry_date = datetime.date.fromisoformat(entry["date"])
-                if entry_date < cutoff:
-                    continue  # 오래된 항목은 무시
-
                 entry_topic = entry.get("topic", "").lower()
-
-                # ── 1. 검색 키워드 동일 → 같은 상품군 = 중복 ──────────────
                 entry_search_kw = entry.get("search_keyword", "").lower().strip()
-                if search_kw_lower and entry_search_kw and search_kw_lower == entry_search_kw:
-                    return True
-
-                # ── 2. 상품 ID 겹침 (1개 이상) → 중복 ──────────────────────
                 entry_pids = set(str(p) for p in entry.get("product_ids", []))
-                if check_product_ids and entry_pids and check_product_ids & entry_pids:
-                    return True
-
-                # ── 3. 주제 제목 50% 이상 겹치면 중복 (2자 이상 단어 기준) ──
-                words = [w for w in topic_lower.split() if len(w) >= 2]
-                if words:
-                    matches = sum(1 for w in words if w in entry_topic)
-                    if matches / len(words) >= 0.5:
-                        return True
-
-                # ── 4. 키워드 세트가 완전히 동일하면 중복 ────────────────────
                 entry_kw = set(
                     k.strip()
                     for k in entry.get("keywords", "").lower().split(",")
                     if k.strip()
                 )
+
+                # ── 1. 검색 키워드 동일 → 당일만 차단 ──────────────────────
+                if search_kw_lower and entry_search_kw and search_kw_lower == entry_search_kw:
+                    if entry_date == today:
+                        return True
+
+                # ── 2. 상품 ID 겹침 → 3일 이내만 차단 ──────────────────────
+                if check_product_ids and entry_pids and check_product_ids & entry_pids:
+                    if entry_date >= cutoff_3d:
+                        return True
+
+                # ── 3. 제목 70% 이상 유사 → 3일 이내만 차단 ────────────────
+                if entry_date >= cutoff_3d:
+                    words = [w for w in topic_lower.split() if len(w) >= 2]
+                    if words:
+                        matches = sum(1 for w in words if w in entry_topic)
+                        if matches / len(words) >= 0.7:
+                            return True
+
+                # ── 4. 키워드 세트 완전 일치 → 당일만 차단 ─────────────────
                 if kw_set and kw_set == entry_kw:
-                    return True
+                    if entry_date == today:
+                        return True
 
             except Exception:
                 continue
