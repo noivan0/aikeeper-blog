@@ -18,6 +18,7 @@ SEARCH_KW       = os.environ.get("SEARCH_KW") or os.environ.get("search_keyword"
 ANGLE           = os.environ.get("ANGLE", "")
 LABELS_STR      = os.environ.get("LABELS") or os.environ.get("labels", "에어프라이어 추천,에어프라이어 가성비")
 META_DESC       = os.environ.get("META_DESC") or os.environ.get("meta_desc", "")
+CATEGORY        = os.environ.get("CATEGORY") or os.environ.get("category", "")
 BLOG_ID         = os.environ.get("TARGET_BLOG_ID", "4422596386410826373")
 PRODUCTS_JSON   = os.environ.get("PRODUCTS_JSON") or os.environ.get("products_json", "")
 
@@ -129,6 +130,8 @@ def main():
         labels=LABELS,
         meta_desc=META_DESC or post_data.get("meta_desc", ""),
         faq_raw=post_data.get("faq_raw", ""),
+        current_url="",       # 발행 전이라 URL 미확정; atom.xml에서 자동 제외 불필요
+        category=CATEGORY,
     )
 
     # 4. Blogger 토큰 획득 (내부링크 + 발행 공용)

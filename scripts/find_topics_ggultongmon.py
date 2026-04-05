@@ -117,6 +117,20 @@ MIN_PRICE = {
 # 블로그에 적합하지 않은 카테고리 (필요 시 비활성화)
 SKIP_CATEGORIES = {1019}  # 도서/음반 — 쿠팡 파트너스 수수료 낮음
 
+# ── 고CPC 쿠팡 카테고리 우선순위 (광고주 경쟁 높음 = CPC 높음) ──────────
+HIGH_CPC_CATEGORIES = [
+    "쿠팡 할인코드 방법",          # 검색량 높고 광고주 많음
+    "로켓배송 꿀팁",               # 생활 밀착형
+    "쿠팡 로켓프레시 추천",        # 식품 CPC 높음
+    "건강기능식품 추천",           # CPC ₩500~2,000
+    "다이어트 보조제 비교",        # 고CPC
+    "영양제 추천 비교",            # 고CPC
+    "공기청정기 추천",             # 가전 CPC 높음
+    "노트북 추천 가성비",          # 전자기기 고CPC
+    "청소기 추천",                 # 가전 고CPC
+    "안마의자 추천",               # 고단가 고CPC
+]
+
 # ── 요일별 카테고리 테마 (0=월, 1=화, ..., 6=일) ───────────────────────
 # 각 요일에 우선 탐색할 카테고리 ID 리스트 (순서 = 우선순위)
 WEEKDAY_THEME = {
@@ -293,6 +307,13 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
         base_url=ANTHROPIC_BASE_URL,
     )
 
+    # 고CPC 카테고리 힌트 구성
+    high_cpc_hint = (
+        "\n[고CPC 우선순위] 아래 키워드와 연결 가능한 주제는 우선 선택하세요 (광고 수익 극대화):\n"
+        + "\n".join(f"  - {kw}" for kw in HIGH_CPC_CATEGORIES)
+        + "\n위 키워드와 상품을 자연스럽게 연결할 수 있으면 해당 주제를 1순위로 선정하세요.\n"
+    )
+
     # 시즌 힌트 추가 정보
     season = get_season_hint()
     season_hint = ""
@@ -312,7 +333,7 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
         )
 
     prompt = f"""오늘은 {today}. 쿠팡 '{cat_name}' 카테고리 실시간 베스트 상품 목록입니다.
-{season_hint}{recent_context}
+{high_cpc_hint}{season_hint}{recent_context}
 {product_summary}
 
 이 상품들을 분석해서 쿠팡 파트너스 블로그 '꿀통 몬스터' 포스트 주제를 선정하세요.
