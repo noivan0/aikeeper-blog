@@ -34,6 +34,26 @@ def log(msg: str):
     print(f"[{ts}] {msg}", flush=True)
 
 
+# ── N-2-1: 네이버 제목 최적화 (검색 앞 10자가 핵심) ──────────────────
+def optimize_naver_title(title: str, keyword: str) -> str:
+    """네이버 검색은 제목 앞 10자가 핵심 — 핵심 키워드를 앞으로 배치.
+    
+    네이버 알고리즘(N-2-1): 제목 앞 10자 내 키워드 매칭 비중이 높음.
+    keyword 앞 4자가 title 앞에 없으면 keyword를 제목 앞으로 이동.
+    """
+    if not keyword or not title:
+        return title[:50]
+    # 이미 키워드로 시작하면 그대로 (50자 제한)
+    if title.startswith(keyword[:4]):
+        return title[:50]
+    # 키워드가 이미 제목 앞 10자 안에 있으면 그대로
+    if keyword[:4] in title[:10]:
+        return title[:50]
+    # 키워드를 앞으로 — 원래 제목과 합쳐 50자 이내
+    combined = f"{keyword} — {title}"
+    return combined[:50]
+
+
 def already_posted_urls() -> set:
     """naver_posts.jsonl에서 이미 발행된 original_url 목록 반환"""
     posted = set()
@@ -152,14 +172,25 @@ def fetch_latest_posts(max_age_days: int = MAX_AGE_DAYS) -> list[dict]:
 
 def run_naver_post(post: dict) -> bool:
     """post_to_naver_prosweep.py 실행 — 환경변수 전달"""
+    # N-2-1: 제목 앞부분에 핵심 키워드 배치 (네이버 검색 앞 10자 최적화)
+    labels = post.get("labels", [])
+    primary_keyword = labels[0] if labels else ""
+    optimized_title = optimize_naver_title(post["title"], primary_keyword)
+    if optimized_title != post["title"]:
+        log(f"  📝 제목 최적화: [{post['title'][:30]}] → [{optimized_title}]")
+
     env = os.environ.copy()
     env.update({
-        "POST_TITLE":     post["title"],
+        "POST_TITLE":     optimized_title,       # N-2-1: 최적화된 제목
         "POST_URL":       post["url"],
         "POST_SUMMARY":   post["summary"],
         "LABELS":         ",".join(post["labels"][:7]),
         "COUPANG_IMAGES": "|".join(post.get("images", [])[:3]),
         "DISPLAY":        ":99",
+        # N-2-2: 네이버 SEO 키워드 밀도 힌트 (post_to_naver_prosweep.py가 활용 가능)
+        "NAVER_PRIMARY_KW": primary_keyword,
+        # N-3: 스마트블록 최적화 힌트 (h2/h3 최소 5개 요청)
+        "NAVER_MIN_HEADINGS": "5",
     })
 
     # NAVER_ID / NAVER_PW가 env에 없으면 경고

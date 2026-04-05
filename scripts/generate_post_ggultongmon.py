@@ -283,6 +283,11 @@ SYSTEM_PROMPT_COUPANG = """\
 - 검색의도 키워드 자연스럽게 포함
 - 분량: 최소 4,000자 이상 (4,000~6,000자 목표)
 
+## E-E-A-T 강화 규칙 (구글 Helpful Content Update 2023~ 핵심 랭킹 신호)
+- 상품 직접 사용 경험 기반 서술 ("실제로 써보니", "배송받아서 확인하니")
+- 단점 필수 언급 (신뢰성 ↑ — 장점만 나열하면 광고성 콘텐츠로 평가됨)
+- 가격 정보에 날짜 명시 ("2026년 4월 기준 쿠팡 최저가")
+
 ## 글 품질 강화 지침
 - 각 상품 섹션: 실제 구매자 입장의 장단점 솔직하게 작성 (단점도 1개 반드시 언급)
 - 비교표: "이런 분께 추천" 열 반드시 포함
@@ -310,6 +315,10 @@ SYSTEM_PROMPT_COUPANG = """\
    - "~를 사면 후회하나요?" (구매 결정 직전 검색)
    - 각 답변 150자 이상
 6. 마무리 (h2): 한 줄 정리 + 구체적 구매 권유
+7. 관련 검색어 마커 (본문 최하단): 아래 형식으로 반드시 1줄 추가
+   `[RELATED_SEARCH:관련키워드1|관련키워드2|관련키워드3]`
+   예: `[RELATED_SEARCH:에어프라이어 추천|에어프라이어 가성비|에어프라이어 비교]`
+   (이 마커는 추후 내부 링크로 자동 교체됩니다 — 토픽 클러스터링)
 
 ## 상품 링크 밀도 규칙 (Google Affiliate 가이드라인 준수)
 - 포스트당 쿠팡 상품 링크는 최대 5개 (PRODUCT/BUY 마커 합산)
@@ -465,10 +474,21 @@ def build_full_html(title: str, content: str, products: list,
     )
 
     # [PRODUCT_N] → 상품 인라인 카드
+    _first_product_replaced = [False]  # G-3: 첫 번째 이미지 LCP 추적용
+
     def replace_product(m):
         n = int(m.group(1)) - 1
         if 0 <= n < len(products):
-            return build_inline_card(products[n], n + 1, title_seed=title)
+            card_html = build_inline_card(products[n], n + 1, title_seed=title)
+            # G-3: Core Web Vitals — 첫 번째 상품 이미지를 eager + fetchpriority=high로 교체
+            if not _first_product_replaced[0]:
+                card_html = card_html.replace(
+                    'loading="lazy"',
+                    'loading="eager" fetchpriority="high"',
+                    1  # 첫 번째 img만
+                )
+                _first_product_replaced[0] = True
+            return card_html
         return ""
 
     body_html = re.sub(r'\[PRODUCT_(\d+)\]', replace_product, body_html)

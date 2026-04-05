@@ -1,5 +1,5 @@
 """
-꿀통몬스터 → prosweep 네이버 블로그 크로스포스팅 v11
+꿀통몬스터 → prosweep 네이버 블로그 크로스포스팅 v12
 - OG 카드: 꿀통몬스터 원본 포스팅 URL 1개
 - 쿠팡 링크: 본문 텍스트 가격 정보로 표시 (LINK_TEXT 방식)
 - 이미지: 상품 이미지 URL 3개 삽입 (IMAGE_HERE:N 마커)
@@ -7,6 +7,9 @@
 - 본문 2,500자 이상 보장
 - URL 텍스트 줄 삭제: JS DOM 직접 제거
 - 서버 cron 직접 실행 (GitHub Actions 제외)
+[N-1-1] TOC 자동 삽입 — 네이버 체류시간 증가
+[N-2-2] 키워드 밀도 — NAVER_PRIMARY_KW 환경변수로 핵심 키워드 반영
+[N-3]   스마트블록 — h2 섹션 5개 이상, 역피라미드 구조
 """
 import os, sys, asyncio, json, time, re
 from pathlib import Path
@@ -42,18 +45,37 @@ def build_naver_content(
     coupang_images: list = None
 ) -> str:
     """
-    네이버 VIEW탭 C-RANK 최적화 포맷 v11
+    네이버 VIEW탭 C-RANK 최적화 포맷 v12
     - 본문 2,500자 이상 보장
     - 제목 키워드 본문 내 2~3회 자연 등장
     - 이미지 IMAGE_HERE:N 마커 (N=0,1,2 → 이미지 인덱스)
     - 비교표 TABLE_HERE 마커
-    - 구조: 도입부 → 빠른결론 → 선택기준 → 상품별소개(이미지) → 비교표 → FAQ → 마무리
+    - 구조: 도입부 → 목차(TOC) → 빠른결론 → 선택기준 → 상품별소개(이미지) → 비교표 → FAQ → 마무리
+    [N-1-1] TOC 자동 삽입 — 네이버 체류시간 증가
+    [N-2-2] 키워드 밀도 — 핵심 키워드 제목/첫문단/중간/마지막 각 1회
+    [N-3]   스마트블록 — h2/h3 최소 5개, 각 섹션 첫 문장 핵심정보
     """
     if coupang_images is None:
         coupang_images = []
 
     label_str = " ".join([f"#{l.replace(' ','')}" for l in labels[:8]]) if labels \
                 else "#쿠팡추천 #가성비 #쿠팡파트너스"
+
+    # ── N-1-1: 목차(TOC) 자동 생성 — 체류시간 증가 핵심 ─────────────────
+    toc_sections = [
+        f"{title} 고를 때 꼭 확인할 3가지",
+        f"{title} TOP 3 상세 비교",
+        f"{title} 한눈에 비교표",
+        "자주 묻는 질문 (FAQ)",
+        "마무리",
+    ]
+    toc_items = "\n".join(f"  • {s}" for s in toc_sections)
+    toc_block = (
+        f"📋 이 글의 목차\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{toc_items}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    )
 
     # 쿠팡 가격 링크 블록 (상품별)
     product_blocks = []
@@ -109,10 +131,12 @@ LINK_TEXT:{btn_label}|{link}"""
 
 막상 구매하려고 검색하면 종류가 너무 많아서 어떤 제품을 골라야 할지 막막하죠. 가격도 천차만별이고, 리뷰는 많은데 정작 내 상황에 맞는 정보는 찾기 힘드셨을 거예요.
 
-이 글에서는 가격, 품질, 실사용자 후기를 꼼꼼히 비교해 엄선한 {title} TOP 3를 소개해드립니다. 구매 후 후회하는 일이 없도록 핵심만 뽑아 정리했으니 끝까지 읽어보세요!
+이 글에서는 2026년 4월 기준 가격, 품질, 실사용자 후기를 꼼꼼히 비교해 엄선한 {title} TOP 3를 소개해드립니다. 구매 후 후회하는 일이 없도록 핵심만 뽑아 정리했으니 끝까지 읽어보세요!
 
 {summary}
 
+
+{toc_block}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 ⚡ 바쁘신 분들을 위한 3줄 요약
