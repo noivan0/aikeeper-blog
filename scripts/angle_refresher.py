@@ -24,8 +24,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # AI_DOMAINS — find_topics.py와 공유 (import 또는 직접 정의)
 try:
-    from find_topics import AI_DOMAINS
+    from find_topics import AI_DOMAINS, TOPIC_SUBTYPES
 except Exception:
+    TOPIC_SUBTYPES = {}
     # fallback: 기본 도메인 목록
     AI_DOMAINS = [
         "ChatGPT OpenAI", "Claude Anthropic", "Gemini Google AI", "LLM 언어모델",

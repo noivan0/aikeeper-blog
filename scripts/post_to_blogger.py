@@ -847,7 +847,13 @@ def post_to_blogger(file_path: str):
         print(f"⚠️  중복 건너뜀: {post_data['title']}")
         return None
 
-    body = {"title": post_data["title"], "content": post_data["content"]}
+    # Blogger API는 제목에 큰따옴표 등 특수문자가 있으면 400 반환 → 치환
+    safe_title = (post_data["title"]
+                  .replace('"', "'")
+                  .replace('\u201c', "'").replace('\u201d', "'")  # 좌우 큰따옴표
+                  .replace('\u300c', "").replace('\u300d', "")    # 일본어 괄호
+                  .strip())
+    body = {"title": safe_title, "content": post_data["content"]}
     if post_data["labels"]:
         body["labels"] = post_data["labels"]
 
