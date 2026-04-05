@@ -2,16 +2,10 @@ name: allsweep 자동 포스팅
 
 on:
   schedule:
-    # UTC 기준 (KST = UTC+9)
-    # KST: 07:30, 09:00, 11:30, 13:00, 15:30, 17:00, 19:30, 21:00
-    - cron: '30 22 * * *'   # KST 07:30
-    - cron: '0  0  * * *'   # KST 09:00
-    - cron: '30 2  * * *'   # KST 11:30
-    - cron: '0  4  * * *'   # KST 13:00
-    - cron: '30 6  * * *'   # KST 15:30
-    - cron: '0  8  * * *'   # KST 17:00
-    - cron: '30 10 * * *'   # KST 19:30
-    - cron: '0  12 * * *'   # KST 21:00
+    # UTC 기준 (KST = UTC+9) — 하루 2회 (품질 집중 전략)
+    # KST: 10:00, 20:00
+    - cron: '0  1  * * *'   # KST 10:00
+    - cron: '0  11 * * *'   # KST 20:00
   workflow_dispatch:
     inputs:
       topic:

@@ -22,6 +22,51 @@ TODAY    = datetime.date.today().isoformat()
 BLOG_ID  = os.environ.get("TARGET_BLOG_ID", "8772490249452917821")
 BLOG_URL = os.environ.get("TARGET_BLOG_URL", "https://www.allsweep.xyz")
 
+# ── 고CPC 우선 주제 (실생활 정보 + 구매 연결형) ─────────────────────────────
+# 기존: 뉴스/시사 → CPC 낮음
+# 개선: 실생활 정보 + 구매 의도 키워드 포함 → CPC ₩1,000~8,000 수준
+PREFERRED_TOPICS = [
+    "재테크/투자 방법",        # CPC ₩1,000~5,000
+    "보험/금융 상품 비교",     # CPC ₩2,000~8,000
+    "생활비 절약 방법",        # 생활 정보 + 구매 연결
+    "카드 추천/혜택 비교",     # CPC 높음
+    "에너지 절약/전기세",      # 시사 연결 가능
+]
+
+# 피해야 할 주제 (CPC 낮음 + 독자 이탈 빠름)
+AVOID_TOPICS = [
+    "정치", "선거", "연예", "스포츠 경기 결과",
+]
+
+# PREFERRED_TOPICS 키워드 → CPC 판별에 사용할 확장 키워드
+PREFERRED_KEYWORDS = [
+    "재테크", "투자", "적금", "예금", "주식", "펀드", "ETF", "ISA",
+    "보험", "실손", "생명보험", "자동차보험", "보험 비교", "보험료",
+    "절약", "생활비", "지출", "가계부", "알뜰", "할인", "혜택",
+    "카드 추천", "신용카드", "체크카드", "카드 혜택", "카드 비교",
+    "전기세", "가스비", "에너지", "절전", "공과금",
+    "대출", "금리", "이자", "연금", "퇴직금", "청약",
+    "부동산", "집값", "아파트", "월세", "전세", "임대",
+    "세금", "소득공제", "세액공제", "연말정산",
+]
+
+# AVOID 판별 키워드
+AVOID_KEYWORDS = [
+    "선거", "대선", "총선", "후보", "여당", "야당", "정당",
+    "연예인", "아이돌", "배우", "드라마 결말", "시청률",
+    "경기 결과", "득점", "승리", "패배", "리그", "토너먼트",
+]
+
+def is_preferred_topic(topic_str: str) -> bool:
+    """PREFERRED_TOPICS와 관련된 고CPC 주제이면 True"""
+    t = topic_str.lower()
+    return any(kw in t for kw in PREFERRED_KEYWORDS)
+
+def is_avoid_topic(topic_str: str) -> bool:
+    """AVOID_TOPICS에 해당하면 True (저CPC 주제 필터링)"""
+    t = topic_str.lower()
+    return any(kw in t for kw in AVOID_KEYWORDS)
+
 # ── 뉴스 도메인 (5개 카테고리) ──────────────────────────────────────────────
 NEWS_DOMAINS = [
     # 세계 뉴스
@@ -271,8 +316,31 @@ def generate_domain_queries(used_history):
         seed_val = int(hashlib.md5((TODAY + domain).encode()).hexdigest(), 16)
         angle = angles[seed_val % len(angles)]
         query = f"[{cat}] {domain} — {angle}"
+        # AVOID_TOPICS 도메인은 건너뜀
+        if is_avoid_topic(domain) or is_avoid_topic(query):
+            continue
         if not is_duplicate(query, used_history):
-            queries.append({"title": query, "source": f"domain:{cat}", "category": cat, "domain": domain, "angle": angle})
+            preferred = is_preferred_topic(domain) or is_preferred_topic(query)
+            queries.append({"title": query, "source": f"domain:{cat}", "category": cat,
+                            "domain": domain, "angle": angle, "preferred": preferred})
+    # PREFERRED_TOPICS 관련 쿼리를 앞으로 정렬
+    queries.sort(key=lambda x: (0 if x.get("preferred") else 1))
+
+    # 고CPC 선호 주제가 부족하면 경제/생활 카테고리에서 강제 추가
+    if sum(1 for q in queries if q.get("preferred")) < 3:
+        bonus_queries = [
+            {"title": f"[경제] {kw} — 개인 재테크에 미치는 영향", "source": "domain:경제(보강)",
+             "category": "경제", "domain": kw, "angle": "개인 재테크에 미치는 영향", "preferred": True}
+            for kw in ["연금 세금 재테크", "금리 인플레이션 물가"]
+            if not is_duplicate(kw, used_history)
+        ]
+        bonus_queries += [
+            {"title": f"[생활] {kw} — 바로 써먹는 실전 팁", "source": "domain:생활(보강)",
+             "category": "생활", "domain": kw, "angle": "바로 써먹는 실전 팁", "preferred": True}
+            for kw in ["절약 생활비 꿀팁"]
+            if not is_duplicate(kw, used_history)
+        ]
+        queries = bonus_queries + queries
     return queries
 
 # ── Claude 최적 주제 선정 ─────────────────────────────────────────────────────
@@ -283,13 +351,25 @@ def select_best_topic(news_items, used_history, target_category=None):
     seen, merged = set(), []
     for item in news_items + domain_queries:
         t = item.get("title", "")
+        # AVOID_TOPICS 필터링
+        if is_avoid_topic(t):
+            continue
         if t and t not in seen and not has_ad(t) and not is_duplicate(t, used_history):
-            seen.add(t); merged.append(item)
+            preferred = item.get("preferred", False) or is_preferred_topic(t)
+            seen.add(t)
+            merged.append({**item, "preferred": preferred})
+
+    # 선호 주제를 앞으로 정렬
+    merged.sort(key=lambda x: (0 if x.get("preferred") else 1))
 
     if not merged:
-        return {"topic": "오늘의 한국 뉴스 총정리", "keywords": ["뉴스","한국","오늘"], "angle": "", "category": "사회"}
+        return {"topic": "생활비 절약 꿀팁 총정리", "keywords": ["생활비","절약","꿀팁","재테크"], "angle": "", "category": "생활"}
 
-    news_text = "\n".join([f"[{item['source']}] {item['title']}" for item in merged[:40]])
+    # 뉴스 텍스트: 선호 주제에 ★ 표시
+    news_text = "\n".join([
+        f"[{'★선호CPC ' if item.get('preferred') else ''}{item['source']}] {item['title']}"
+        for item in merged[:40]
+    ])
     used_titles_text = "\n".join(f"- {t}" for t in sorted(used_history)) if used_history else "없음"
 
     # 오늘 카테고리 순환 (매 포스팅마다 다른 카테고리)
@@ -297,10 +377,26 @@ def select_best_topic(news_items, used_history, target_category=None):
     cat_seed = int(hashlib.md5((TODAY + str(len(used_history))).encode()).hexdigest(), 16)
     preferred_cat = target_category or cats[cat_seed % len(cats)]
 
+    preferred_topics_text  = "\n".join(f"- {t}" for t in PREFERRED_TOPICS)
+    avoid_topics_text      = "\n".join(f"- {t}" for t in AVOID_TOPICS)
+
     prompt = f"""오늘은 {today_str}입니다.
 
 당신은 구글/네이버 SEO 전문가이자 "모든정보 쓸어담기" 블로그 에디터입니다.
 이 블로그는 **한국 시사/뉴스** 전문 블로그로, 세계·사회·경제·IT·생활 5개 카테고리를 운영합니다.
+
+## 💰 최우선 원칙: 고CPC 주제 우선 선택
+
+**선호 주제 (CPC ₩1,000~8,000 — 우선 선택):**
+{preferred_topics_text}
+
+**피해야 할 주제 (CPC 매우 낮음 — 절대 선택 금지):**
+{avoid_topics_text}
+
+★선호CPC 표시가 붙은 후보 항목을 반드시 우선 검토하세요.
+뉴스 이슈와 연결되더라도 위 AVOID 카테고리는 선택하지 마세요.
+
+---
 
 ## 핵심 원칙: 검색 의도(Search Intent) 우선
 
@@ -321,11 +417,13 @@ def select_best_topic(news_items, used_history, target_category=None):
 ## 오늘의 뉴스/이슈 후보
 {news_text}
 
-## 좋은 주제 예시
-- "트럼프 관세란? 한국 수출에 미치는 영향 총정리" (세계/경제)
-- "한국 출산율 0.7 뜻과 이유 — 저출산 문제 쉽게 이해하기" (사회)
-- "집값 하락 이유 5가지와 2026 부동산 전망" (경제)
-- "챗GPT로 업무 자동화하는 실전 방법 3가지" (IT)
+## 좋은 주제 예시 (고CPC 우선)
+- "2026 신용카드 추천 TOP5 — 혜택 비교 및 발급 방법" (경제/생활, 고CPC)
+- "전기세 절약 방법 10가지 — 여름철 에어컨 전기요금 줄이는 법" (생활, 고CPC)
+- "청년 재테크 시작하는 법 — ISA·청약·ETF 완전 정리" (경제, 고CPC)
+- "실손보험 vs 건강보험 차이와 보험료 절약하는 법" (생활, 고CPC)
+- "집값 하락 시대 전세 vs 월세 선택 기준과 대처법" (경제, 고CPC)
+- "트럼프 관세란? 한국 수출과 물가에 미치는 영향 총정리" (세계/경제)
 - "봄철 황사 대비법 — 마스크 선택부터 실내 공기 관리까지" (생활)
 
 형식:

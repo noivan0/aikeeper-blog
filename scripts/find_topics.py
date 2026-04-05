@@ -21,6 +21,38 @@ TODAY   = datetime.date.today().isoformat()
 YEAR_WW = datetime.date.today().strftime("%Y-W%V")
 DAILY_DOMAINS_COUNT = 20
 
+# ── 고CPC AI 키워드 카테고리 (광고주 경쟁 높음 = CPC 높음) ─────────────────────
+# 주제 선정 시 이 카테고리가 1개 이상 포함되면 우선 선택
+HIGH_CPC_CATEGORIES = [
+    "AI 도구 가격 비교",       # ChatGPT Plus vs Claude Pro vs Gemini 요금제
+    "AI 코딩 도구 추천",       # Cursor, GitHub Copilot, Codeium 비교
+    "AI 업무 자동화 방법",     # 실무 적용 가이드 (비즈니스 독자 = 고CPC)
+    "AI 투자/재테크 활용",     # 고CPC 재테크 카테고리와 AI 결합
+    "ChatGPT 활용법 실전",     # 검색량 높고 광고주 많음
+    "AI 도구 무료 vs 유료",    # 구매 의도 키워드
+]
+
+# 고CPC 카테고리 키워드 → 도메인 매핑 (어떤 도메인에서 우선 발굴할지)
+HIGH_CPC_DOMAIN_AFFINITY = {
+    "AI 도구 가격 비교":    ["AI 구독 서비스 비교", "ChatGPT OpenAI", "Claude Anthropic", "Gemini Google AI", "Copilot Microsoft AI"],
+    "AI 코딩 도구 추천":    ["AI 코딩 개발"],
+    "AI 업무 자동화 방법":  ["AI 에이전트 자동화", "AI 생산성 활용", "AI 워크플로우 n8n"],
+    "AI 투자/재테크 활용":  ["AI 금융 핀테크"],
+    "ChatGPT 활용법 실전":  ["ChatGPT OpenAI"],
+    "AI 도구 무료 vs 유료": ["AI 구독 서비스 비교", "ChatGPT OpenAI", "Claude Anthropic"],
+}
+
+def is_high_cpc_topic(topic_str: str) -> bool:
+    """주제 문자열이 HIGH_CPC_CATEGORIES와 관련성이 있으면 True"""
+    topic_lower = topic_str.lower()
+    high_cpc_keywords = [
+        "가격", "요금", "구독", "무료", "유료", "플랜", "비용", "price", "plan", "billing",
+        "추천", "비교", "vs", "차이", "선택", "코딩 도구", "코딩도구", "cursor", "copilot", "codeium",
+        "자동화", "업무", "생산성", "실전", "활용법", "chatgpt 활용", "챗gpt 활용",
+        "재테크", "투자", "수익",
+    ]
+    return any(kw in topic_lower for kw in high_cpc_keywords)
+
 # ── AI 도메인 ─────────────────────────────────────────────────────────────────
 AI_DOMAINS = [
     # 기존 15개
@@ -1719,8 +1751,32 @@ def fetch_all_news():
 def generate_domain_queries(used_history):
     weekly_angles  = load_weekly_angles()
     todays_domains = get_todays_domains()
+
+    # 고CPC 도메인을 우선으로 추가 (HIGH_CPC_DOMAIN_AFFINITY에 포함된 도메인)
+    high_cpc_domains = []
+    for hcpc_cat, affiliated_domains in HIGH_CPC_DOMAIN_AFFINITY.items():
+        for d in affiliated_domains:
+            if d not in high_cpc_domains and d in AI_DOMAINS:
+                high_cpc_domains.append(d)
+
+    # 오늘의 도메인 중 고CPC를 앞으로, 나머지 뒤로 정렬
+    prioritized_domains = []
+    regular_domains = []
+    for d in todays_domains:
+        if d in high_cpc_domains:
+            prioritized_domains.append(d)
+        else:
+            regular_domains.append(d)
+    # 고CPC 도메인이 오늘 로테이션에 없으면 HIGH_CPC_DOMAIN_AFFINITY에서 강제 추가 (최대 4개)
+    extra_hcpc = [d for d in high_cpc_domains if d not in todays_domains][:4]
+    ordered_domains = prioritized_domains + extra_hcpc + regular_domains
+
     queries = []
-    for domain in todays_domains:
+    seen_domains = set()
+    for domain in ordered_domains:
+        if domain in seen_domains:
+            continue
+        seen_domains.add(domain)
         subtypes = weekly_angles.get(domain, TOPIC_SUBTYPES.get(domain, []))
         if subtypes:
             seed_val = int(hashlib.md5((TODAY + domain).encode()).hexdigest(), 16)
@@ -1730,8 +1786,12 @@ def generate_domain_queries(used_history):
             angle = ""
             query = domain
         if not is_duplicate(query, used_history):
+            is_hcpc = domain in high_cpc_domains or is_high_cpc_topic(query)
             queries.append({"title": query, "source": f"domain:{domain}",
-                            "domain": domain, "angle": angle})
+                            "domain": domain, "angle": angle,
+                            "high_cpc": is_hcpc})
+    # 고CPC 항목을 리스트 맨 앞으로 재정렬 (Claude 프롬프트에서 우선 노출)
+    queries.sort(key=lambda x: (0 if x.get("high_cpc") else 1))
     return queries
 
 def expand_domains(used_history, needed):
@@ -1817,9 +1877,14 @@ def select_best_topic(news_items, used_history):
         return {"topic": "AI 최신 트렌드 2026", "keywords": ["AI", "트렌드", "2026"],
                 "angle": "트렌드분석", "reason": "fallback", "source_news": ""}
 
+    # 고CPC 아이템을 앞에 표시해 Claude가 우선 고려하도록 유도
+    high_cpc_items  = [i for i in merged if i.get("high_cpc")]
+    regular_items   = [i for i in merged if not i.get("high_cpc")]
+    ordered_merged  = high_cpc_items + regular_items
+
     news_text = "\n".join([
-        f"[{item['source']}] {item['title']}"
-        for item in merged[:35]
+        f"[{'★고CPC ' if item.get('high_cpc') else ''}{item['source']}] {item['title']}"
+        for item in ordered_merged[:35]
     ])
 
     # 기존 발행 제목 목록을 프롬프트에 주입
@@ -1838,10 +1903,24 @@ def select_best_topic(news_items, used_history):
 
     timeslot_angle = get_timeslot_angle()
 
+    # 고CPC 카테고리 목록 텍스트화
+    high_cpc_categories_text = "\n".join(f"- {c}" for c in HIGH_CPC_CATEGORIES)
+
     prompt = f"""오늘은 {today_str}입니다.
 
 당신은 구글 SEO 전문가이자 한국어 AI 콘텐츠 전략가입니다.
 AI키퍼 블로그(신생 한국어 AI 전문 블로그)의 다음 포스트 주제를 선정하세요.
+
+## 💰 최우선 원칙: 고CPC 키워드 우선 선택
+
+아래 **고CPC 카테고리** 중 1개 이상이 주제에 포함되면 해당 주제를 최우선 선택하세요.
+광고주 경쟁이 높아 CPC(클릭당 단가)가 높아 수익성이 좋습니다:
+
+{high_cpc_categories_text}
+
+★고CPC 표시가 붙은 후보 항목을 우선적으로 검토하세요.
+
+---
 
 ## ⏰ 이번 시간대 지정 앵글 (반드시 준수)
 {timeslot_angle}

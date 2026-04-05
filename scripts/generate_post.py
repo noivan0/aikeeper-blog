@@ -262,12 +262,44 @@ def generate_post(topic: str, keywords: list = None, angle: str = "") -> dict:
 - AI생산성, AI트렌드, AI기초, 오픈소스AI, 한국AI, AI에이전트, AI트렌드, LLM (단독 약어)"""
         blog_style = "요즘IT 상위 1%"
 
+    # AI 블로그 여부 판단 (BLOG_TYPE이 NEWS가 아닌 경우)
+    is_ai_blog = (BLOG_TYPE != "NEWS")
+
+    # 구매 의도 CTA 지침 (AI 블로그 전용)
+    if is_ai_blog:
+        cta_instructions = """
+## 💰 구매 의도 CTA (고CPC 최적화 — 반드시 포함)
+
+AI 도구/서비스를 소개하는 섹션이 있을 경우, 각 도구 소개 섹션 끝에 반드시 추가:
+```
+> 🔗 **[도구명] 공식 사이트에서 가격 확인하기** → [공식 URL]
+```
+예시:
+- ChatGPT: https://openai.com/chatgpt/pricing
+- Claude: https://claude.ai/pricing  
+- Cursor: https://www.cursor.com/pricing
+- GitHub Copilot: https://github.com/features/copilot
+
+**무료/유료 요금제 비교표 (필수)**: 아래 형식으로 반드시 1개 이상 포함
+| 플랜 | 가격 | 주요 기능 | 추천 대상 |
+|------|------|-----------|-----------|
+| 무료 | $0/월 | 기능A, 기능B | 가벼운 사용자 |
+| 유료 | $XX/월 | 기능A~D | 전문 사용자 |
+
+**FAQ 가격 관련 질문 (필수 1개 이상)**: FAQ 5개 중 최소 1개는 가격/비용 관련 질문
+예시 Q: "ChatGPT Plus 가격이 올랐나요? 유료 플랜 가치 있나요?"
+예시 Q: "Cursor AI 무료로 쓸 수 있나요? 유료 플랜 필요한 경우는?"
+예시 Q: "Claude Pro 구독 취소하면 어떻게 되나요?"
+"""
+    else:
+        cta_instructions = ""
+
     prompt = f"""오늘은 {today}입니다. 아래 주제로 {blog_style} 수준의 딥다이브 글을 작성하세요.
 
 **주제**: {topic}
 **핵심 키워드**: {keywords_str}
 {f'**글쓰기 각도**: {angle}' if angle else ''}
-
+{cta_instructions}
 ## 이 글에서 반드시 포함해야 할 것
 
 1. **강렬한 훅** (300~500자): 독자가 "맞아, 나도 이런 경험 있어"라고 할 상황
@@ -276,12 +308,13 @@ def generate_post(topic: str, keywords: list = None, angle: str = "") -> dict:
    - h2 섹션마다 h3 소제목 2~3개 필수
    - 구체적 데이터/수치/날짜 포함
    - `> 💡 **실전 팁**:` 박스 섹션당 1개
-   - 비교표 최소 2개
+   - 비교표 최소 2개 (AI 도구 비교인 경우 **무료/유료 요금제 비교표 필수**)
 4. **실제 사례 섹션**: 실명 기업/인물 + 구체적 결과 수치
 5. **주의사항 섹션**: 독자가 빠지기 쉬운 함정 3~5개
-6. **FAQ 5개**: 각 답변 200자 이상 상세하게
+6. **FAQ 5개**: 각 답변 200자 이상 상세하게 (AI 블로그: 가격 관련 질문 최소 1개 필수)
 7. **핵심 요약 테이블**: 3열 이상
 8. **마무리 CTA**: 구체적 댓글 질문 유도
+   - AI 도구 소개 글: 각 도구별 공식 사이트 가격 링크 포함
 
 ## 분량 목표
 - **전체 6,000~8,000자** (토큰 한계 내 최대)
