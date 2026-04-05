@@ -359,7 +359,7 @@ def generate_post(topic: str, search_keyword: str, products: list,
 제목 규칙: 숫자 포함, 연도(2026) 권장, 40자 이내, "추천/비교/완전정리/후회없는" 등 클릭 유도어 활용
 
 ===TITLE===
-최종 포스트 제목 (50자 이내, 이모지 금지)
+최종 포스트 제목 (50자 이내, 이모지 금지, 큰따옴표(" ") 절대 사용 금지 — 작은따옴표(')만 허용)
 ===META===
 검색결과 노출 설명문 (150~160자, 핵심 키워드 포함, "지금 확인하세요" 등 CTA 포함)
 ===CONTENT===
@@ -560,13 +560,15 @@ def build_full_html(title: str, content: str, products: list,
     _discover_img = DISCOVER_FALLBACK_IMAGES[_cat_key]
 
     hero_img = products[0].get("productImage", "") if products else ""
-    # og:image은 디스커버 폴백 이미지 사용 (1200px 보장), 히든 썸네일은 쿠팡 상품 이미지 유지
+    # og:image은 디스커버 폴백 이미지 사용 (1200px 보장)
     og_hero_img = _discover_img
+    # 히든 썸네일: 쿠팡 상품 이미지 우선, 없으면 카테고리 폴백 이미지 사용 (대표이미지 항상 보장)
+    thumb_src = hero_img if hero_img else _discover_img
     thumb_html = (
-        f'<img src="{hero_img}" alt="{title}" '
+        f'<img src="{thumb_src}" alt="{title}" '
         f'style="position:absolute;width:1px;height:1px;overflow:hidden;'
         f'clip:rect(0,0,0,0);white-space:nowrap;" width="1" height="1" aria-hidden="true">\n'
-    ) if hero_img else ""
+    )
 
     keywords_str = ", ".join(labels)
 
@@ -593,9 +595,9 @@ def build_full_html(title: str, content: str, products: list,
         "inLanguage": "ko-KR",
         "articleSection": "쿠팡 상품 추천",
         "image": [
-            {"@type": "ImageObject", "url": hero_img, "width": 1200, "height": 1200},
-            {"@type": "ImageObject", "url": hero_img, "width": 1200, "height": 900},
-            {"@type": "ImageObject", "url": hero_img, "width": 1200, "height": 630},
+            {"@type": "ImageObject", "url": thumb_src, "width": 1200, "height": 1200},
+            {"@type": "ImageObject", "url": thumb_src, "width": 1200, "height": 900},
+            {"@type": "ImageObject", "url": thumb_src, "width": 1200, "height": 630},
         ],
     }, ensure_ascii=False, separators=(',', ':'))
 

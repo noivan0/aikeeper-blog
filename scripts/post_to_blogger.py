@@ -856,9 +856,15 @@ def post_to_blogger(file_path: str):
 
     # Blogger API는 제목에 큰따옴표 등 특수문자가 있으면 400 반환 → 치환
     safe_title = (post_data["title"]
-                  .replace('"', "'")
-                  .replace('\u201c', "'").replace('\u201d', "'")  # 좌우 큰따옴표
-                  .replace('\u300c', "").replace('\u300d', "")    # 일본어 괄호
+                  .replace('"', "'")           # ASCII 큰따옴표
+                  .replace('\u201c', "'")       # 좌 큰따옴표 "
+                  .replace('\u201d', "'")       # 우 큰따옴표 "
+                  .replace('\u300c', "")        # 일본어 【
+                  .replace('\u300d', "")        # 일본어 】
+                  .replace('\u0022', "'")       # 유니코드 QUOTATION MARK (중복 보호)
+                  .replace('\u02ba', "'")       # MODIFIER LETTER DOUBLE PRIME
+                  .replace('\u275d', "'")       # HEAVY DOUBLE TURNED COMMA QUOTATION MARK
+                  .replace('\u275e', "'")       # HEAVY DOUBLE COMMA QUOTATION MARK
                   .strip())
     # 라벨: 포스팅 내용에 맞는 것으로 최대 3개
     _safe_labels = (post_data.get("labels", []) or [])[:3]

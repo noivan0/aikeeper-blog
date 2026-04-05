@@ -44,8 +44,16 @@ def _get(path_with_query: str) -> dict:
         DOMAIN + path_with_query,
         headers={"Authorization": auth, "Content-Type": "application/json"}
     )
-    with urllib.request.urlopen(req, timeout=15) as r:
-        return json.loads(r.read())
+    with urllib.request.urlopen(req, timeout=20) as r:
+        raw = r.read()
+        # 응답 인코딩 감지: utf-8 → euc-kr → latin-1 순으로 fallback
+        for enc in ("utf-8", "euc-kr", "cp949", "latin-1"):
+            try:
+                return json.loads(raw.decode(enc))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+        # 마지막 수단: 디코딩 불가 바이트 무시
+        return json.loads(raw.decode("utf-8", errors="ignore"))
 
 
 def _post(path: str, body: dict) -> dict:

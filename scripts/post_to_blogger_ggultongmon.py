@@ -138,6 +138,15 @@ def main():
         print(f"[WARN] 제목 파싱 실패 ('{title[:30]}'), TOPIC으로 대체")
         title = TOPIC
     title = title.strip()
+    # 큰따옴표 → 작은따옴표 (Blogger API 400 방지)
+    title = (title
+             .replace('"', "'")
+             .replace('\u201c', "'").replace('\u201d', "'")
+             .replace('\u0022', "'").replace('\u02ba', "'"))
+    # TOPIC까지 빈 경우 발행 중단 (빈 제목 포스트 방지)
+    if not title or len(title.strip()) < 5:
+        print(f"[ERROR] 제목을 확정할 수 없음 — 발행 중단")
+        sys.exit(1)
     print(f"[INFO] 파싱 완료: {title}")
     print(f"[INFO] 글자수: {post_data['char_count']:,}자")
     

@@ -5,6 +5,18 @@
 set -e
 cd /root/.openclaw/workspace/paperclip-company/projects/p004-blogger
 
+# 중복 실행 방지 락
+LOCK_FILE="/tmp/allsweep_cron.lock"
+if [ -f "$LOCK_FILE" ]; then
+    PID=$(cat "$LOCK_FILE" 2>/dev/null)
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "[SKIP] 이미 실행 중 (PID $PID) — 종료"
+        exit 0
+    fi
+fi
+echo $$ > "$LOCK_FILE"
+trap "rm -f '$LOCK_FILE'" EXIT
+
 # .env 로드
 export $(grep -v '^#' .env | xargs)
 

@@ -12,12 +12,26 @@ LOG_FILE="/var/log/ggultongmon_cron.log"
 POSTS_DIR="$BASE_DIR/posts-ggultongmon"
 KST=$(date '+%Y-%m-%d %H:%M:%S KST')
 
+# 중복 실행 방지 락
+LOCK_FILE="/tmp/ggultongmon_cron.lock"
+if [ -f "$LOCK_FILE" ]; then
+    PID=$(cat "$LOCK_FILE" 2>/dev/null)
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "[$KST] [SKIP] 이미 실행 중 (PID $PID) — 종료" | tee -a "$LOG_FILE"
+        exit 0
+    fi
+fi
+echo $$ > "$LOCK_FILE"
+trap "rm -f '$LOCK_FILE'" EXIT
+
 mkdir -p "$POSTS_DIR"
 echo "[$KST] ===== 포스팅 시작 [blog: $BLOG_KEY] =====" | tee -a "$LOG_FILE"
 
-# .env 로드
+# .env 로드 (JSON 값 포함 안전 처리)
 if [ -f "$BASE_DIR/.env" ]; then
-    export $(grep -v '^#' "$BASE_DIR/.env" | xargs)
+    set -a
+    source "$BASE_DIR/.env"
+    set +a
 fi
 
 # blogs.json에서 Blog ID/URL 읽기 (하드코딩 제거)
