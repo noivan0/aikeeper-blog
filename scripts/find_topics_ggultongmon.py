@@ -279,10 +279,25 @@ def pick_category_and_products() -> tuple[int, str, list]:
             return cat_id, cat_name, products
         time.sleep(0.3)
 
-    # fallback: 가전디지털 (직전 카테고리가 가전이면 주방으로)
-    fallback_id = 1013 if last_cat_id == 1016 else 1016
+    # fallback 1: bestcategories 전체 실패 시 → 키워드 직접 검색으로 대체
+    print("[FALLBACK] bestcategories API 전체 실패 → 키워드 검색 모드로 전환")
+    FALLBACK_KEYWORDS = [
+        "에어프라이어", "로봇청소기", "안마의자", "공기청정기", "믹서기",
+        "프라이팬", "전기포트", "선풍기", "가습기", "건강기능식품",
+        "단백질보충제", "유산균", "콜라겐", "멀티탭", "블루투스이어폰",
+    ]
+    kw = random.choice(FALLBACK_KEYWORDS)
+    print(f"[FALLBACK] 키워드 검색: {kw}")
+    kw_products = search_products(kw, limit=10)
+    if kw_products:
+        cat_id = 1016  # 가전디지털 (기본값)
+        return cat_id, kw, kw_products
+
+    # fallback 2: 상품 완전 없음 → 빈 리스트 반환 (발행 차단은 publisher에서 처리)
+    print("[FALLBACK] 키워드 검색도 실패 — 상품 없이 진행 (Claude 주제 생성만)")
+    fallback_id = 1016
     fallback_name = CATEGORIES.get(fallback_id, "가전디지털")
-    return fallback_id, fallback_name, get_best_products(fallback_id, limit=30)
+    return fallback_id, fallback_name, []
 
 
 def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
@@ -295,12 +310,15 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
     today = datetime.now(timezone(timedelta(hours=9))).strftime("%Y년 %m월 %d일")
     used_titles = used_titles or []
 
-    # 상위 15개 상품 요약
-    product_summary = "\n".join([
-        f"[{i+1}] {p['productName'][:45]} | {int(p['productPrice']):,}원 | "
-        f"{'로켓' if p.get('isRocket') else '일반'}"
-        for i, p in enumerate(products[:15])
-    ])
+    # 상위 15개 상품 요약 (상품 없으면 카테고리명으로 주제 생성 요청)
+    if products:
+        product_summary = "\n".join([
+            f"[{i+1}] {p['productName'][:45]} | {int(p['productPrice']):,}원 | "
+            f"{'로켓' if p.get('isRocket') else '일반'}"
+            for i, p in enumerate(products[:15])
+        ])
+    else:
+        product_summary = f"[상품 데이터 없음] 카테고리: {cat_name}\n→ 카테고리명을 기반으로 2026년 인기 상품 TOP3 주제를 창의적으로 선정하세요."
 
     client = anthropic.Anthropic(
         api_key=os.environ["ANTHROPIC_API_KEY"],

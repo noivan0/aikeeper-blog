@@ -46,14 +46,21 @@ def _get(path_with_query: str) -> dict:
     )
     with urllib.request.urlopen(req, timeout=20) as r:
         raw = r.read()
+        if not raw or not raw.strip():
+            raise ValueError("빈 응답")
         # 응답 인코딩 감지: utf-8 → euc-kr → latin-1 순으로 fallback
         for enc in ("utf-8", "euc-kr", "cp949", "latin-1"):
             try:
-                return json.loads(raw.decode(enc))
+                text = raw.decode(enc)
+                if text.strip():
+                    return json.loads(text)
             except (UnicodeDecodeError, json.JSONDecodeError):
                 continue
         # 마지막 수단: 디코딩 불가 바이트 무시
-        return json.loads(raw.decode("utf-8", errors="ignore"))
+        decoded = raw.decode("utf-8", errors="ignore")
+        if not decoded.strip():
+            raise ValueError("디코딩 후 빈 응답")
+        return json.loads(decoded)
 
 
 def _post(path: str, body: dict) -> dict:
