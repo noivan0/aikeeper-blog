@@ -45,7 +45,7 @@ echo "[INFO] Blog URL: $TARGET_BLOG_URL" | tee -a "$LOG_FILE"
 
 # 랜덤 딜레이 (크론 충돌 방지)
 if [ "$1" != "--no-delay" ]; then
-    DELAY=$((RANDOM % 600))
+    DELAY=$((RANDOM % 300))
     echo "[$(date '+%H:%M:%S')] ${DELAY}초 대기..." | tee -a "$LOG_FILE"
     sleep "$DELAY"
 fi

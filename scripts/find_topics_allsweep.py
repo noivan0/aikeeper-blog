@@ -512,6 +512,20 @@ if __name__ == "__main__":
 
     used_history = load_posted_history()
 
+    # ── 공통 used_topics.jsonl 로그 병합 (3개 블로그 간 중복 방지) ─────
+    try:
+        import sys as _sys
+        _sys.path.insert(0, BASE)
+        from scripts.used_topics_log import get_recent_topics as _get_recent
+        _recent = _get_recent(days=7)
+        print(f"  [공통로그] 최근 7일 발행 {len(_recent)}개 로드")
+        for _entry in _recent:
+            _t = _entry.get("topic", "").lower()
+            if _t:
+                used_history.add(_t)
+    except Exception as _e:
+        print(f"  [공통로그] 로드 스킵: {_e}")
+
     print("\n📡 뉴스 수집 중...")
     news = fetch_all_news()
     print(f"\n✅ 총 {len(news)}개 수집 완료")

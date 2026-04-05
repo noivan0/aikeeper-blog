@@ -2066,7 +2066,24 @@ AI키퍼 블로그(신생 한국어 AI 전문 블로그)의 다음 포스트 주
 if __name__ == "__main__":
     print(f"🔍 AI키퍼 주제 발굴 v3 — {TODAY}")
 
+    # ── 공통 used_topics.jsonl 로그 병합 ─────────────────────────────
+    try:
+        import sys as _sys
+        _sys.path.insert(0, BASE + "/scripts")
+        from used_topics_log import get_recent_topics as _get_recent
+        _recent = _get_recent(days=7)
+        print(f"  [공통로그] 최근 7일 발행 {len(_recent)}개 로드")
+    except Exception as _e:
+        _recent = []
+        print(f"  [공통로그] 로드 스킵: {_e}")
+
     used_history = load_posted_history()
+
+    # 공통 로그의 주제도 used_history에 병합 (3개 블로그 간 중복 방지)
+    for _entry in _recent:
+        _t = _entry.get("topic", "").lower()
+        if _t:
+            used_history.add(_t)
 
     print("\n📡 뉴스 수집 중...")
     news = fetch_all_news()

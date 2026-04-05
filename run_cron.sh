@@ -16,8 +16,8 @@ touch "$GITHUB_OUTPUT"
 LOG_FILE="/var/log/aikeeper_cron.log"
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] ===== aikeeper 포스팅 시작 =====" | tee -a "$LOG_FILE"
 
-# 랜덤 딜레이 (0~30분) — 자연스러운 포스팅 패턴
-DELAY=$((RANDOM % 1800))
+# 랜덤 딜레이 (0~5분) — 크론 간격 52분에 맞게 축소
+DELAY=$((RANDOM % 300))
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] 랜덤 딜레이: ${DELAY}초" | tee -a "$LOG_FILE"
 sleep "$DELAY"
 

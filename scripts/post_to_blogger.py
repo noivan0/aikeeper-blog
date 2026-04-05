@@ -91,7 +91,7 @@ AD_IN_ARTICLE_INS = """
  data-ad-client="ca-pub-2597570939533872"
  data-ad-slot="6675974233"
  data-full-width-responsive="true"></ins>
-<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+<script defer>(adsbygoogle = window.adsbygoogle || []).push({});</script>
 </div>
 """
 
@@ -104,7 +104,7 @@ AD_DISPLAY_INS = """
  data-ad-slot="8117048415"
  data-ad-format="auto"
  data-full-width-responsive="true"></ins>
-<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+<script defer>(adsbygoogle = window.adsbygoogle || []).push({});</script>
 </div>
 """
 
@@ -156,6 +156,27 @@ PREMIUM_CSS = """
 }
 </style>
 """
+
+
+def minify_css(css: str) -> str:
+    """CSS 인라인 최소화 — 공백/주석 제거로 페이로드 크기 축소"""
+    css = re.sub(r'/\*.*?\*/', '', css, flags=re.DOTALL)  # 주석 제거
+    css = re.sub(r'\s+', ' ', css)                         # 공백 압축
+    css = re.sub(r';\s*}', '}', css)                       # 마지막 세미콜론
+    css = re.sub(r':\s+', ':', css)                        # 콜론 뒤 공백
+    css = re.sub(r',\s+', ',', css)                        # 콤마 뒤 공백
+    css = re.sub(r'{\s+', '{', css)                        # 중괄호 뒤 공백
+    css = re.sub(r'\s+{', '{', css)                        # 중괄호 앞 공백
+    return css.strip()
+
+
+def compress_html(html: str) -> str:
+    """HTML 출력 경량화 — Blogger 저장 크기 축소 (pre/code 내부 보호)"""
+    # 연속 빈줄 → 단일 빈줄
+    html = re.sub(r'\n{3,}', '\n\n', html)
+    # 태그 사이 불필요한 공백 (pre 내부는 건드리지 않음)
+    html = re.sub(r'>\s{2,}<', '> <', html)
+    return html
 
 
 def get_credentials():
@@ -277,7 +298,7 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
         blogposting["timeRequired"] = f"PT{read_time}M"
 
     scripts = f"""<script type="application/ld+json">
-{json.dumps(blogposting, ensure_ascii=False, indent=2)}
+{json.dumps(blogposting, ensure_ascii=False, separators=(',', ':'))}
 </script>"""
 
     # ── 2. FAQPage (리치 스니펫 — 검색결과에 FAQ 펼침 표시) ──
@@ -297,7 +318,7 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
         if faq_schema["mainEntity"]:
             scripts += f"""
 <script type="application/ld+json">
-{json.dumps(faq_schema, ensure_ascii=False, indent=2)}
+{json.dumps(faq_schema, ensure_ascii=False, separators=(',', ':'))}
 </script>"""
 
     # ── 3. BreadcrumbList ──
@@ -314,7 +335,7 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
     }
     scripts += f"""
 <script type="application/ld+json">
-{json.dumps(breadcrumb, ensure_ascii=False, indent=2)}
+{json.dumps(breadcrumb, ensure_ascii=False, separators=(',', ':'))}
 </script>"""
 
     # ── WebSite 스키마는 Blogger 테마 수준 — 포스트 HTML에서 제거 (중복 방지) ──
@@ -580,7 +601,11 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
             f'width="1" height="1" aria-hidden="true">\n'
         )
 
-    return f"""{thumb_tag}{json_ld}
+    # CSS 압축 (포스트당 반복 삽입되는 인라인 CSS 크기 축소)
+    minified_css = minify_css(PREMIUM_CSS.replace('<style>', '').replace('</style>', '').strip())
+    minified_css_block = f'<style>{minified_css}</style>'
+
+    raw_html = f"""{thumb_tag}{json_ld}
 
 <!-- ── 검색엔진 메타 ── -->
 <!-- canonical은 Blogger 테마가 포스트별 올바른 URL로 자동 삽입 — 여기서 중복 추가 안 함 -->
@@ -614,7 +639,7 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 <!-- ── AdSense 초기화 1회 (GA4/AdSense는 Blogger 테마에서 중복 로드되므로 여기선 최소화) ── -->
 {ADSENSE_INIT}
 
-{PREMIUM_CSS}
+{minified_css_block}
 
 <div class="ak-post" lang="ko">
 {read_badge}
@@ -642,6 +667,7 @@ background:linear-gradient(135deg,#f8f9ff 0%,#fff 100%);display:flex;gap:16px;al
 </div>
 </div>
 """
+    return compress_html(raw_html)
 
 
 def parse_post(file_path: str):
@@ -845,7 +871,7 @@ def post_to_blogger(file_path: str):
                                     d['mainEntityOfPage']['@id'] = purl
                                 if d.get('url', '') == BLOG_URL:
                                     d['url'] = purl
-                                return f'<script type="application/ld+json">\n{_json.dumps(d, ensure_ascii=False, indent=2)}\n</script>'
+                                return f'<script type="application/ld+json">\n{_json.dumps(d, ensure_ascii=False, separators=(",", ":"))}\n</script>'
                         except Exception:
                             pass
                         return m.group(0)
@@ -898,4 +924,20 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python post_to_blogger.py <markdown_file>")
         sys.exit(1)
-    post_to_blogger(sys.argv[1])
+    result = post_to_blogger(sys.argv[1])
+    # ── 발행 성공 시 공통 주제 로그에 기록 ──────────────────────────
+    if result:
+        try:
+            import sys as _sys
+            import os as _os
+            _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+            from used_topics_log import log_topic as _log_topic
+            _blog_id = _os.environ.get("TARGET_BLOG_ID", BLOG_ID)
+            _blog_label = "allsweep" if BLOG_TYPE == "NEWS" else "aikeeper"
+            _title = result.get("title", "")
+            _labels = ",".join(result.get("labels", []))
+            if _title:
+                _log_topic(_blog_label, _title, _labels)
+                print(f"  📝 used_topics.jsonl 기록 완료: {_title[:50]}")
+        except Exception as _le:
+            print(f"  ℹ️  주제 로그 기록 스킵 (비치명적): {_le}")
