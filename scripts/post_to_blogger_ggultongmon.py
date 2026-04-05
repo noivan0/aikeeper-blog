@@ -225,15 +225,22 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # ── 발행 성공 시 공통 주제 로그에 기록 ──────────────────────────
+    # ── 발행 성공 시 공통 주제 로그에 기록 (상품ID + 검색키워드 포함) ──
     try:
         import sys as _sys
         import os as _os
         _sys.path.insert(0, str(BASE_DIR / "scripts"))
         from used_topics_log import log_topic as _log_topic
         _keywords = _os.environ.get("SEARCH_KW") or _os.environ.get("search_keyword", "")
+        # 상품 ID 수집 (중복 상품 차단용)
+        _product_ids = [
+            str(p.get("productId", p.get("itemId", "")))
+            for p in products
+            if p.get("productId") or p.get("itemId")
+        ]
         if TOPIC:
-            _log_topic("ggultongmon", TOPIC, _keywords)
-            print(f"  📝 used_topics.jsonl 기록 완료: {TOPIC[:50]}")
+            _log_topic("ggultongmon", TOPIC, _keywords,
+                       search_keyword=_keywords, product_ids=_product_ids)
+            print(f"  📝 used_topics.jsonl 기록 완료: {TOPIC[:50]} | 상품ID {len(_product_ids)}개")
     except Exception as _le:
         print(f"  ℹ️  주제 로그 기록 스킵 (비치명적): {_le}")

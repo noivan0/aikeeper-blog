@@ -444,6 +444,9 @@ if __name__ == "__main__":
     used_titles = load_recent_post_titles(blog_id, refresh_token, client_id, client_secret, max_posts=50)
 
     # ── 공통 used_topics.jsonl 로그 병합 (3개 블로그 간 중복 방지) ─────
+    # search_keyword 목록도 함께 수집 → 같은 검색 키워드 차단
+    used_search_keywords: list[str] = []
+    used_product_ids: list[str] = []
     try:
         sys.path.insert(0, BASE_DIR)
         from scripts.used_topics_log import get_recent_topics as _get_recent
@@ -453,6 +456,14 @@ if __name__ == "__main__":
             _t = _entry.get("topic", "")
             if _t and _t not in used_titles:
                 used_titles.append(_t)
+            _sk = _entry.get("search_keyword", "").strip().lower()
+            if _sk and _sk not in used_search_keywords:
+                used_search_keywords.append(_sk)
+            for _pid in _entry.get("product_ids", []):
+                _pid_s = str(_pid)
+                if _pid_s not in used_product_ids:
+                    used_product_ids.append(_pid_s)
+        print(f"  [공통로그] 중복 검색키워드 {len(used_search_keywords)}개, 상품ID {len(used_product_ids)}개")
     except Exception as _e:
         print(f"  [공통로그] 로드 스킵: {_e}")
 
@@ -467,7 +478,21 @@ if __name__ == "__main__":
     else:
         cat_id, cat_name, products = pick_category_and_products()
 
-    # Step 2: Claude 주제 선정 (수동 주제 지정 시 스킵)
+    # Step 2: Claude 주제 선정 — 검색 키워드/상품ID 중복 사전 필터
+    # 이미 사용된 search_keyword와 겹치는 상품 제거
+    if used_search_keywords or used_product_ids:
+        filtered_products = []
+        for p in products:
+            pid = str(p.get("productId", p.get("itemId", "")))
+            # 상품 ID 중복 체크
+            if pid and pid in used_product_ids:
+                continue
+            filtered_products.append(p)
+        if len(filtered_products) < 3:
+            filtered_products = products  # 필터 후 부족하면 원본 유지
+        products = filtered_products
+        print(f"  [상품필터] 중복 제거 후 {len(products)}개 후보")
+
     if manual_topic:
         print(f"[수동] 주제 고정: {manual_topic}")
         topic_data = generate_topic_with_claude(cat_id, cat_name, products, used_titles)
@@ -475,6 +500,15 @@ if __name__ == "__main__":
     else:
         print(f"Claude 주제 선정 중...")
         topic_data = generate_topic_with_claude(cat_id, cat_name, products, used_titles)
+
+    # 선정된 search_keyword도 중복 체크 (키워드 레벨)
+    selected_sk = topic_data.get("search_keyword", "").strip().lower()
+    if selected_sk and selected_sk in used_search_keywords:
+        print(f"  ⚠️ 검색 키워드 중복 감지: '{selected_sk}' — 카테고리 재선정")
+        # 다른 카테고리로 재시도
+        cat_id, cat_name, products = pick_category_and_products()
+        topic_data = generate_topic_with_claude(cat_id, cat_name, products, used_titles)
+        print(f"  → 재선정: {topic_data.get('topic','')[:40]}")
     print(f"\n선정 주제: {topic_data['topic']}")
     print(f"검색 키워드: {topic_data['search_keyword']}")
     print(f"라벨: {topic_data['labels']}")

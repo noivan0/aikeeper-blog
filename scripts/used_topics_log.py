@@ -10,12 +10,14 @@ from pathlib import Path
 LOG_FILE = Path(__file__).parent.parent / "used_topics.jsonl"
 
 
-def log_topic(blog_id: str, topic: str, keywords: str) -> None:
+def log_topic(blog_id: str, topic: str, keywords: str, search_keyword: str = "", product_ids: list = None) -> None:
     """발행 성공 시 주제를 로그에 기록"""
     entry = {
         "blog": blog_id,
         "topic": topic,
         "keywords": keywords,
+        "search_keyword": search_keyword,   # 쿠팡 검색 키워드 (상품 중복 방지용)
+        "product_ids": product_ids or [],   # 쿠팡 상품 ID 목록 (상품 레벨 중복 방지)
         "date": datetime.date.today().isoformat(),
         "ts": datetime.datetime.now().isoformat(),
     }
@@ -26,13 +28,16 @@ def log_topic(blog_id: str, topic: str, keywords: str) -> None:
         print(f"[used_topics_log] 로그 기록 실패 (무시): {e}")
 
 
-def is_duplicate(topic: str, keywords: str = "", days: int = 7) -> bool:
-    """최근 N일 이내 유사 주제 발행 여부 체크
+def is_duplicate(topic: str, keywords: str = "", days: int = 7,
+                 search_keyword: str = "", product_ids: list = None) -> bool:
+    """최근 N일 이내 유사 주제/상품 발행 여부 체크
 
     Args:
-        topic:    체크할 주제 제목
-        keywords: 쉼표 구분 키워드 문자열
-        days:     몇 일 이내를 중복으로 볼지 (기본 7일)
+        topic:          체크할 주제 제목
+        keywords:       쉼표 구분 키워드 문자열
+        days:           몇 일 이내를 중복으로 볼지 (기본 7일)
+        search_keyword: 쿠팡 검색 키워드 (같은 키워드면 같은 상품군 = 중복)
+        product_ids:    쿠팡 상품 ID 목록 (상품 레벨 중복 체크)
 
     Returns:
         True이면 중복 (발행 스킵 권장), False이면 새 주제
@@ -43,6 +48,8 @@ def is_duplicate(topic: str, keywords: str = "", days: int = 7) -> bool:
     cutoff = datetime.date.today() - datetime.timedelta(days=days)
     topic_lower = topic.lower()
     kw_set = set(k.strip() for k in keywords.lower().split(",") if k.strip()) if keywords else set()
+    check_product_ids = set(str(pid) for pid in (product_ids or []))
+    search_kw_lower = search_keyword.lower().strip() if search_keyword else ""
 
     with open(LOG_FILE, encoding="utf-8") as f:
         for line in f:
@@ -57,14 +64,24 @@ def is_duplicate(topic: str, keywords: str = "", days: int = 7) -> bool:
 
                 entry_topic = entry.get("topic", "").lower()
 
-                # ── 주제 제목 50% 이상 겹치면 중복 (2자 이상 단어 기준) ──
+                # ── 1. 검색 키워드 동일 → 같은 상품군 = 중복 ──────────────
+                entry_search_kw = entry.get("search_keyword", "").lower().strip()
+                if search_kw_lower and entry_search_kw and search_kw_lower == entry_search_kw:
+                    return True
+
+                # ── 2. 상품 ID 겹침 (1개 이상) → 중복 ──────────────────────
+                entry_pids = set(str(p) for p in entry.get("product_ids", []))
+                if check_product_ids and entry_pids and check_product_ids & entry_pids:
+                    return True
+
+                # ── 3. 주제 제목 50% 이상 겹치면 중복 (2자 이상 단어 기준) ──
                 words = [w for w in topic_lower.split() if len(w) >= 2]
                 if words:
                     matches = sum(1 for w in words if w in entry_topic)
                     if matches / len(words) >= 0.5:
                         return True
 
-                # ── 키워드 세트가 완전히 동일하면 중복 ──
+                # ── 4. 키워드 세트가 완전히 동일하면 중복 ────────────────────
                 entry_kw = set(
                     k.strip()
                     for k in entry.get("keywords", "").lower().split(",")
