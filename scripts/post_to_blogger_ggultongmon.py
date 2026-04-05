@@ -55,22 +55,8 @@ def publish_to_blogger(title: str, html: str, labels: list, token: str) -> dict:
     safe_html = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', html)
     safe_html = safe_html.replace('\ufeff', '')  # BOM 제거
 
-    # 라벨 처리: Blogger 블로그당 2,000개 한도 — 기존 라벨 우선, 최대 5개
-    try:
-        _lbl_req = urllib.request.Request(
-            f"https://www.googleapis.com/blogger/v3/blogs/{BLOG_ID}/posts?maxResults=500&fields=items(labels)&status=live",
-            headers={"Authorization": f"Bearer {token}"}
-        )
-        with urllib.request.urlopen(_lbl_req, timeout=10) as _lr:
-            _existing = set()
-            for _p in json.loads(_lr.read()).get("items", []):
-                for _l in _p.get("labels", []):
-                    _existing.add(_l)
-        _known = [l for l in labels if l in _existing]
-        _new = [l for l in labels if l not in _existing]
-        safe_labels = (_known + _new)[:5]
-    except Exception:
-        safe_labels = labels[:5]
+    # 라벨: 포스팅 내용에 맞는 것으로 최대 3개
+    safe_labels = labels[:3]
 
     url = f"https://www.googleapis.com/blogger/v3/blogs/{BLOG_ID}/posts/"
     body = json.dumps({

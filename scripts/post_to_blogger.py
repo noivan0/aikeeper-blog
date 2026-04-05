@@ -860,26 +860,8 @@ def post_to_blogger(file_path: str):
                   .replace('\u201c', "'").replace('\u201d', "'")  # 좌우 큰따옴표
                   .replace('\u300c', "").replace('\u300d', "")    # 일본어 괄호
                   .strip())
-    # 라벨 처리: Blogger 블로그당 2,000개 한도 — 기존 라벨 우선, 최대 5개
-    _raw_labels = post_data.get("labels", []) or []
-    try:
-        import urllib.request as _ur, urllib.parse as _up
-        _lbl_req = _ur.Request(
-            f"https://www.googleapis.com/blogger/v3/blogs/{BLOG_ID}/posts?maxResults=500&fields=items(labels)&status=live",
-            headers={"Authorization": f"Bearer {token}"}
-        )
-        with _ur.urlopen(_lbl_req, timeout=10) as _lr:
-            import json as _j
-            _existing = set()
-            for _p in _j.loads(_lr.read()).get("items", []):
-                for _l in _p.get("labels", []):
-                    _existing.add(_l)
-        # 기존 라벨 우선, 그 다음 새 라벨 (총 5개 이하)
-        _known = [l for l in _raw_labels if l in _existing]
-        _new = [l for l in _raw_labels if l not in _existing]
-        _safe_labels = (_known + _new)[:5]
-    except Exception:
-        _safe_labels = _raw_labels[:5]
+    # 라벨: 포스팅 내용에 맞는 것으로 최대 3개
+    _safe_labels = (post_data.get("labels", []) or [])[:3]
 
     body = {"title": safe_title, "content": post_data["content"]}
     if _safe_labels:
