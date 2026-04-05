@@ -178,6 +178,30 @@ def get_domain_name(url: str) -> str:
     return domain.split('.')[0].title()
 
 
+def is_relevant_image(img_url: str, img_alt: str, query: str) -> bool:
+    """이미지가 주제와 관련 있는지 기본 체크.
+    
+    너무 엄격하면 이미지 자체가 없어지므로, 명백히 무관한 패턴만 걸러냄.
+    Google/Bing/Wikimedia/Unsplash 이미지는 이미 주제 기반이므로 항상 통과.
+    뉴스/Reddit 소스에서 온 이미지에만 엄격하게 적용.
+    """
+    url_lower = img_url.lower()
+    alt_lower = (img_alt or "").lower()
+
+    # 명백히 무관한 패턴 제외 (자동차, 렌트, 음식 등 주제 무관 카테고리)
+    irrelevant_patterns = [
+        'jump-starter', 'land-cruiser', 'land_cruiser',
+        'mildlyinfuriating', 'r/rent', 'r/food', 'r/recipe',
+        '/cars/', '/auto/', '/vehicle/', '/jumpstarter/',
+        'car-review', 'auto-loan', 'vehicle-insurance',
+    ]
+    for pat in irrelevant_patterns:
+        if pat in url_lower:
+            return False
+
+    return True  # 기본적으로 통과 (이미지 없는 것보다 관련성 낮아도 있는 게 나음)
+
+
 # ── 1순위: Unsplash Source API (API 키 불필요) ───────────────────
 
 def search_unsplash_direct(query: str) -> list:
@@ -369,7 +393,7 @@ def search_from_news_sources(query: str, labels: list = None) -> list:
                     continue
 
                 # RSS에서 바로 이미지 URL 확보
-                if img_url and is_valid_image_url(img_url):
+                if img_url and is_valid_image_url(img_url) and is_relevant_image(img_url, "", query):
                     results.append({
                         "url": img_url,
                         "alt": query,
@@ -380,13 +404,15 @@ def search_from_news_sources(query: str, labels: list = None) -> list:
                     })
                     print(f"  ✅ {feed['name']} RSS 이미지 (match={matched}): {img_url[:60]}...")
                     break
+                elif img_url and not is_relevant_image(img_url, "", query):
+                    print(f"  ⚠️ {feed['name']} 이미지 관련성 미달, 스킵: {img_url[:60]}...")
 
                 # RSS 이미지 없으면 기사 페이지 scrapling → og:image
                 if link:
                     try:
                         page_html = scrapling_fetch(link, timeout=15)
                         og = extract_og_image(page_html) if page_html else None
-                        if og and is_valid_image_url(og):
+                        if og and is_valid_image_url(og) and is_relevant_image(og, "", query):
                             results.append({
                                 "url": og,
                                 "alt": query,
@@ -430,8 +456,9 @@ def search_from_reddit(query: str) -> list:
                 # 1순위: post_hint=="image" 인 경우 — url이 직접 이미지 링크
                 hint = pd.get("post_hint", "")
                 ext_url = pd.get("url_overridden_by_dest", pd.get("url", ""))
-                if hint == "image" and ext_url and is_valid_image_url(ext_url):
-                    post_url = f"https://reddit.com{pd.get('permalink', '')}"
+                permalink = pd.get("permalink", "")
+                if hint == "image" and ext_url and is_valid_image_url(ext_url) and is_relevant_image(ext_url, "", query):
+                    post_url = f"https://reddit.com{permalink}"
                     results.append({
                         "url": ext_url,
                         "alt": query[:80],
@@ -446,8 +473,8 @@ def search_from_reddit(query: str) -> list:
                 # 2순위: thumbnail이 실제 이미지 URL인 경우 (HTML 엔티티 디코딩)
                 import html as _html
                 thumb = _html.unescape(pd.get("thumbnail", ""))
-                if thumb and thumb.startswith("http") and is_valid_image_url(thumb):
-                    post_url = f"https://reddit.com{pd.get('permalink', '')}"
+                if thumb and thumb.startswith("http") and is_valid_image_url(thumb) and is_relevant_image(thumb, "", query):
+                    post_url = f"https://reddit.com{permalink}"
                     results.append({
                         "url": thumb,
                         "alt": query[:80],
@@ -556,17 +583,22 @@ def make_emoji_banner(query: str, title: str) -> str:
 # ── HTML 빌더 ─────────────────────────────────────────────────────
 
 def build_image_html(img: dict, is_hero: bool = True) -> str:
-    """이미지 딕셔너리 → SEO 최적화 HTML figure"""
+    """이미지 딕셔너리 → SEO 최적화 HTML figure
+    
+    캡션: source_label + 출처 도메인명만 표시 (기사 제목/영어 텍스트 노출 제거)
+    """
     url = img["url"]
     alt = img.get("alt", "")[:100]
-    credit = img.get("credit", "")
     credit_url = img.get("credit_url", "")
     source_label = img.get("source_label", "📷 출처")
 
+    # 도메인명만 추출 (기사 제목 대신 사이트명으로 간결하게)
+    domain_name = get_domain_name(credit_url) if credit_url else img.get("credit", "출처")
+
     credit_html = (
         f'<a href="{credit_url}" rel="nofollow noopener"'
-        f' style="color:#4f6ef7;text-decoration:none;">{credit}</a>'
-        if credit_url else credit
+        f' style="color:#4f6ef7;text-decoration:none;">{domain_name}</a>'
+        if credit_url else domain_name
     )
 
     # LCP 최적화: 히어로 이미지는 eager+high priority, 나머지는 lazy
@@ -839,14 +871,16 @@ def insert_body_images(body: str, images: list, title: str = "") -> str:
     def make_img_md(img: dict) -> str:
         url = img["url"]
         alt = img.get("alt", title or "관련 이미지")[:100]
-        credit = img.get("credit", "")
         credit_url = img.get("credit_url", "")
         source_label = img.get("source_label", "📷 출처")
 
+        # 도메인명만 표시 (기사 제목/영어 텍스트 제거)
+        domain_name = get_domain_name(credit_url) if credit_url else img.get("credit", "출처")
+
         credit_html = (
             f'<a href="{credit_url}" rel="nofollow noopener"'
-            f' style="color:#4f6ef7;text-decoration:none;">{credit}</a>'
-            if credit_url else credit
+            f' style="color:#4f6ef7;text-decoration:none;">{domain_name}</a>'
+            if credit_url else domain_name
         )
         return (
             f'\n<figure style="margin:2em 0;text-align:center;">'
