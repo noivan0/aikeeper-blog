@@ -52,7 +52,9 @@ def collect_all_posts(max_posts: int = 200) -> list:
             r'href=["\']+(https://link\.coupang\.com/[^"\'>\s]+)', content)))[:3]
         prices  = [p+"원" for p in list(dict.fromkeys(
             re.findall(r'([0-9]{1,3}(?:,[0-9]{3})+)원', content)))[:3]]
-        text    = re.sub(r'<[^>]+>',' ', content)
+        # <script>...</script> 블록 전체 제거 (JSON-LD 등이 summary에 노출되는 문제 방지)
+        clean   = re.sub(r'<script[^>]*>.*?</script>', '', content, flags=re.DOTALL | re.IGNORECASE)
+        text    = re.sub(r'<[^>]+>',' ', clean)
         text    = re.sub(r'\s+',' ', text).strip()
         cats    = [c.get('term','') for c in e.findall('atom:category', ns)]
         meta_map[url] = {

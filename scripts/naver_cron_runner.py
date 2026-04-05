@@ -102,7 +102,11 @@ def fetch_latest_posts(max_age_days: int = MAX_AGE_DAYS) -> list[dict]:
             content_el = entry.find("atom:content", ns)
             if content_el is not None:
                 raw_html = content_el.text or ""
-                plain = re.sub(r'<[^>]+>', '', raw_html)
+                # <script>...</script> 블록 전체 제거 (JSON-LD 등이 summary에 노출되는 문제 방지)
+                clean_html = re.sub(r'<script[^>]*>.*?</script>', '', raw_html, flags=re.DOTALL | re.IGNORECASE)
+                plain = re.sub(r'<[^>]+>', '', clean_html)
+                # 공백/개행 정리 후 첫 200자
+                plain = re.sub(r'\s+', ' ', plain).strip()
                 summary = plain[:200].strip()
 
         # 발행일 — 나이 계산
