@@ -50,10 +50,15 @@ def publish_to_blogger(title: str, html: str, labels: list, token: str) -> dict:
                   .replace('\u201c', "'").replace('\u201d', "'")  # 좌우 큰따옴표
                   .replace('\u300c', "").replace('\u300d', "")    # 일본어 괄호
                   .strip())
+    # HTML 본문 제어문자 제거 (null bytes, BOM 등 → Blogger badRequest 원인)
+    import re as _re
+    safe_html = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', html)
+    safe_html = safe_html.replace('\ufeff', '')  # BOM 제거
+
     url = f"https://www.googleapis.com/blogger/v3/blogs/{BLOG_ID}/posts/"
     body = json.dumps({
         "title": safe_title,
-        "content": html,
+        "content": safe_html,
         "labels": labels,
     }).encode("utf-8")
     req = urllib.request.Request(url, data=body, method="POST", headers={
