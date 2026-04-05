@@ -587,29 +587,147 @@ def build_image_html(img: dict, is_hero: bool = True) -> str:
 
 # ── 메인 오케스트레이터 ──────────────────────────────────────────
 
+def search_google_images(query: str, num: int = 5) -> list:
+    """Google 이미지 검색 크롤링 — 주제 기반 실제 이미지"""
+    import urllib.parse, urllib.request, re, json
+
+    results = []
+    try:
+        # Google 이미지 검색 URL
+        encoded = urllib.parse.quote(query)
+        url = f"https://www.google.com/search?q={encoded}&tbm=isch&hl=ko&num=10"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+            "Referer": "https://www.google.com/",
+        }
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+
+        # Google 이미지 URL 추출 (JSON 데이터에서)
+        patterns = [
+            r'"(https://[^"]+\.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?)"',
+            r'imgurl=([^&"]+\.(?:jpg|jpeg|png))',
+        ]
+        found_urls = set()
+        for pattern in patterns:
+            matches = re.findall(pattern, html)
+            for m in matches:
+                url_clean = urllib.parse.unquote(m)
+                if (url_clean.startswith("http")
+                        and "google" not in url_clean
+                        and "gstatic" not in url_clean
+                        and len(url_clean) < 300
+                        and not any(x in url_clean for x in ["icon", "logo", "favicon", "1x1", "pixel"])):
+                    found_urls.add(url_clean)
+                    if len(found_urls) >= num:
+                        break
+            if len(found_urls) >= num:
+                break
+
+        for img_url in list(found_urls)[:num]:
+            results.append({
+                "url": img_url,
+                "alt": query,
+                "credit": "Google Images",
+                "credit_url": f"https://www.google.com/search?q={encoded}&tbm=isch",
+                "source": "google",
+                "source_label": "🔍 Google Images"
+            })
+
+        if results:
+            print(f"  ✅ Google 이미지: {len(results)}개")
+        else:
+            print(f"  ⚠️  Google 이미지 추출 실패 (패턴 미매칭)")
+    except Exception as e:
+        print(f"  ⚠️  Google 이미지 검색 실패: {e}")
+
+    return results
+
+
+def search_bing_images(query: str, num: int = 5) -> list:
+    """Bing 이미지 검색 크롤링 — Google 실패 시 대안"""
+    import urllib.parse, urllib.request, re
+
+    results = []
+    try:
+        encoded = urllib.parse.quote(query)
+        url = f"https://www.bing.com/images/search?q={encoded}&count=10&mkt=ko-KR"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept-Language": "ko-KR,ko;q=0.9",
+        }
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+
+        # Bing 이미지 URL 패턴: murl 파라미터
+        matches = re.findall(r'"murl":"(https://[^"]+)"', html)
+        found = []
+        for m in matches:
+            if (m.startswith("http") and len(m) < 500
+                    and any(m.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"])
+                    and "bing.com" not in m):
+                found.append(m)
+            if len(found) >= num:
+                break
+
+        for img_url in found[:num]:
+            results.append({
+                "url": img_url,
+                "alt": query,
+                "credit": "Bing Images",
+                "credit_url": f"https://www.bing.com/images/search?q={encoded}",
+                "source": "bing",
+                "source_label": "🔍 Bing Images"
+            })
+
+        if results:
+            print(f"  ✅ Bing 이미지: {len(results)}개")
+    except Exception as e:
+        print(f"  ⚠️  Bing 이미지 검색 실패: {e}")
+
+    return results
+
+
 def collect_images(query: str, labels: list = None) -> list:
     """다중 소스에서 이미지 수집, 우선순위 적용"""
     all_images = []
 
+    # 0순위: Google 이미지 검색 (주제 기반 실제 이미지 — 최우선)
+    print(f"  🔍 Google 이미지 검색 중...")
+    google_imgs = search_google_images(query)
+    all_images.extend(google_imgs)
+
     # 1순위: 뉴스/블로그 소스 scrapling (신뢰도 최고)
-    print(f"  📰 뉴스 소스 검색 중...")
-    news_imgs = search_from_news_sources(query, labels)
-    all_images.extend(news_imgs)
+    if len(all_images) < 3:
+        print(f"  📰 뉴스 소스 검색 중...")
+        news_imgs = search_from_news_sources(query, labels)
+        all_images.extend(news_imgs)
+
+    # Bing (Google 실패 보완)
+    if len(all_images) < 2:
+        print(f"  🔍 Bing 이미지 검색 중...")
+        bing_imgs = search_bing_images(query)
+        all_images.extend(bing_imgs)
 
     # 뉴스에서 못 찾으면 Reddit 시도 (단, 만료 안 되는 URL만 허용)
-    if len(all_images) < 2:
+    if len(all_images) < 3:
         print(f"  💬 Reddit 검색 중...")
         reddit_imgs = search_from_reddit(query)
         all_images.extend(reddit_imgs)
 
     # 2순위: Wikimedia Commons (무료 CC 라이선스, 안정적 URL)
-    if len(all_images) < 2:
+    if len(all_images) < 3:
         print(f"  🖼️  Wikimedia 검색 중...")
         wiki_imgs = search_wikimedia(query)
         all_images.extend(wiki_imgs)
 
     # 3순위: Unsplash API (키 있을 때) 또는 Direct
-    if len(all_images) < 2:
+    if len(all_images) < 3:
         if UNSPLASH_ACCESS_KEY:
             print(f"  📸 Unsplash API 검색 중...")
             unsplash_imgs = search_unsplash(query)
@@ -641,21 +759,22 @@ def collect_images(query: str, labels: list = None) -> list:
 
     # 최종 폴백: FALLBACK_IMAGES (Unsplash 고정 URL, 항상 안정적)
     if not all_images:
-        # query(제목) 기반 hash — 같은 날이라도 포스팅마다 다른 이미지
-        seed = int(hashlib.md5(query.encode()).hexdigest(), 16)
+        # query + 날짜 기반 hash — 날짜마다 다른 이미지 선택
+        seed_str = query + datetime.date.today().isoformat()
+        seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16)
         fallback = FALLBACK_IMAGES[seed % len(FALLBACK_IMAGES)]
         all_images.append(fallback)
         print(f"  🔄 Fallback 이미지 사용: {fallback['url'][:60]}...")
 
-    return all_images[:2]
+    return all_images[:5]
 
 
 def insert_body_images(body: str, images: list, title: str = "") -> str:
     """
-    본문 마크다운에 이미지 2개를 자연스럽게 삽입
-    - 1번째 이미지: 본문 2~3번째 h2 섹션 시작 직후
-    - 2번째 이미지: 본문 후반부 (h2 섹션 4~5번째 또는 본문 70% 지점)
-    이미 이미지가 있는 섹션은 건너뜀
+    본문 마크다운에 이미지를 최대 4개 자연스럽게 삽입
+    - images[1:5] (hero 제외 최대 4개)를 h2 섹션에 배분
+    - h2 섹션이 부족하면 있는 만큼만 삽입
+    - <pre>, <code> 블록 사이에는 삽입하지 않음
     """
     if len(images) < 2:
         return body
@@ -666,40 +785,58 @@ def insert_body_images(body: str, images: list, title: str = "") -> str:
     if len(h2_positions) < 2:
         return body  # h2가 2개 미만이면 삽입 불가
 
-    # 삽입 위치: 2번째 h2 뒤, 4번째 h2 뒤 (없으면 마지막에서 30줄 전)
+    # <pre>/<code> 블록 범위 탐지 (삽입 금지 구간)
+    forbidden_ranges = []
+    in_code = False
+    code_start = 0
+    for i, line in enumerate(lines):
+        if re.match(r'^\s*```', line) or re.match(r'^\s*<pre', line, re.I):
+            if not in_code:
+                in_code = True
+                code_start = i
+        elif in_code and (re.match(r'^\s*```', line) or re.match(r'^\s*</pre', line, re.I)):
+            forbidden_ranges.append((code_start, i))
+            in_code = False
+
+    def is_forbidden(pos: int) -> bool:
+        for start, end in forbidden_ranges:
+            if start <= pos <= end:
+                return True
+        return False
+
+    # body 이미지: images[1:5] — 최대 4개
+    body_images = images[1:5]
+    num_to_insert = min(len(body_images), len(h2_positions) - 1)
+
+    if num_to_insert == 0:
+        return body
+
+    # h2 섹션을 균등 분배하여 삽입 위치 계산
+    # 예: h2 5개, 이미지 4개 → 2번째, 3번째, 4번째, 5번째 h2 뒤에 삽입
+    # h2가 3개이고 이미지 4개이면 → 2번째, 3번째 h2 뒤에만 삽입 (2개)
+    h2_slots = h2_positions[1:]  # 1번째 h2 이후부터 사용
+    if len(h2_slots) < num_to_insert:
+        num_to_insert = len(h2_slots)
+
+    # 균등 간격으로 슬롯 선택
+    step = len(h2_slots) / num_to_insert
+    selected_h2s = [h2_slots[int(i * step)] for i in range(num_to_insert)]
+
     insert_positions = []
+    for h2_pos in selected_h2s:
+        # 해당 h2 뒤 첫 빈 줄 다음 위치 탐색
+        insert_at = h2_pos + 2
+        for i in range(h2_pos + 1, min(h2_pos + 6, len(lines))):
+            if lines[i].strip() == "":
+                insert_at = i + 1
+                break
+        # 금지 구간이면 다음 줄로
+        while is_forbidden(insert_at) and insert_at < len(lines):
+            insert_at += 1
+        insert_positions.append(insert_at)
 
-    # 1번째 이미지: 2번째 h2 다음 빈 줄 이후
-    pos1_h2 = h2_positions[1] if len(h2_positions) > 1 else h2_positions[0]
-    # 해당 h2 뒤 첫 빈 줄 찾기
-    for i in range(pos1_h2 + 1, min(pos1_h2 + 5, len(lines))):
-        if lines[i].strip() == "":
-            insert_positions.append(i + 1)
-            break
-    else:
-        insert_positions.append(pos1_h2 + 2)
-
-    # 2번째 이미지: 4번째 h2 또는 후반 70% 지점
-    if len(h2_positions) >= 4:
-        pos2_h2 = h2_positions[3]
-    elif len(h2_positions) >= 3:
-        pos2_h2 = h2_positions[2]
-    else:
-        pos2_h2 = len(lines) - 30
-
-    for i in range(pos2_h2 + 1, min(pos2_h2 + 5, len(lines))):
-        if lines[i].strip() == "":
-            insert_positions.append(i + 1)
-            break
-    else:
-        insert_positions.append(max(pos2_h2 + 2, len(lines) - 20))
-
-    # 두 위치가 너무 가까우면 2번째 위치 조정
-    if len(insert_positions) == 2 and insert_positions[1] <= insert_positions[0] + 5:
-        insert_positions[1] = insert_positions[0] + max(20, len(lines) // 3)
-
-    # 이미지 HTML 생성 (마크다운 raw HTML 블록으로)
-    def make_img_md(img: dict, is_hero: bool = False) -> str:
+    # 이미지 HTML 생성
+    def make_img_md(img: dict) -> str:
         url = img["url"]
         alt = img.get("alt", title or "관련 이미지")[:100]
         credit = img.get("credit", "")
@@ -724,9 +861,8 @@ def insert_body_images(body: str, images: list, title: str = "") -> str:
         )
 
     # 역순으로 삽입 (인덱스 밀림 방지)
-    for idx, (pos, img) in enumerate(
-        sorted(zip(insert_positions, images[1:3]), key=lambda x: -x[0])
-    ):
+    pairs = list(zip(insert_positions[:num_to_insert], body_images[:num_to_insert]))
+    for pos, img in sorted(pairs, key=lambda x: -x[0]):
         img_md = make_img_md(img)
         lines.insert(min(pos, len(lines)), img_md)
 
@@ -745,24 +881,24 @@ def inject_images(file_path: str) -> str:
 
     print(f"  🔍 이미지 검색: {query}")
 
-    # 본문용 이미지 3개 수집 (hero 1 + 본문 2)
+    # 이미지 5개 수집 (hero 1 + 본문 4)
     images = collect_images(query, labels)
     # 부족하면 추가 수집 시도
-    if len(images) < 3:
+    if len(images) < 5:
         extra = collect_images(query + " technology", labels)
         for img in extra:
             if img["url"] not in {i["url"] for i in images}:
                 images.append(img)
-            if len(images) >= 3:
+            if len(images) >= 5:
                 break
 
     hero = images[0]
     print(f"  ✅ 대표 이미지 확보 ({hero['source']})")
 
-    # ── 본문 이미지 삽입 (h2 섹션 사이) ─────────────────────────────
+    # ── 본문 이미지 삽입 (h2 섹션 사이, 최대 4개) ─────────────────────────────
     if len(images) >= 2:
         body = insert_body_images(body, images, title)
-        print(f"  ✅ 본문 이미지 {min(len(images)-1, 2)}개 삽입")
+        print(f"  ✅ 본문 이미지 {min(len(images)-1, 4)}개 삽입")
     else:
         print(f"  ⚠️  이미지 부족 — 본문 삽입 스킵")
 
