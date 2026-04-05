@@ -354,7 +354,7 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
 ===ANGLE===
 포스트 작성 각도 한 줄 (독자 관점, 구체적)
 ===LABELS===
-SEO 라벨 6~9개 (쉼표 구분, 실제 검색어 기반)
+이 글의 카테고리 라벨 3개 (쉼표 구분, 예: 아기용품, 신생아 준비물, 육아템)
 ===META===
 검색결과 설명 (150~160자)"""
 
