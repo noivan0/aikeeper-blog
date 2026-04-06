@@ -698,6 +698,10 @@ def build_full_html(title: str, content: str, products: list,
         f"{css}\n\n"
         f'<div class="gg-post" lang="ko">\n\n'
         f"{PARTNERS_NOTICE_HTML}\n\n"
+        f'<div style="background:linear-gradient(135deg,#fff8e1 0%,#fffde7 100%);border:1.5px solid #ffe082;border-radius:14px;padding:1.1em 1.5em;margin:0 0 1.8em;font-size:0.94em;line-height:1.8;box-shadow:0 2px 8px rgba(255,193,7,0.12);">\n'
+        f'<div style="display:flex;align-items:center;gap:8px;font-weight:800;color:#e65100;margin-bottom:0.4em;">🛒 이 글 핵심 요약</div>\n'
+        f'<div style="color:#333;">이 글에서는 <strong>{title[:30]}</strong> 관련 쿠팡 실판매 상품을 분석해 가성비·기능·사용자 후기 기준 TOP3를 추천합니다. 각 상품 특징과 선택 기준을 꼼꼼히 정리했습니다.</div>\n'
+        f'</div>\n\n'
         f"{quick_bar_html}\n\n"
         f"{toc_html}\n\n"
         f"{body_html}\n\n"

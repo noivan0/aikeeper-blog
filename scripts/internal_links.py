@@ -469,19 +469,27 @@ def find_insert_position(html: str) -> int:
       3. 두 번째 AdSense 광고 블록 직전 (광고 사이)
       4. HTML 끝 직전
     """
-    # 전체 h2 목록 수집
-    h2_matches = list(re.finditer(r'<h2[^>]*>', html, re.I))
+    # 전체 h2 목록 수집 (본문 40% 이후에 있는 h2만 유효 — quickbar/카드 영역 제외)
+    all_h2 = list(re.finditer(r'<h2[^>]*>', html, re.I))
+    cutoff = int(len(html) * 0.35)
+    h2_matches = [m for m in all_h2 if m.start() >= cutoff]
 
     # 1. 본문 h2 중 60~70% 위치 선택 (가장 자연스러운 중간 위치)
-    if len(h2_matches) >= 3:
-        # 60% 지점의 h2 선택
-        target_idx = max(1, int(len(h2_matches) * 0.6))
-        target_idx = min(target_idx, len(h2_matches) - 1)
-        target_h2 = h2_matches[target_idx]
-        # h2 블록 끝(닫는 태그) 뒤 위치
-        h2_end = html.find('</h2>', target_h2.start())
+    if len(h2_matches) >= 2:
+        # 전체 HTML 기준 60~65% 지점에 가장 가까운 h2 선택
+        target_pos = int(len(html) * 0.62)
+        closest = min(h2_matches, key=lambda m: abs(m.start() - target_pos))
+        h2_end = html.find('</h2>', closest.start())
         if h2_end != -1:
             return h2_end + len('</h2>')
+
+    # h2가 부족하면 HTML 전체 길이 60% 지점으로 강제 삽입
+    if not h2_matches and all_h2:
+        # 어떤 h2든 있으면 60% 지점
+        target_pos = int(len(html) * 0.60)
+        pos_in_text = html.find('<p', target_pos)
+        if pos_in_text != -1:
+            return pos_in_text
 
     # 2. FAQ/마치며 h2 직전
     faq_match = re.search(
