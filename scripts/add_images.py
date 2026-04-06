@@ -725,49 +725,74 @@ def search_bing_images(query: str, num: int = 5) -> list:
     return results
 
 
+def _make_pollinations_image(query: str, idx: int = 0) -> dict:
+    """Pollinations AI — 무료 주제 맞춤 이미지 생성 (API 키 불필요)"""
+    import hashlib as _hl
+    prompts = [
+        f"{query}, professional blog illustration, clean modern infographic, 16:9 widescreen",
+        f"{query}, Korean blog hero image, bright clean design, technology concept 2026",
+        f"{query} overview, minimalist diagram, educational, high quality",
+    ]
+    prompt = prompts[idx % len(prompts)]
+    seed_val = int(_hl.md5(f"{query}{idx}".encode()).hexdigest(), 16) % 99999
+    encoded = urllib.parse.quote(prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=630&seed={seed_val}&nologo=true"
+    return {
+        "url": url,
+        "alt": f"{query} 설명 이미지",
+        "credit": "Pollinations AI",
+        "credit_url": "https://pollinations.ai",
+        "source": "ai_generated",
+        "source_label": "🤖 AI 생성 이미지",
+    }
+
+
 def collect_images(query: str, labels: list = None) -> list:
-    """다중 소스에서 이미지 수집, 우선순위 적용"""
+    """다중 소스에서 이미지 수집, 우선순위 적용 — 최소 3장 보장"""
     all_images = []
+    seen_urls: set = set()
 
-    # 0순위: Google 이미지 검색 (주제 기반 실제 이미지 — 최우선)
+    def _add(img_list):
+        for img in img_list:
+            if img["url"] not in seen_urls:
+                # Reddit thumb 소형 이미지(140px) 제외
+                if "width=140" in img["url"] or "height=140" in img["url"]:
+                    continue
+                seen_urls.add(img["url"])
+                all_images.append(img)
+
+    # 0순위: Google 이미지 검색
     print(f"  🔍 Google 이미지 검색 중...")
-    google_imgs = search_google_images(query)
-    all_images.extend(google_imgs)
+    _add(search_google_images(query))
 
-    # 1순위: 뉴스/블로그 소스 scrapling (신뢰도 최고)
+    # 1순위: 뉴스/블로그 소스 (신뢰도 최고)
     if len(all_images) < 3:
         print(f"  📰 뉴스 소스 검색 중...")
-        news_imgs = search_from_news_sources(query, labels)
-        all_images.extend(news_imgs)
+        _add(search_from_news_sources(query, labels))
 
-    # Bing (Google 실패 보완)
+    # Bing 보완
     if len(all_images) < 2:
         print(f"  🔍 Bing 이미지 검색 중...")
-        bing_imgs = search_bing_images(query)
-        all_images.extend(bing_imgs)
+        _add(search_bing_images(query))
 
-    # 뉴스에서 못 찾으면 Reddit 시도 (단, 만료 안 되는 URL만 허용)
+    # Reddit (direct URL만 — thumb 제외는 _add에서 처리)
     if len(all_images) < 3:
         print(f"  💬 Reddit 검색 중...")
-        reddit_imgs = search_from_reddit(query)
-        all_images.extend(reddit_imgs)
+        _add(search_from_reddit(query))
 
-    # 2순위: Wikimedia Commons (무료 CC 라이선스, 안정적 URL)
+    # Wikimedia Commons
     if len(all_images) < 3:
         print(f"  🖼️  Wikimedia 검색 중...")
-        wiki_imgs = search_wikimedia(query)
-        all_images.extend(wiki_imgs)
+        _add(search_wikimedia(query))
 
-    # 3순위: Unsplash API (키 있을 때) 또는 Direct
+    # Unsplash API / Direct
     if len(all_images) < 3:
         if UNSPLASH_ACCESS_KEY:
             print(f"  📸 Unsplash API 검색 중...")
-            unsplash_imgs = search_unsplash(query)
-            all_images.extend(unsplash_imgs)
+            _add(search_unsplash(query))
         else:
             print(f"  📸 Unsplash Direct 검색 중...")
-            unsplash_imgs = search_unsplash_direct(query)
-            all_images.extend(unsplash_imgs)
+            _add(search_unsplash_direct(query))
 
     # 이미지 접근 가능 여부 실제 검증 (만료 URL 걸러냄)
     verified = []
@@ -776,18 +801,34 @@ def collect_images(query: str, labels: list = None) -> list:
             verified.append(img)
         else:
             print(f"  ⚠️  이미지 접근 실패, 스킵: {img['url'][:60]}")
-
     all_images = verified
+    # seen_urls를 검증된 것으로 재구성
+    seen_urls = {img["url"] for img in all_images}
 
-    # 검증 후 이미지 부족하면 Unsplash Direct 추가 시도 (항상 안정적)
-    if len(all_images) < 1:
-        print(f"  📸 Unsplash Direct 폴백 시도...")
-        unsplash_direct = search_unsplash_direct(query)
-        for img in unsplash_direct:
-            if verify_image_accessible(img["url"]):
-                all_images.append(img)
-                print(f"  ✅ Unsplash Direct 폴백 성공")
+    # ── 부족하면 Pollinations AI로 채우기 (항상 성공, 주제 맞춤) ──────────────
+    if len(all_images) < 3:
+        need = 3 - len(all_images)
+        print(f"  🤖 이미지 부족({len(all_images)}장) — Pollinations AI로 {need}장 생성...")
+        for i in range(need + 1):  # 여유분 1장 추가
+            if len(all_images) >= 5:
                 break
+            ai_img = _make_pollinations_image(query, i)
+            if ai_img["url"] not in seen_urls:
+                seen_urls.add(ai_img["url"])
+                all_images.append(ai_img)
+                print(f"  ✅ Pollinations AI 이미지 [{i+1}]")
+
+    # ── 최후 폴백: FALLBACK_IMAGES (날짜+idx로 다양하게) ──────────────────────
+    if len(all_images) < 3:
+        seed_str = query + datetime.date.today().isoformat()
+        seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16)
+        for fi in range(len(FALLBACK_IMAGES)):
+            if len(all_images) >= 5:
+                break
+            fb = FALLBACK_IMAGES[(seed + fi) % len(FALLBACK_IMAGES)]
+            if fb["url"] not in seen_urls:
+                seen_urls.add(fb["url"])
+                all_images.append(fb)
 
     # 최종 폴백: FALLBACK_IMAGES (Unsplash 고정 URL, 항상 안정적)
     if not all_images:
