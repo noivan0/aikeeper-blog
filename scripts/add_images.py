@@ -747,13 +747,45 @@ def _make_pollinations_image(query: str, idx: int = 0) -> dict:
     }
 
 
-def collect_images(query: str, labels: list = None, exclude_urls: set = None) -> list:
+def make_hero_image(title: str, query: str) -> dict:
+    """대표(hero) 이미지 생성 — 배경+텍스트 형태로 미리보기 최적화
+
+    Pollinations AI에 제목 텍스트를 포함한 썸네일용 이미지를 생성.
+    블로그 카드/SNS 미리보기에서 제목이 배경에 표시되는 형태.
+    """
+    import hashlib as _hl
+    # 제목에서 핵심어 추출 (앞 30자)
+    short_title = re.sub(r'[^\w\s가-힣]', ' ', title).strip()[:40]
+
+    prompt = (
+        f"Blog thumbnail image, dark gradient background, "
+        f"large bold Korean text overlay '{short_title}', "
+        f"clean modern design, 16:9 aspect ratio, "
+        f"professional tech blog style, 2026, "
+        f"subject: {query}"
+    )
+    seed_val = int(_hl.md5(f"hero:{title}".encode()).hexdigest(), 16) % 99999
+    encoded = urllib.parse.quote(prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=630&seed={seed_val}&nologo=true&model=flux"
+    return {
+        "url": url,
+        "alt": title,
+        "credit": "Pollinations AI",
+        "credit_url": "https://pollinations.ai",
+        "source": "ai_hero",
+        "source_label": "🎨 AI 생성 대표이미지",
+    }
+
+
+def collect_images(query: str, labels: list = None, exclude_urls: set = None):
     """다중 소스에서 이미지 수집, 우선순위 적용 — 최소 3장 보장
     
     exclude_urls: 이미 수집된 URL 집합 — 이 URL은 처음부터 제외 (중복 방지)
+    반환: (images: list, all_seen: set) — 검증 실패 포함 모든 수집 URL 집합 반환
     """
     all_images = []
     seen_urls: set = set(exclude_urls) if exclude_urls else set()
+    initial_seen = set(seen_urls)  # exclude_urls 포함 초기 상태 기록
 
     def _add(img_list):
         for img in img_list:
@@ -842,7 +874,8 @@ def collect_images(query: str, labels: list = None, exclude_urls: set = None) ->
         all_images.append(fallback)
         print(f"  🔄 Fallback 이미지 사용: {fallback['url'][:60]}...")
 
-    return all_images[:5]
+    # seen_urls에는 검증 실패 URL도 포함 — 호출자가 중복 방지에 활용
+    return all_images[:5], seen_urls
 
 
 def insert_body_images(body: str, images: list, title: str = "") -> str:
@@ -959,32 +992,27 @@ def inject_images(file_path: str) -> str:
 
     print(f"  🔍 이미지 검색: {query}")
 
-    # 전역 중복 추적 set — collect_images가 검증 실패로 버린 URL도 여기에 누적
+    # 전역 중복 추적 set — 검증 실패 URL 포함 모든 수집 시도 URL 기록
     global_seen: set = set()
 
-    def _merge(new_images: list) -> list:
-        """새 이미지 목록에서 global_seen에 없는 것만 추가하고 global_seen 업데이트"""
-        result = []
-        for img in new_images:
-            if img["url"] not in global_seen:
-                global_seen.add(img["url"])
-                result.append(img)
-        return result
+    # 1차 수집
+    images, all_seen1 = collect_images(query, labels, exclude_urls=global_seen)
+    global_seen.update(all_seen1)  # 검증 실패 포함 모든 URL 기록
 
-    # 이미지 5개 수집 (hero 1 + 본문 4)
-    images = _merge(collect_images(query, labels, exclude_urls=global_seen))
-
-    # 부족하면 추가 수집 시도 (다른 키워드로 재시도)
+    # 부족하면 추가 수집 (global_seen 전달로 이미 시도한 URL 완전 차단)
     if len(images) < 5:
         extra_queries = [query + " 2026", query + " guide", query + " technology"]
         for eq in extra_queries:
             if len(images) >= 5:
                 break
-            # global_seen 전달 → collect_images 내부에서 검증 실패 URL 포함 모두 제외
-            extra = _merge(collect_images(eq, labels, exclude_urls=global_seen))
-            images.extend(extra)
-            if len(images) >= 5:
-                break
+            extra_imgs, all_seen_extra = collect_images(eq, labels, exclude_urls=global_seen)
+            global_seen.update(all_seen_extra)
+            # 최종 중복 체크 (혹시 global_seen 갱신 타이밍 이슈 방지)
+            for img in extra_imgs:
+                if img["url"] not in {i["url"] for i in images}:
+                    images.append(img)
+                    if len(images) >= 5:
+                        break
 
     # 여전히 부족하면 Pollinations AI로 주제 맞춤 이미지 생성
     if len(images) < 3:
@@ -1030,12 +1058,24 @@ def inject_images(file_path: str) -> str:
                 seen_urls.add(fb["url"])
                 images.append(fb)
 
-    hero = images[0]
+    # ── hero 이미지 선택: 배경+텍스트 형태로 대표이미지 최적화 ───────────────────
+    # 크롤링 이미지(news/reddit/wikimedia)가 있으면 hero로 사용,
+    # 없거나 AI생성만 있으면 make_hero_image로 배경+텍스트 썸네일 생성
+    real_imgs = [img for img in images if img.get("source") not in ("ai_generated", "ai_hero", "fallback")]
+    if real_imgs:
+        hero = real_imgs[0]  # 실제 이미지 중 첫 번째를 hero로
+    else:
+        # 크롤링 이미지 없음 → 배경+텍스트 AI 썸네일 생성
+        hero = make_hero_image(title, query)
+        if hero["url"] not in global_seen:
+            global_seen.add(hero["url"])
+        print(f"  🎨 Hero: 배경+텍스트 AI 썸네일 생성")
+
     print(f"  ✅ 대표 이미지 확보 ({hero['source']}) — 총 {len(images)}장")
 
     # ── 본문 이미지 삽입 (h2 섹션 사이, 최대 4개) ─────────────────────────────
     # hero는 제외하고 나머지(중복 없이)를 본문에 삽입
-    body_imgs = [img for img in images[1:] if img["url"] != hero["url"]]
+    body_imgs = [img for img in images if img["url"] != hero["url"]]
     if body_imgs:
         body = insert_body_images(body, [hero] + body_imgs, title)
         print(f"  ✅ 본문 이미지 {min(len(body_imgs), 4)}개 삽입")
