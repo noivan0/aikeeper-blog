@@ -1459,8 +1459,11 @@ def similarity(a, b):
     bs = len(ba & bb) / len(ba | bb) if ba and bb else 0.0
     return (ws + bs) / 2.0
 
+_dup_cache = {}  # (query, frozenset(used)) → bool 캐시
+
 def is_duplicate(query, used, threshold=0.30):
     q = query.lower()
+    # 빠른 경로: similarity + 단어 겹침만 먼저 (TF-IDF는 배치 단위로만)
     for u in used:
         if similarity(q, u) >= threshold:
             return True
@@ -1468,10 +1471,7 @@ def is_duplicate(query, used, threshold=0.30):
             return True
         if topic_key_overlap(q, u):
             return True
-    # 코사인 유사도 추가 검증
-    if is_duplicate_cosine(query, used, threshold=0.35):
-        return True
-    return False
+    return False  # TF-IDF 코사인은 Claude 호출 직전에만 사용 (성능 최적화)
 
 def tfidf_vector(text, corpus):
     """간단한 TF-IDF 코사인 유사도용 벡터 (외부 라이브러리 없이)"""
