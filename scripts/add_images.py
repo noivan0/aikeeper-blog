@@ -968,7 +968,7 @@ def inject_images(file_path: str) -> str:
             deduped.append(img)
     images = deduped
 
-    # 부족하면 추가 수집 시도 (다른 키워드로 재시도)
+    # 부족하면 추가 수집 시도 (다른 키워드로 재시도 — seen_urls로 중복 완전 차단)
     if len(images) < 5:
         extra_queries = [query + " 2026", query + " guide", query + " technology"]
         for eq in extra_queries:
@@ -976,11 +976,11 @@ def inject_images(file_path: str) -> str:
                 break
             extra = collect_images(eq, labels)
             for img in extra:
-                if img["url"] not in seen_urls:
+                if img["url"] not in seen_urls:  # 전역 seen_urls로 중복 차단
                     seen_urls.add(img["url"])
                     images.append(img)
-                if len(images) >= 5:
-                    break
+                    if len(images) >= 5:
+                        break
 
     # 여전히 부족하면 Pollinations AI로 주제 맞춤 이미지 생성
     if len(images) < 3:
