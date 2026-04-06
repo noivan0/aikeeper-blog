@@ -17,6 +17,22 @@ from pathlib import Path
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
+# .env 로드 — 크론/subprocess 환경에서 환경변수 누락 방지
+try:
+    _here = Path(__file__).parent.parent
+    _env_file = _here / ".env"
+    if _env_file.exists():
+        for _line in _env_file.read_text(encoding='utf-8').splitlines():
+            _line = _line.strip()
+            if not _line or _line.startswith('#') or '=' not in _line:
+                continue
+            _k, _v = _line.split('=', 1)
+            _k = _k.strip()
+            if _k and _k not in os.environ:
+                os.environ[_k] = _v.strip()
+except Exception:
+    pass
+
 # ── 멀티 블로그: 환경변수 우선, fallback은 기존 하드코딩값 ──────────────
 BLOG_ID   = os.environ.get("TARGET_BLOG_ID",   "3598676904202320050")
 BLOG_URL  = os.environ.get("TARGET_BLOG_URL",  "https://aikeeper.allsweep.xyz")

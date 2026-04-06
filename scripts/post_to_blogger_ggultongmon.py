@@ -9,6 +9,21 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(BASE_DIR / "scripts"))
 
+# .env 로드 — 크론/subprocess 환경에서 환경변수 누락 방지
+try:
+    _env_file = BASE_DIR / ".env"
+    if _env_file.exists():
+        for _line in _env_file.read_text(encoding='utf-8').splitlines():
+            _line = _line.strip()
+            if not _line or _line.startswith('#') or '=' not in _line:
+                continue
+            _k, _v = _line.split('=', 1)
+            _k = _k.strip()
+            if _k and _k not in os.environ:
+                os.environ[_k] = _v.strip()
+except Exception:
+    pass
+
 from coupang_api import get_products_with_shorten
 from generate_post_ggultongmon import generate_post, build_full_html
 
