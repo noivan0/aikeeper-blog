@@ -11,6 +11,21 @@ import datetime
 import urllib.request
 import urllib.parse
 
+# .env 로드 (env_loader가 있으면 사용, 없으면 직접 파싱)
+try:
+    sys.path.insert(0, os.path.dirname(__file__))
+    from env_loader import load_env
+    load_env()
+except Exception:
+    _env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    if os.path.exists(_env_path):
+        with open(_env_path) as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if _line and not _line.startswith('#') and '=' in _line:
+                    _k, _, _v = _line.partition('=')
+                    os.environ.setdefault(_k.strip(), _v.strip())
+
 # google-auth 라이브러리
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request as GoogleRequest
