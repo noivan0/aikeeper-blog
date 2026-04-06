@@ -433,18 +433,13 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
 
 
 def enrich_with_shorten(products: list) -> list:
-    """선택된 상품에 shortenUrl 추가"""
-    sys.path.insert(0, os.path.join(BASE_DIR, "scripts"))
-    from coupang_api import get_shorten_urls
-    try:
-        urls = [p.get("productUrl", "") for p in products if p.get("productUrl")]
-        shorten_map = get_shorten_urls(urls)
-        for p in products:
-            orig = p.get("productUrl", "")
-            p["shortenUrl"] = shorten_map.get(orig, orig)
-    except Exception as e:
-        print(f"[WARN] shortenUrl 실패: {e}")
-        for p in products:
+    """선택된 상품에 shortenUrl 추가.
+    bestcategories의 productUrl은 이미 link.coupang.com/re/AFFSDP?lptag=... 형태의
+    affiliate 링크이므로 deeplink API 없이 그대로 shortenUrl로 사용.
+    """
+    for p in products:
+        if not p.get("shortenUrl"):
+            # productUrl이 이미 affiliate 링크 (link.coupang.com/re/...)
             p["shortenUrl"] = p.get("productUrl", "#")
     return products
 
