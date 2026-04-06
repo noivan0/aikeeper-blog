@@ -82,6 +82,12 @@ rm -f "$TOPIC_FILE"
 
 echo "[$(date '+%H:%M:%S')] 주제: $TOPIC" | tee -a "$LOG_FILE"
 
+# 주제 비어있으면 조기 종료 (쿠팡 API 장애 등)
+if [ -z "$TOPIC" ] || [ ${#TOPIC} -lt 5 ]; then
+    echo "[$(date '+%H:%M:%S')] [SKIP] 주제 없음 (쿠팡 API 장애 가능성) — 이번 사이클 건너뜀" | tee -a "$LOG_FILE"
+    exit 0
+fi
+
 # Step 2: 포스트 생성 및 발행
 echo "[$(date '+%H:%M:%S')] Step 2: 포스트 생성 및 발행" | tee -a "$LOG_FILE"
 
