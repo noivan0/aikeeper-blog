@@ -1900,9 +1900,14 @@ def select_best_topic(news_items, used_history):
         return {"topic": "AI 최신 트렌드 2026", "keywords": ["AI", "트렌드", "2026"],
                 "angle": "트렌드분석", "reason": "fallback", "source_news": ""}
 
+    # 중복 가능성 높은 뉴스 아이템 사전 필터 (Claude 재시도 방지)
+    merged_filtered = [i for i in merged if not is_duplicate(i.get("title",""), used_history, threshold=0.35)]
+    if len(merged_filtered) < 5:
+        merged_filtered = merged  # 필터 후 너무 적으면 원본 사용
+
     # 고CPC 아이템을 앞에 표시해 Claude가 우선 고려하도록 유도
-    high_cpc_items  = [i for i in merged if i.get("high_cpc")]
-    regular_items   = [i for i in merged if not i.get("high_cpc")]
+    high_cpc_items  = [i for i in merged_filtered if i.get("high_cpc")]
+    regular_items   = [i for i in merged_filtered if not i.get("high_cpc")]
     ordered_merged  = high_cpc_items + regular_items
 
     news_text = "\n".join([
