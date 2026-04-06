@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest  # GitHub 호스팅 (웹필터 외부)
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
 
       - name: Fetch Coupang Best Categories
         env:
@@ -92,4 +94,4 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add coupang_cache/
           git diff --staged --quiet || git commit -m "chore: coupang cache update $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-          git push "https://x-access-token:${GH_PAT}@github.com/noivan0/aikeeper-blog.git" main
+          git push origin main
