@@ -39,7 +39,8 @@ jobs:
           def make_auth(method, path, query=''):
               from time import gmtime, strftime
               dt = strftime('%y%m%d', gmtime()) + 'T' + strftime('%H%M%S', gmtime()) + 'Z'
-              msg = dt + method + path + ('?' + query if query else '')
+              # 쿠팡 공식: message = datetime + method + path + query (? 미포함)
+              msg = dt + method + path + (query if query else '')
               sig = hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
               return f'CEA algorithm=HmacSHA256, access-key={access}, signed-date={dt}, signature={sig}'
 
