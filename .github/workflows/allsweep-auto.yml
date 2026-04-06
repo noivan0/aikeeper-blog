@@ -1,14 +1,8 @@
 name: allsweep 자동 포스팅
 
 on:
-  schedule:
-    # UTC 기준 (KST = UTC+9) — 하루 5회
-    # KST: 09:00, 12:00, 15:00, 18:00, 22:00
-    - cron: '0  0  * * *'   # KST 09:00
-    - cron: '0  3  * * *'   # KST 12:00
-    - cron: '0  6  * * *'   # KST 15:00
-    - cron: '0  9  * * *'   # KST 18:00
-    - cron: '0  13 * * *'   # KST 22:00
+  # schedule 비활성화 — 서버크론(10,40분)이 전담
+  # allsweep 이중 발행으로 Blogger 429 발생 → 2026-04-06 비활성화
   workflow_dispatch:
     inputs:
       topic:

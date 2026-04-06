@@ -1,14 +1,8 @@
 name: AI Auto Post to Blogger
 
 on:
-  schedule:
-    # UTC 기준 (KST = UTC+9) — 하루 5회
-    # KST: 08:00, 11:00, 14:00, 17:00, 21:00
-    - cron: '0  23 * * *'   # KST 08:00
-    - cron: '0  2  * * *'   # KST 11:00
-    - cron: '0  5  * * *'   # KST 14:00
-    - cron: '0  8  * * *'   # KST 17:00
-    - cron: '0  12 * * *'   # KST 21:00
+  # schedule 비활성화 — 서버크론(*/30분)이 전담
+  # aikeeper는 서버크론만 사용 → 2026-04-06 Actions 스케줄 제거
   workflow_dispatch:
     inputs:
       topic:
