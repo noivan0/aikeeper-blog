@@ -32,6 +32,30 @@ _ADSENSE_PUB_GG       = "ca-pub-2597570939533872"
 _DISPLAY_SLOT_GG      = "8117048415"
 _IN_ARTICLE_SLOT_GG   = "6675974233"
 
+# ── 인아티클 광고 (본문 중간 삽입용 — script 중복 없음) ────────────────
+_AD_IN_ARTICLE_GG = f"""\
+<div style="margin:2.5em 0;text-align:center;min-height:200px;">
+<ins class="adsbygoogle"
+ style="display:block;text-align:center;"
+ data-ad-layout="in-article"
+ data-ad-format="fluid"
+ data-ad-client="{_ADSENSE_PUB_GG}"
+ data-ad-slot="{_IN_ARTICLE_SLOT_GG}"
+ data-full-width-responsive="true"></ins>
+<script defer>(adsbygoogle = window.adsbygoogle || []).push({{}});</script>
+</div>"""
+
+_AD_DISPLAY_GG = f"""\
+<div style="margin:2.5em 0;min-height:100px;">
+<ins class="adsbygoogle"
+ style="display:block"
+ data-ad-client="{_ADSENSE_PUB_GG}"
+ data-ad-slot="{_DISPLAY_SLOT_GG}"
+ data-ad-format="auto"
+ data-full-width-responsive="true"></ins>
+<script defer>(adsbygoogle = window.adsbygoogle || []).push({{}});</script>
+</div>"""
+
 # ── 파트너스 고지문 (최상단 1회만) ─────────────────────────────────────
 # 쿠팡 링크 클릭 전 광고 최대 노출 전략:
 # 파트너스 고지문 바로 다음에 디스플레이 광고 삽입
@@ -667,6 +691,36 @@ def build_full_html(title: str, content: str, products: list,
             r'<h2[^>]*>[^<]*FAQ[^<]*</h2>.*?(?=<h2|$)',
             '', body_html, flags=re.DOTALL | re.IGNORECASE
         )
+
+    # ── AdSense 본문 중간 삽입 (COUPANG 전략: ②본문1/3 + ③본문2/3 + ④최하단) ──
+    # PARTNERS_NOTICE_HTML에 ① 디스플레이 광고가 이미 있으므로
+    # body_html에 ②③ 인아티클 + ④ 디스플레이 추가 → 총 4개
+    def _inject_body_ads(bhtml: str) -> str:
+        h2s = list(re.finditer(r'<h2[^>]*>', bhtml))
+        total = len(h2s)
+        if total < 2:
+            # h2 부족 → 중간 + 끝에만
+            mid = len(bhtml) // 2
+            bhtml = bhtml[:mid] + _AD_IN_ARTICLE_GG + bhtml[mid:]
+            bhtml = bhtml + _AD_IN_ARTICLE_GG
+        else:
+            # 1/3 지점 h2 앞 → 인아티클
+            idx1 = max(1, total // 3)
+            pos1 = h2s[idx1].start()
+            bhtml = bhtml[:pos1] + _AD_IN_ARTICLE_GG + bhtml[pos1:]
+            # 재계산
+            h2s = list(re.finditer(r'<h2[^>]*>', bhtml))
+            total = len(h2s)
+            # 2/3 지점 h2 앞 → 인아티클
+            idx2 = max(2, (total * 2) // 3)
+            idx2 = min(idx2, total - 1)
+            pos2 = h2s[idx2].start()
+            bhtml = bhtml[:pos2] + _AD_IN_ARTICLE_GG + bhtml[pos2:]
+        # 최하단 디스플레이
+        bhtml = bhtml + _AD_DISPLAY_GG
+        return bhtml
+
+    body_html = _inject_body_ads(body_html)
 
     # 관련 글 추천 섹션 (FAQ 다음에 삽입)
     related_posts = fetch_related_posts(current_url, category, limit=3)
