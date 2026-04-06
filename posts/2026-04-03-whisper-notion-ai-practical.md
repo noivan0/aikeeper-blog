@@ -12,6 +12,7 @@ hero_image_alt: "whisper notion ai workflow voice transcription automation desk"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/anthropic-launches-cowork-a-claude-desktop-agent-that-works-in-your-files-no"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 # Whisper는 이미 쓰고 있는데, 거기서 멈추는 사람이 90%다

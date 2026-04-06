@@ -12,6 +12,7 @@ hero_image_alt: "local GPU fine-tuning Korean LLM training setup"
 hero_credit: "Ars Technica"
 hero_credit_url: "https://arstechnica.com/security/2026/04/new-rowhammer-attacks-give-complete-control-of-machines-running-nvidia-gpus/"
 hero_source_label: "📰 Ars Technica"
+published: true
 ---
 
 "H100 클러스터 없으면 파인튜닝은 꿈도 꾸지 마세요."

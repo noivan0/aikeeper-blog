@@ -12,6 +12,7 @@ hero_image_alt: "reinforcement learning human feedback AI training diagram"
 hero_credit: "The Verge AI"
 hero_credit_url: "https://www.theverge.com/ai-artificial-intelligence/904676/apple-carplay-openai-chatgpt"
 hero_source_label: "📰 The Verge AI"
+published: true
 ---
 
 "분명히 어제 똑같은 질문 했는데, 오늘은 왜 다른 답이 나오지?"

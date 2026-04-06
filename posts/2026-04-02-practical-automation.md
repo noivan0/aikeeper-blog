@@ -11,6 +11,7 @@ hero_image_alt: "n8n workflow automation dashboard visual diagram"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/the-creator-of-claude-code-just-revealed-his-workflow-and-developers-are"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 <figure style="margin:0 0 2em;text-align:center;"><img src="https://images.ctfassets.net/jdtwqhzvc2n1/6VsJWNsStTR57q9vFd5L08/a0d88b4dcbd1e9ba77fd72a9c55988d9/nuneybits_Vector_art_of_programmer_conducting_robot_orchestra_i_908157a9-d44f-4bce-b390-5913b88dad27.webp?w=300&q=30" alt="n8n workflow automation dashboard visual diagram" width="800" height="450" style="width:100%;max-width:760px;height:auto;aspect-ratio:16/9;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.12);object-fit:cover;" loading="eager" fetchpriority="high" decoding="async"/><figcaption style="font-size:.82em;color:#888;margin-top:.6em;line-height:1.5;">📰 VentureBeat AI: <a href="https://venturebeat.com/technology/the-creator-of-claude-code-just-revealed-his-workflow-and-developers-are" target="_blank" rel="noopener noreferrer" style="color:#4f6ef7;text-decoration:none;">VentureBeat AI</a></figcaption></figure>

@@ -12,6 +12,7 @@ hero_image_alt: "AI investment research report analyst dashboard data"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/nous-researchs-nouscoder-14b-is-an-open-source-coding-model-landing-right-in"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 매달 몇만 원씩 내고 증권사 리포트 서비스를 구독하는데, 막상 리포트를 열어보면 "매수 유지, 목표가 OO만 원"이라는 한 줄 결론과 함께 읽기도 벅찬 분량의 텍스트만 가득했던 경험, 있지 않으신가요?

@@ -12,6 +12,7 @@ hero_image_alt: "openai whisper local speech recognition korean meeting transcri
 hero_credit: "The Verge AI"
 hero_credit_url: "https://www.theverge.com/ai-artificial-intelligence/906022/openai-buys-tbpn"
 hero_source_label: "📰 The Verge AI"
+published: true
 ---
 
 매월 수십만 원씩 나가는 회의록 서비스 비용, 이대로 괜찮을까요?

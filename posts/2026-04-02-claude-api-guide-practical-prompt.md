@@ -12,6 +12,7 @@ hero_image_alt: "Claude API cost optimization prompt caching token"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/infrastructure/claude-code-costs-up-to-usd200-a-month-goose-does-the-same-thing-for-free"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 # 💸 Claude API 비용 절감 실전 가이드: 프롬프트 캐싱부터 모델 선택까지

@@ -12,6 +12,7 @@ hero_image_alt: "AI automatic subtitle generation tools comparison screen"
 hero_credit: "Ars Technica"
 hero_credit_url: "https://arstechnica.com/tech-policy/2026/03/leading-ai-datacenter-companies-sign-pledge-to-buy-their-own-power/"
 hero_source_label: "📰 Ars Technica"
+published: true
 ---
 
 영상 하나 올리는 데 자막 작업만 2시간씩 걸렸던 적 있으신가요?

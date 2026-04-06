@@ -12,6 +12,7 @@ hero_image_alt: "custom AI chatbot builder no code interface dashboard"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/infrastructure/claude-code-costs-up-to-usd200-a-month-goose-does-the-same-thing-for-free"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 "분명히 고객센터 FAQ 페이지 만들어뒀는데, 하루에도 수십 번씩 같은 질문이 들어와요."

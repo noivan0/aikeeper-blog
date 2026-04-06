@@ -1,10 +1,12 @@
 ---
+published: true
 title: "월 구독료 끊었습니다 💸 500달러 GPU로 Claude 이긴 오픈소스 AI 직접 세팅법"
 labels: ["오픈소스AI", "로컬LLM", "AI비용절감"]
 draft: false
 meta_description: "월 2~3만원 AI 구독료, 이제 그만? 500달러 GPU 하나로 Claude Sonnet을 이긴 오픈소스 AI를 직접 로컬에 세팅하는 실전 가이드입니다."
 image_query: "local LLM GPU setup"
 ---
+published: true
 
 혹시 매달 AI 구독료 결제하면서 "이거 계속 써야 하나?" 고민해본 적 있으신가요?
 

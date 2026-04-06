@@ -12,6 +12,7 @@ hero_image_alt: "AI API error handling developer debugging code Python"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/infrastructure/claude-code-costs-up-to-usd200-a-month-goose-does-the-same-thing-for-free"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 # 🚨 AI API 오류 처리 완전 가이드: 한국 개발자가 자주 만나는 실수 7가지

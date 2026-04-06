@@ -11,6 +11,7 @@ hero_image_alt: "NotebookLM AI research paper summary workspace"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/nous-researchs-nouscoder-14b-is-an-open-source-coding-model-landing-right-in"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 박사 논문 심사를 3주 앞두고, 참고 문헌 목록을 열어봤을 때의 그 절망감 — 기억나시나요?

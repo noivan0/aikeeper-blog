@@ -12,6 +12,7 @@ hero_image_alt: "lawyer reviewing contract with AI digital analysis interface"
 hero_credit: "The Verge AI"
 hero_credit_url: "https://www.theverge.com/ai-artificial-intelligence/904676/apple-carplay-openai-chatgpt"
 hero_source_label: "📰 The Verge AI"
+published: true
 ---
 
 # AI로 계약서 독소조항 잡는 법: 변호사가 직접 알려주는 실전 가이드

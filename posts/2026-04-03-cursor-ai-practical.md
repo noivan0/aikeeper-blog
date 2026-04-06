@@ -12,6 +12,7 @@ hero_image_alt: "non-developer building web app with AI coding tool cursor"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/anthropic-launches-cowork-a-claude-desktop-agent-that-works-in-your-files-no"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 "기획서는 내가 제일 잘 써. 근데 왜 만드는 건 항상 개발자한테 부탁해야 하지?"

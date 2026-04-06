@@ -12,6 +12,7 @@ hero_image_alt: "Notion AI vs ChatGPT meeting notes comparison workspace"
 hero_credit: "The Verge AI"
 hero_credit_url: "https://www.theverge.com/ai-artificial-intelligence/904676/apple-carplay-openai-chatgpt"
 hero_source_label: "📰 The Verge AI"
+published: true
 ---
 
 # 🗂️ Notion AI vs ChatGPT: 회의록·업무 문서 정리, 진짜 차이나는 5가지 상황

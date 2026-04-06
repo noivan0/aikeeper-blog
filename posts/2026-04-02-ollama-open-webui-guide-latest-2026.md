@@ -11,6 +11,7 @@ hero_image_alt: "local AI ollama open webui windows setup dashboard"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/nous-researchs-nouscoder-14b-is-an-open-source-coding-model-landing-right-in"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 "ChatGPT 쓰다가 월 구독료 20달러가 너무 아까워서 로컬 AI 찾아봤는데, Ollama라는 게 있더라고요. 근데 설치하다가 에러 뜨고, 모델 받다가 포기했어요."

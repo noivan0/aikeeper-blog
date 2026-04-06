@@ -12,6 +12,7 @@ hero_image_alt: "vector database comparison Pinecone Chroma RAG architecture dia
 hero_credit: "Ars Technica"
 hero_credit_url: "https://arstechnica.com/security/2026/03/llms-can-unmask-pseudonymous-users-at-scale-with-surprising-accuracy/"
 hero_source_label: "📰 Ars Technica"
+published: true
 ---
 
 # 🆓 벡터 DB 입문: Pinecone vs Chroma, 예산 0원 사이드 프로젝트엔 뭐가 맞나?

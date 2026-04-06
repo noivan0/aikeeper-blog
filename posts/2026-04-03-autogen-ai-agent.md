@@ -12,6 +12,7 @@ hero_image_alt: "multi agent AI team collaboration network digital"
 hero_credit: "VentureBeat AI"
 hero_credit_url: "https://venturebeat.com/technology/salesforce-rolls-out-new-slackbot-ai-agent-as-it-battles-microsoft-and"
 hero_source_label: "📰 VentureBeat AI"
+published: true
 ---
 
 GPT-4o에 완벽한 프롬프트를 써도 결과물이 엉망인 경험, 한 번쯤 있지 않으신가요?
