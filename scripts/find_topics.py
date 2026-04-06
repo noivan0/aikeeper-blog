@@ -1444,13 +1444,40 @@ TOPIC_KEY_GROUPS = [
     {"반도체", "gpu", "nvidia", "엔비디아"},
 ]
 
+def get_search_intent(text):
+    """검색 의도(Search Intent) 분류 — 같은 툴이어도 의도가 다르면 다른 주제"""
+    t = text.lower()
+    if any(w in t for w in ["vs", "비교", "차이", "비교해", "골라", "선택"]):
+        return "comparison"
+    if any(w in t for w in ["사용법", "방법", "하는법", "설치", "연동", "시작", "입문", "완전정복", "따라하기"]):
+        return "how-to"
+    if any(w in t for w in ["오류", "에러", "문제", "해결", "안될때", "막히는"]):
+        return "problem"
+    if any(w in t for w in ["후기", "리뷰", "실제", "써봤", "사용해봤", "경험"]):
+        return "review"
+    if any(w in t for w in ["출시", "발표", "업데이트", "새로운", "공개", "등장"]):
+        return "news"
+    if any(w in t for w in ["추천", "top", "best", "순위", "정리", "총정리"]):
+        return "roundup"
+    return "general"
+
 def topic_key_overlap(a, b):
-    """두 주제가 같은 핵심 키워드 그룹의 단어를 공유하면 True"""
+    """두 주제가 같은 핵심 키워드 그룹 + 같은 검색 의도를 공유할 때만 True
+    → 같은 툴이어도 의도가 다르면 다른 주제로 허용
+    """
     wa, wb = get_words(a), get_words(b)
+    # 핵심 키워드 그룹이 겹쳐도...
+    key_overlap = False
     for group in TOPIC_KEY_GROUPS:
         if (group & wa) and (group & wb) and (group & wa) & (group & wb):
-            return True
-    return False
+            key_overlap = True
+            break
+    if not key_overlap:
+        return False
+    # ...검색 의도까지 같아야 진짜 중복
+    intent_a = get_search_intent(a)
+    intent_b = get_search_intent(b)
+    return intent_a == intent_b and intent_a != "general"
 
 def similarity(a, b):
     wa, wb = get_words(a), get_words(b)
@@ -1461,17 +1488,44 @@ def similarity(a, b):
 
 _dup_cache = {}  # (query, frozenset(used)) → bool 캐시
 
+# 내용 없는 공통어 (중복 판단 단어 겹침에서 제외)
+_STOPWORDS = {
+    "ai", "vs", "2026", "2025", "한국", "방법", "도구", "서비스", "기능",
+    "비교", "추천", "완전", "정리", "가이드", "완벽", "실제", "사용",
+    "최신", "정보", "활용", "소개", "분석", "전략", "이유", "방식",
+    "le", "chat", "the", "for", "and", "to", "in",
+}
+
+def get_content_words(text):
+    """내용어만 추출 (불용어 제거)"""
+    return {w for w in get_words(text.lower()) if w not in _STOPWORDS and len(w) >= 3}
+
 def is_duplicate(query, used, threshold=0.30):
+    """
+    검색 의도(Search Intent) 기반 중복 판단.
+    - 같은 툴 + 같은 의도 → 중복
+    - 같은 툴 + 다른 의도(how-to vs comparison 등) → 허용
+    - 불용어(ai, vs, 2026 등)는 겹침 판단에서 제외
+    """
     q = query.lower()
-    # 빠른 경로: similarity + 단어 겹침만 먼저 (TF-IDF는 배치 단위로만)
+    q_intent = get_search_intent(q)
+    q_content = get_content_words(q)
+
     for u in used:
-        if similarity(q, u) >= threshold:
+        ul = u.lower()
+        # 1. 전체 제목 유사도 (단어+바이그램)
+        if similarity(q, ul) >= threshold:
             return True
-        if len(get_words(q) & get_words(u)) >= 3:
+        # 2. 내용어 겹침 — 불용어 제외 후 3개 이상 + 같은 의도
+        shared_content = q_content & get_content_words(ul)
+        if len(shared_content) >= 3:
+            u_intent = get_search_intent(ul)
+            if q_intent == u_intent:
+                return True
+        # 3. 핵심 키워드 그룹 + 검색 의도 동시 겹침
+        if topic_key_overlap(q, ul):
             return True
-        if topic_key_overlap(q, u):
-            return True
-    return False  # TF-IDF 코사인은 Claude 호출 직전에만 사용 (성능 최적화)
+    return False
 
 def tfidf_vector(text, corpus):
     """간단한 TF-IDF 코사인 유사도용 벡터 (외부 라이브러리 없이)"""
