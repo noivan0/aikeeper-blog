@@ -106,6 +106,14 @@ export BLOG_TYPE="COUPANG"
 export BLOG_NAME="꿀통 몬스터"
 export COUPANG_SUB_ID="ggultongmon"
 
+set -o pipefail
 python3 scripts/post_to_blogger_ggultongmon.py 2>&1 | tee -a "$LOG_FILE"
+_EXIT=$?
+set +o pipefail
+
+if [ $_EXIT -ne 0 ]; then
+    echo "[$KST] [ERROR] 포스트 생성/발행 실패 (exit $_EXIT) — 이번 사이클 종료" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
 echo "[$KST] ===== 완료 [blog: $BLOG_KEY] =====" | tee -a "$LOG_FILE"

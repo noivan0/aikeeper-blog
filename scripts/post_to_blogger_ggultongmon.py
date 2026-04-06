@@ -237,9 +237,19 @@ def main():
         except Exception as e:
             print(f"  ℹ️  Indexing API 스킵 (비치명적): {e}")
 
-    # 6. 마크다운 백업
+    # 6. 마크다운 백업 + published: true 마킹
     md_path = save_markdown(title, post_data["content"], LABELS, products)
     print(f"[INFO] 마크다운 저장: {md_path}")
+    # 발행 성공 마킹 — 다음 크론 중복 발행 방지
+    try:
+        _text = md_path.read_text(encoding='utf-8')
+        if _text.startswith('---') and 'published: true' not in _text:
+            _parts = _text.split('---', 2)
+            _fm = _parts[1].rstrip() + f'\npublished: true\nblogger_url: "{post_url}"\n'
+            md_path.write_text('---' + _fm + '---' + _parts[2], encoding='utf-8')
+            print(f"  ✅ 발행 완료 마킹: published: true")
+    except Exception as _me:
+        print(f"  ℹ️  마킹 스킵: {_me}")
     
     # 6. GitHub push
     import subprocess
