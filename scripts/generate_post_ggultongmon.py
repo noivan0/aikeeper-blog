@@ -389,26 +389,16 @@ A4:
     client = make_anthropic_client(timeout=600, max_retries=2)
 
     print(f"   Claude 포스트 생성 중... ({get_model()}) | 제목패턴: {title_pattern[:30]}...")
-    # 500 에러 자체 재시도 (SDK max_retries는 연결 오류에만 적용)
-    import time as _time_mod
-    msg = None
-    for _api_try in range(3):
-        try:
-            msg = client.messages.create(
-                model=get_model(),
-                max_tokens=8192,
-                system=SYSTEM_PROMPT_COUPANG,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            break
-        except Exception as _api_err:
-            if _api_try < 2:
-                _wait = 30 * (_api_try + 1)
-                print(f"   [API 재시도 {_api_try+1}/3] {_api_err} — {_wait}초 대기...")
-                _time_mod.sleep(_wait)
-            else:
-                raise
-    text = msg.content[0].text
+    # 스트리밍 방식으로 호출 (non-streaming은 내부 API에서 500 발생)
+    text = ""
+    with client.messages.stream(
+        model=get_model(),
+        max_tokens=8192,
+        system=SYSTEM_PROMPT_COUPANG,
+        messages=[{"role": "user", "content": prompt}]
+    ) as stream:
+        for chunk in stream.text_stream:
+            text += chunk
 
     def extract(tag):
         s = text.find(f"==={tag}===")
@@ -448,12 +438,14 @@ A4:
             "- 비교표 아래 '언제 어떤 제품을 골라야 하는지' 추가 설명\n"
             "- 마무리 섹션에 구매 결정 도움말 추가"
         )
-        _msg = client.messages.create(
-            model=ANTHROPIC_MODEL, max_tokens=8192,
+        _raw = ""
+        with client.messages.stream(
+            model=get_model(), max_tokens=8192,
             system=SYSTEM_PROMPT_COUPANG,
             messages=[{"role": "user", "content": retry_prompt}]
-        )
-        _raw = _msg.content[0].text
+        ) as _stream:
+            for _chunk in _stream.text_stream:
+                _raw += _chunk
         def _ex(tag, src=_raw):
             s = src.find(f"==={tag}===")
             if s == -1: return ""
