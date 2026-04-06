@@ -17,8 +17,15 @@ fi
 echo $$ > "$LOCK_FILE"
 trap "rm -f '$LOCK_FILE'" EXIT
 
-# .env 로드
-export $(grep -v '^#' .env | xargs)
+# .env 로드 (JSON 값 포함 안전 처리 — xargs 방식은 JSON 다중줄 값에서 오류 발생)
+set +e
+while IFS= read -r line; do
+    [[ -z "$line" || "$line" == "#"* ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && export "$key=$val"
+done < .env
+set -e
 
 # GITHUB_OUTPUT 임시 파일 (Step 1용)
 GH_OUTPUT_TOPIC=/tmp/aikeeper_gh_topic_$$.txt

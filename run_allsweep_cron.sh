@@ -17,8 +17,15 @@ fi
 echo $$ > "$LOCK_FILE"
 trap "rm -f '$LOCK_FILE'" EXIT
 
-# .env 로드
-export $(grep -v '^#' .env | xargs)
+# .env 로드 (JSON 값 포함 안전 처리 — xargs 방식은 JSON 다중줄 값에서 오류 발생)
+set +e
+while IFS= read -r line; do
+    [[ -z "$line" || "$line" == "#"* ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && export "$key=$val"
+done < .env
+set -e
 
 # allsweep 전용 환경변수 오버라이드
 export TARGET_BLOG_ID="8772490249452917821"
