@@ -804,9 +804,9 @@ def collect_images(query: str, labels: list = None, exclude_urls: set = None) ->
             verified.append(img)
         else:
             print(f"  ⚠️  이미지 접근 실패, 스킵: {img['url'][:60]}")
+            # 접근 실패 URL도 seen_urls에 유지 — 다른 소스에서 중복 추가 방지
     all_images = verified
-    # seen_urls를 검증된 것으로 재구성
-    seen_urls = {img["url"] for img in all_images}
+    # seen_urls는 유지 (검증 실패 URL 포함) — 재수집 시 중복 방지
 
     # ── 부족하면 Pollinations AI로 채우기 (항상 성공, 주제 맞춤) ──────────────
     if len(all_images) < 3:
