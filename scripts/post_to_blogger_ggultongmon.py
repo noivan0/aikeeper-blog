@@ -100,6 +100,10 @@ def save_markdown(title: str, content: str, labels: list, products: list) -> Pat
 
 
 def main():
+    # 주제가 비어있으면 발행 의미 없음 — 조기 종료
+    if not TOPIC or len(TOPIC.strip()) < 5:
+        print(f"[SKIP] 주제(TOPIC)가 비어있음 — 발행 건너뜀")
+        sys.exit(0)
     print(f"[INFO] 주제: {TOPIC}")
     print(f"[INFO] 검색 키워드: {SEARCH_KW}")
     

@@ -131,8 +131,13 @@ def get_products_with_shorten(keyword: str, limit: int = 5) -> list[dict]:
     """
     상품 검색 + shortenUrl 자동 생성 통합
     반환: productData + shortenUrl 필드 추가
+    API 실패 시 빈 리스트 반환 (예외 전파 금지)
     """
-    products = search_products(keyword, limit)
+    try:
+        products = search_products(keyword, limit)
+    except Exception as e:
+        print(f"[WARN] 쿠팡 상품 검색 실패 ({keyword}): {e}")
+        return []
     
     # productUrl → shortenUrl 변환
     # productUrl은 이미 affiliate URL이지만 길어서 shortenUrl 생성
