@@ -490,16 +490,37 @@ def fix_images_for_cls(html: str) -> str:
 
 
 def remove_body_images(html: str) -> str:
-    """본문 내 figure/img 이미지 제거 — hero 이미지는 build_full_html에서 단 1개만 삽입
-    
-    add_images.py가 이전 버전에서 본문에 이미지를 직접 삽입했던 것을 제거.
-    hero_figure는 별도로 렌더링하므로 본문에 figure/img가 있으면 중복이 됨.
+    """본문 이미지 처리 — add_images.py가 삽입한 figure는 모두 유지
+
+    add_images.py는 hero를 제외한 나머지 이미지(images[1:])를 본문 figure로 삽입.
+    hero는 build_full_html에서 hero_image_url로 별도 삽입되므로 중복 없음.
+    figure 안 img는 보존, figure 밖 단독 img(이전 버전 잔재)만 제거.
     """
-    # <figure ...>...</figure> 전체 제거
-    html = re.sub(r'<figure[^>]*>.*?</figure>', '', html, flags=re.S)
-    # 단독 <img ...> 제거 (figure 바깥에 있는 경우)
-    html = re.sub(r'<img[^>]+>', '', html)
-    return html
+    # figure 밖 단독 <img> 태그만 제거 (add_images 삽입 이미지는 모두 figure로 감쌈)
+    # lookbehind로 <figure> 직후 img는 제외
+    def _remove_standalone_img(h):
+        # figure 블록 위치 마킹 후 그 밖의 img만 제거
+        result = []
+        in_figure = False
+        i = 0
+        while i < len(h):
+            if h[i:i+7].lower() == '<figure':
+                in_figure = True
+                result.append(h[i])
+            elif h[i:i+9].lower() == '</figure>':
+                in_figure = False
+                result.append(h[i])
+            elif h[i:i+4].lower() == '<img' and not in_figure:
+                # standalone img — 태그 끝까지 건너뜀
+                end = h.find('>', i)
+                i = end + 1 if end != -1 else i + 1
+                continue
+            else:
+                result.append(h[i])
+            i += 1
+        return ''.join(result)
+
+    return _remove_standalone_img(html)
 
 
 def post_process_html(html: str, title: str = "", labels: list = None,
