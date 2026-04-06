@@ -1,0 +1,89 @@
+name: Coupang Data Fetcher
+
+on:
+  workflow_dispatch:
+    inputs:
+      categories:
+        description: 'Category IDs (comma-separated, e.g. 1013,1016,1017)'
+        required: false
+        default: '1001,1002,1010,1011,1012,1013,1015,1016,1017,1018,1019,1020'
+      limit:
+        description: 'Products per category'
+        required: false
+        default: '20'
+  schedule:
+    # 매 4시간마다 미리 수집 (KST 01:00, 05:00, 09:00, 13:00, 17:00, 21:00)
+    - cron: '0 16,20,0,4,8,12 * * *'
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest  # GitHub 호스팅 (웹필터 외부)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Coupang Best Categories
+        env:
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+        run: |
+          python3 - << 'PYEOF'
+          import hmac, hashlib, datetime, urllib.request, json, os, sys
+
+          access = os.environ['COUPANG_ACCESS_KEY']
+          secret = os.environ['COUPANG_SECRET_KEY']
+
+          def make_auth(method, path, query=''):
+              from time import gmtime, strftime
+              dt = strftime('%y%m%d', gmtime()) + 'T' + strftime('%H%M%S', gmtime()) + 'Z'
+              msg = dt + method + path + ('?' + query if query else '')
+              sig = hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
+              return f'CEA algorithm=HmacSHA256, access-key={access}, signed-date={dt}, signature={sig}'
+
+          def fetch_category(cat_id, limit=20):
+              path = f'/v2/providers/affiliate_open_api/apis/openapi/products/bestcategories/{cat_id}'
+              query = f'limit={limit}&subId=ggultongmon'
+              auth = make_auth('GET', path, query)
+              req = urllib.request.Request(
+                  f'https://api-gateway.coupang.com{path}?{query}',
+                  headers={'Authorization': auth, 'Content-Type': 'application/json;charset=UTF-8'}
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as r:
+                      data = json.loads(r.read())
+                      if data.get('rCode') == '0':
+                          return data.get('data', [])
+              except Exception as e:
+                  print(f'  cat {cat_id} 실패: {e}', file=sys.stderr)
+              return []
+
+          cats = [int(x.strip()) for x in '${{ github.event.inputs.categories || "1001,1002,1010,1011,1012,1013,1015,1016,1017,1018,1019,1020" }}'.split(',')]
+          limit = int('${{ github.event.inputs.limit || "20" }}')
+
+          all_data = {}
+          for cat in cats:
+              products = fetch_category(cat, limit)
+              print(f'카테고리 {cat}: {len(products)}개')
+              all_data[str(cat)] = products
+
+          total = sum(len(v) for v in all_data.values())
+          print(f'총 {total}개 수집')
+
+          # 결과 저장
+          import os
+          os.makedirs('coupang_cache', exist_ok=True)
+          with open('coupang_cache/latest.json', 'w', encoding='utf-8') as f:
+              json.dump({
+                  'fetched_at': datetime.datetime.utcnow().isoformat() + 'Z',
+                  'categories': all_data
+              }, f, ensure_ascii=False, indent=2)
+
+          print('coupang_cache/latest.json 저장 완료')
+          PYEOF
+
+      - name: Commit and Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add coupang_cache/
+          git diff --staged --quiet || git commit -m "chore: coupang cache update $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          git push
