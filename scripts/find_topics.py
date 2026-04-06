@@ -1632,13 +1632,14 @@ def http_get_json(url, headers=None, timeout=12):
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8", errors="replace"))
 
-def scrapling_fetch(url):
+def scrapling_fetch(url, timeout=12):
+    """scrapling으로 URL 수집. timeout 기본 12초 (기존 30초에서 단축)"""
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
         tmp = f.name
     try:
         subprocess.run(
             ["scrapling", "extract", "get", url, tmp, "--impersonate", "chrome", "--no-verify"],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, timeout=timeout
         )
         with open(tmp, encoding="utf-8", errors="ignore") as f:
             return f.read()
@@ -1699,43 +1700,59 @@ def parse_reddit_rss(content, source):
     return items
 
 def fetch_x_fxtwitter():
-    accounts = ["sama", "AnthropicAI", "OpenAI", "GoogleDeepMind",
-                "karpathy", "deepseek_ai", "MistralAI"]
+    """X(Twitter) 계정 피드 병렬 수집 — 전체 12초 이내"""
+    accounts = ["AnthropicAI", "OpenAI", "GoogleDeepMind", "karpathy"]
     items = []
-    for account in accounts:
-        content = scrapling_fetch(f"https://api.fxtwitter.com/{account}")
+
+    def _fetch_one(account):
+        content = scrapling_fetch(f"https://api.fxtwitter.com/{account}", timeout=10)
+        result = []
         if not content or "404" in content[:50]:
-            continue
+            return result
         for text in re.findall(r'"text"\s*:\s*"([^"]{30,200})"', content)[:2]:
             text = text.replace("\\n", " ").strip()
-            kws  = ["ai", "model", "llm", "gpt", "claude", "gemini"]
+            kws = ["ai", "model", "llm", "gpt", "claude", "gemini"]
             if any(kw in text.lower() for kw in kws):
-                items.append({"title": f"[X/@{account}] {text[:100]}", "source": f"X/@{account}"})
-        if len(items) >= 6:
-            break
-    return items
+                result.append({"title": f"[X/@{account}] {text[:100]}", "source": f"X/@{account}"})
+        return result
+
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        for res in ex.map(_fetch_one, accounts, timeout=15):
+            items.extend(res)
+            if len(items) >= 6:
+                break
+    return items[:6]
 
 def fetch_all_news():
     all_news = []
+    import concurrent.futures
 
-    print("  📡 Google News (EN) 수집 중...")
-    url   = "https://news.google.com/rss/search?q=AI+LLM+Claude+GPT+Gemini+when:7d&hl=en-US&gl=US&ceid=US:en"
-    items = parse_google_news(scrapling_fetch(url), "Google News EN")
-    all_news.extend(items); print(f"     → {len(items)}개")
+    # 뉴스 소스 병렬 수집 (최대 30초)
+    sources = [
+        ("google_en", "https://news.google.com/rss/search?q=AI+LLM+Claude+GPT+Gemini+when:7d&hl=en-US&gl=US&ceid=US:en"),
+        ("google_ko", "https://news.google.com/rss/search?q=AI+인공지능+ChatGPT+Claude+when:30d&hl=ko&gl=KR&ceid=KR:ko"),
+        ("r/artificial", "https://www.reddit.com/r/artificial/top/.rss?t=week"),
+        ("r/MachineLearning", "https://www.reddit.com/r/MachineLearning/top/.rss?t=week"),
+        ("r/LocalLLaMA", "https://www.reddit.com/r/LocalLLaMA/top/.rss?t=week"),
+    ]
 
-    print("  📡 Google News (KO) 수집 중...")
-    url   = "https://news.google.com/rss/search?q=AI+인공지능+ChatGPT+Claude+when:30d&hl=ko&gl=KR&ceid=KR:ko"
-    items = parse_google_news(scrapling_fetch(url), "Google News KO")
-    all_news.extend(items); print(f"     → {len(items)}개")
+    def _fetch(name_url):
+        name, url = name_url
+        try:
+            content = scrapling_fetch(url, timeout=12)
+            if "google" in name:
+                return name, parse_google_news(content, f"Google News {'EN' if 'en-US' in url else 'KO'}")
+            else:
+                return name, parse_reddit_rss(content, name)
+        except Exception:
+            return name, []
 
-    for rurl, name in [
-        ("https://www.reddit.com/r/artificial/top/.rss?t=week",      "r/artificial"),
-        ("https://www.reddit.com/r/MachineLearning/top/.rss?t=week", "r/MachineLearning"),
-        ("https://www.reddit.com/r/LocalLLaMA/top/.rss?t=week",      "r/LocalLLaMA"),
-    ]:
-        print(f"  📡 {name} 수집 중...")
-        items = parse_reddit_rss(scrapling_fetch(rurl), name)
-        all_news.extend(items); print(f"     → {len(items)}개")
+    print("  📡 뉴스 소스 병렬 수집 중...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+        for name, items in ex.map(_fetch, sources, timeout=35):
+            print(f"  📡 {name}: {len(items)}개")
+            all_news.extend(items)
 
     print("  📡 X(Twitter) 수집 중...")
     items = fetch_x_fxtwitter()
@@ -2038,25 +2055,32 @@ AI키퍼 블로그(신생 한국어 AI 전문 블로그)의 다음 포스트 주
         "source_news":   extract(text, "SOURCE_NEWS"),
     }
 
-    # ── Claude 선정 결과 중복 후검증 (재시도 최대 2회) ─────────────────────
-    for retry in range(2):
-        selected = result["topic"]
-        if not selected or not is_duplicate(selected, used_history, threshold=0.28):
-            break
-        print(f"  ⚠️  중복 감지 (retry {retry+1}): {selected[:50]}")
-        # 재시도 프롬프트 — 거부된 주제 명시
+    # ── Claude 선정 결과 중복 후검증 (재시도 최대 1회) ─────────────────────
+    # 임계값 0.35로 완화: 0.28은 너무 엄격해서 재시도 루프 과다 발생
+    selected = result["topic"]
+    if selected and is_duplicate(selected, used_history, threshold=0.35):
+        print(f"  ⚠️  중복 감지 (1회 재시도): {selected[:50]}")
+        # 중복 판정된 기존 포스트 목록을 명시적으로 제공
+        conflict_titles = [t for t in sorted(used_history)
+                           if is_duplicate(selected, {t}, threshold=0.35)][:5]
+        conflict_text = "\n".join(f"  - {t}" for t in conflict_titles)
         retry_prompt = prompt + f"""
 
-[추가 제약 — 위 선택 거부됨]
-방금 선정한 주제 "{selected}"는 이미 발행된 포스트와 너무 유사합니다.
-완전히 다른 AI 분야(다른 툴, 다른 산업, 다른 독자)에서 새 주제를 선정하세요.
-같은 키워드 조합("Claude+ChatGPT+기업", "이유", "왕좌" 등)은 절대 재사용 금지."""
-        retry_resp = client.messages.create(
+[추가 제약 — 아래 주제와 유사한 선택 거부됨]
+방금 선정한 "{selected}"가 기존 발행 포스트와 겹칩니다.
+겹치는 기존 포스트:
+{conflict_text}
+
+위와 완전히 다른 AI 분야/툴/독자/상황으로 새 주제를 선정하세요.
+(같은 툴명이 들어가도 검색 의도가 완전히 다르면 OK)"""
+        text = ""
+        with client.messages.stream(
             model=ANTHROPIC_MODEL,
             max_tokens=800,
             messages=[{"role": "user", "content": retry_prompt}]
-        )
-        text = retry_resp.content[0].text
+        ) as _s:
+            for _c in _s.text_stream:
+                text += _c
         result = {
             "topic":         extract(text, "TOPIC"),
             "keywords":      [k.strip() for k in extract(text, "KEYWORDS").split(",") if k.strip()],
