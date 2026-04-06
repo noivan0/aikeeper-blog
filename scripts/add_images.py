@@ -747,10 +747,13 @@ def _make_pollinations_image(query: str, idx: int = 0) -> dict:
     }
 
 
-def collect_images(query: str, labels: list = None) -> list:
-    """다중 소스에서 이미지 수집, 우선순위 적용 — 최소 3장 보장"""
+def collect_images(query: str, labels: list = None, exclude_urls: set = None) -> list:
+    """다중 소스에서 이미지 수집, 우선순위 적용 — 최소 3장 보장
+    
+    exclude_urls: 이미 수집된 URL 집합 — 이 URL은 처음부터 제외 (중복 방지)
+    """
     all_images = []
-    seen_urls: set = set()
+    seen_urls: set = set(exclude_urls) if exclude_urls else set()
 
     def _add(img_list):
         for img in img_list:
@@ -968,15 +971,16 @@ def inject_images(file_path: str) -> str:
             deduped.append(img)
     images = deduped
 
-    # 부족하면 추가 수집 시도 (다른 키워드로 재시도 — seen_urls로 중복 완전 차단)
+    # 부족하면 추가 수집 시도 (다른 키워드로 재시도 — seen_urls 전달로 중복 원천 차단)
     if len(images) < 5:
         extra_queries = [query + " 2026", query + " guide", query + " technology"]
         for eq in extra_queries:
             if len(images) >= 5:
                 break
-            extra = collect_images(eq, labels)
+            # exclude_urls로 기존 수집 URL 전달 → collect_images 내부에서 처음부터 제외
+            extra = collect_images(eq, labels, exclude_urls=seen_urls)
             for img in extra:
-                if img["url"] not in seen_urls:  # 전역 seen_urls로 중복 차단
+                if img["url"] not in seen_urls:
                     seen_urls.add(img["url"])
                     images.append(img)
                     if len(images) >= 5:
