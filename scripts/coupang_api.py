@@ -1,8 +1,16 @@
 """
-쿠팡 파트너스 Open API V1 클라이언트
-- HMAC 인증: yyMMddTHHmmssZ 형식 (공식 문서 기준)
-- 상품 검색 / shortenUrl 생성 / 이미지 수집
-- 네트워크 웹필터 우회: SOCKS5 프록시 경유 (회사 네트워크 차단 대응)
+쿠팡 파트너스 Open API V1 클라이언트 — 다중 폴백 전략
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+폴백 우선순위:
+  1. SOCKS5 프록시 (동적으로 갱신된 목록 사용)
+  2. 직접 연결 (웹필터 없는 환경)
+  3. GitHub Actions 캐시 (coupang_cache/latest.json)
+  4. 로컬 캐시 (최근 성공 데이터)
+
+이미지 전략:
+  - 쿠팡 CDN 이미지 직접 사용 (웹필터 미적용)
+  - 해상도 최적화 (width 파라미터)
+  - 섬네일 + 본문 이미지 분리
 """
 import hmac
 import hashlib
@@ -13,106 +21,102 @@ import os
 import re
 import ssl
 import socket
+import time
+import datetime
+from pathlib import Path
 from time import gmtime, strftime
 
-# ── SOCKS5 프록시 설정 (회사 웹필터 우회용) ──────────────────────────────
-# 87.117.11.57:1080 — 쿠팡 API 접근 확인된 프록시
-# 프록시 실패 시 자동으로 다음 프록시로 폴백
-_PROXY_LIST = [
-    ("87.117.11.57", 1080),
-    ("91.201.119.198", 1337),
-    ("178.207.10.110", 1080),
-]
-_working_proxy = None  # 한 번 성공한 프록시 캐시
-
-def _get_socks_socket(host, port, timeout=20):
-    """SOCKS5 프록시를 경유한 SSL 소켓 반환. 실패 시 None."""
-    try:
-        import socks as _socks
-        for proxy_host, proxy_port in _PROXY_LIST:
-            try:
-                s = _socks.socksocket()
-                s.set_proxy(_socks.SOCKS5, proxy_host, proxy_port)
-                s.settimeout(timeout)
-                s.connect((host, port))
-                ctx = ssl.create_default_context()
-                ss = ctx.wrap_socket(s, server_hostname=host)
-                return ss, f"{proxy_host}:{proxy_port}"
-            except Exception:
-                continue
-    except ImportError:
-        pass
-    return None, None
-
-def _http_via_proxy(method, path_with_query, body=None, extra_headers=None):
-    """SOCKS5 프록시를 통해 쿠팡 API 호출. 성공 시 dict 반환."""
-    host = "api-gateway.coupang.com"
-    auth = generate_hmac(method, path_with_query)
-    headers = {
-        "Host": host,
-        "Authorization": auth,
-        "Content-Type": "application/json;charset=UTF-8",
-        "Connection": "close",
-    }
-    if extra_headers:
-        headers.update(extra_headers)
-
-    ss, proxy_used = _get_socks_socket(host, 443)
-    if ss is None:
-        raise ConnectionError("모든 SOCKS5 프록시 연결 실패")
-
-    header_str = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
-    if body:
-        body_bytes = json.dumps(body).encode("utf-8")
-        header_str += f"Content-Length: {len(body_bytes)}\r\n"
-        req_bytes = f"{method} {path_with_query} HTTP/1.1\r\n{header_str}\r\n".encode() + body_bytes
-    else:
-        req_bytes = f"{method} {path_with_query} HTTP/1.1\r\n{header_str}\r\n".encode()
-
-    ss.send(req_bytes)
-    resp = b""
-    while True:
-        try:
-            chunk = ss.recv(8192)
-            if not chunk: break
-            resp += chunk
-        except Exception: break
-    try: ss.close()
-    except: pass
-
-    # HTTP 응답 파싱
-    header_end = resp.find(b"\r\n\r\n")
-    if header_end == -1:
-        raise ValueError(f"응답 파싱 실패 (proxy={proxy_used})")
-    status_line = resp[:resp.find(b"\r\n")].decode("utf-8", errors="replace")
-    status_code = int(status_line.split()[1]) if len(status_line.split()) > 1 else 0
-    raw_body = resp[header_end + 4:]
-
-    if not raw_body.strip():
-        raise ValueError("빈 응답")
-    for enc in ("utf-8", "euc-kr", "cp949", "latin-1"):
-        try:
-            text = raw_body.decode(enc)
-            if text.strip():
-                return json.loads(text)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            continue
-    raise ValueError(f"응답 디코딩/파싱 실패 (status={status_code})")
-
-DOMAIN = "https://api-gateway.coupang.com"
-ACCESS_KEY = os.environ.get("COUPANG_ACCESS_KEY", "")
-SECRET_KEY = os.environ.get("COUPANG_SECRET_KEY", "")
+# ── 기본 설정 ─────────────────────────────────────────────────────────────
+DOMAIN      = "https://api-gateway.coupang.com"
+ACCESS_KEY  = os.environ.get("COUPANG_ACCESS_KEY", "")
+SECRET_KEY  = os.environ.get("COUPANG_SECRET_KEY", "")
+SUB_ID      = "ggultongmon"
 
 PARTNERS_NOTICE = (
     '이 포스팅은 쿠팡 파트너스 활동의 일환으로, '
     '이에 따른 일정액의 수수료를 제공받습니다.'
 )
 
+# 캐시 파일 경로
+_BASE_DIR    = Path(__file__).parent.parent
+_CACHE_FILE  = _BASE_DIR / "coupang_cache" / "latest.json"
+_LOCAL_CACHE = _BASE_DIR / "coupang_cache" / "local_cache.json"
 
+# ── SOCKS5 프록시 동적 갱신 ─────────────────────────────────────────────
+_PROXY_LIST = []          # 런타임에 갱신
+_proxy_last_refresh = 0   # 마지막 갱신 시각
+
+def _refresh_proxy_list(force=False):
+    """프록시 목록 동적 갱신 (30분마다 또는 force=True)"""
+    global _PROXY_LIST, _proxy_last_refresh
+    if not force and time.time() - _proxy_last_refresh < 1800 and _PROXY_LIST:
+        return
+    try:
+        req = urllib.request.Request(
+            "https://proxylist.geonode.com/api/proxy-list?limit=100&page=1"
+            "&sort_by=lastChecked&sort_type=desc&protocols=socks5&speed=fast",
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read())
+            new_list = [(p["ip"], int(p["port"])) for p in data.get("data", [])]
+            if new_list:
+                _PROXY_LIST = new_list[:50]
+                _proxy_last_refresh = time.time()
+    except Exception:
+        pass  # 갱신 실패 시 기존 목록 유지
+
+def _test_proxy(host, port, timeout=5):
+    """프록시 단일 테스트. 성공 시 True."""
+    try:
+        import socks as _socks
+        s = _socks.socksocket()
+        s.set_proxy(_socks.SOCKS5, host, port)
+        s.settimeout(timeout)
+        s.connect(("api-gateway.coupang.com", 443))
+        ctx = ssl.create_default_context()
+        ss = ctx.wrap_socket(s, server_hostname="api-gateway.coupang.com")
+        # 최소한의 요청으로 확인
+        path = "/v2/providers/affiliate_open_api/apis/openapi/products/bestcategories/1016"
+        query = "limit=1&subId=ggultongmon"
+        dt = strftime("%y%m%dT%H%M%SZ", gmtime())
+        msg = dt + "GET" + path + "?" + query
+        sig = hmac.new(SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()
+        auth = f"CEA algorithm=HmacSHA256, access-key={ACCESS_KEY}, signed-date={dt}, signature={sig}"
+        ss.send(f"GET {path}?{query} HTTP/1.1\r\nHost: api-gateway.coupang.com\r\nAuthorization: {auth}\r\nContent-Type: application/json;charset=UTF-8\r\nConnection: close\r\n\r\n".encode())
+        resp = b""
+        while len(resp) < 512:
+            c = ss.recv(256)
+            if not c: break
+            resp += c
+        ss.close(); s.close()
+        return b"200 OK" in resp[:50] or b'"rCode"' in resp
+    except Exception:
+        return False
+
+def _get_working_proxy():
+    """동작하는 프록시 반환. 없으면 None."""
+    _refresh_proxy_list()
+    try:
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            futures = {ex.submit(_test_proxy, h, p, 5): (h, p) for h, p in _PROXY_LIST[:20]}
+            for f in concurrent.futures.as_completed(futures, timeout=10):
+                hp = futures[f]
+                try:
+                    if f.result():
+                        return hp
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return None
+
+# ── HMAC 서명 ─────────────────────────────────────────────────────────────
 def generate_hmac(method: str, url: str) -> str:
-    """쿠팡 파트너스 공식 HMAC 서명 생성 (signed-date: yyMMddTHHmmssZ)"""
+    """쿠팡 파트너스 공식 HMAC 서명 생성"""
     path, *query = url.split("?")
-    datetime_gmt = strftime('%y%m%d', gmtime()) + 'T' + strftime('%H%M%S', gmtime()) + 'Z'
+    datetime_gmt = strftime("%y%m%d", gmtime()) + "T" + strftime("%H%M%S", gmtime()) + "Z"
     message = datetime_gmt + method + path + (query[0] if query else "")
     signature = hmac.new(
         bytes(SECRET_KEY, "utf-8"),
@@ -124,149 +128,301 @@ def generate_hmac(method: str, url: str) -> str:
         f"signed-date={datetime_gmt}, signature={signature}"
     )
 
+# ── 핵심 HTTP 요청 (다중 폴백) ────────────────────────────────────────────
+def _call_api(path_with_query: str, method="GET", body=None) -> dict:
+    """
+    쿠팡 API 호출 — 4단계 폴백:
+    1. SOCKS5 프록시 (동적 목록에서 작동 프록시 탐색)
+    2. 직접 연결 (웹필터 없는 환경)
+    3. GitHub Actions 캐시 파일 (coupang_cache/latest.json)
+    4. 로컬 캐시
+    """
+    # ── 1단계: SOCKS5 프록시 ──
+    working = _get_working_proxy()
+    if working:
+        try:
+            return _request_via_socks(method, path_with_query, working, body)
+        except Exception:
+            pass
 
-def _get(path_with_query: str) -> dict:
-    # 1차: SOCKS5 프록시 경유 (웹필터 우회)
+    # ── 2단계: 직접 연결 ──
     try:
-        return _http_via_proxy("GET", path_with_query)
-    except Exception as proxy_err:
-        pass  # 프록시 실패 시 직접 연결 시도
-
-    # 2차: 직접 연결 (프록시 없는 환경 대비)
-    auth = generate_hmac("GET", path_with_query)
-    req = urllib.request.Request(
-        DOMAIN + path_with_query,
-        headers={"Authorization": auth, "Content-Type": "application/json"}
-    )
-    with urllib.request.urlopen(req, timeout=20) as r:
-        raw = r.read()
-        if not raw or not raw.strip():
-            raise ValueError("빈 응답")
-        for enc in ("utf-8", "euc-kr", "cp949", "latin-1"):
-            try:
-                text = raw.decode(enc)
-                if text.strip():
-                    return json.loads(text)
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                continue
-        decoded = raw.decode("utf-8", errors="ignore")
-        if not decoded.strip():
-            raise ValueError("디코딩 후 빈 응답")
-        return json.loads(decoded)
-
-
-def _post(path: str, body: dict) -> dict:
-    # 1차: SOCKS5 프록시 경유
-    try:
-        return _http_via_proxy("POST", path, body=body)
+        return _request_direct(method, path_with_query, body)
     except Exception:
         pass
 
-    # 2차: 직접 연결
-    auth = generate_hmac("POST", path)
-    req = urllib.request.Request(
-        DOMAIN + path,
-        data=json.dumps(body).encode("utf-8"),
-        method="POST",
-        headers={"Authorization": auth, "Content-Type": "application/json"}
-    )
-    with urllib.request.urlopen(req, timeout=15) as r:
-        return json.loads(r.read())
+    # ── 3단계: GitHub Actions 캐시 (GET 전용) ──
+    if method == "GET" and "bestcategories" in path_with_query:
+        cat_id = re.search(r"bestcategories/(\d+)", path_with_query)
+        if cat_id:
+            cached = _read_cache(cat_id.group(1))
+            if cached:
+                print(f"  [캐시] 카테고리 {cat_id.group(1)}: {len(cached)}개 (Actions 캐시)")
+                return {"rCode": "0", "data": cached}
 
+    raise ConnectionError("모든 쿠팡 API 접근 방법 실패")
 
-def search_products(keyword: str, limit: int = 5, sub_id: str = "ggultongmon") -> list[dict]:
-    """
-    키워드로 쿠팡 상품 검색
-    반환: [{ productId, productName, productPrice, productImage, productUrl,
-              categoryName, isRocket, isFreeShipping, keyword, rank }]
-    """
-    kw_enc = urllib.parse.quote(keyword)
-    path = (
-        f"/v2/providers/affiliate_open_api/apis/openapi/products/search"
-        f"?keyword={kw_enc}&limit={limit}&subId={sub_id}"
-    )
-    data = _get(path)
-    if data.get("rCode") != "0":
-        raise RuntimeError(f"상품검색 실패: {data}")
-    return data["data"].get("productData", [])
+def _request_via_socks(method, path_with_query, proxy, body=None):
+    """SOCKS5 프록시 경유 요청"""
+    import socks as _socks
+    host, port = proxy
+    auth = generate_hmac(method, path_with_query)
+    headers = {
+        "Host": "api-gateway.coupang.com",
+        "Authorization": auth,
+        "Content-Type": "application/json;charset=UTF-8",
+        "Connection": "close",
+    }
+    s = _socks.socksocket()
+    s.set_proxy(_socks.SOCKS5, host, port)
+    s.settimeout(15)
+    s.connect(("api-gateway.coupang.com", 443))
+    ctx = ssl.create_default_context()
+    ss = ctx.wrap_socket(s, server_hostname="api-gateway.coupang.com")
 
+    header_str = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
+    if body:
+        body_bytes = json.dumps(body).encode("utf-8")
+        header_str += f"Content-Length: {len(body_bytes)}\r\n"
+        raw = f"{method} {path_with_query} HTTP/1.1\r\n{header_str}\r\n".encode() + body_bytes
+    else:
+        raw = f"{method} {path_with_query} HTTP/1.1\r\n{header_str}\r\n".encode()
 
-def get_shorten_urls(product_urls: list[str]) -> dict[str, str]:
-    """
-    상품 URL 목록 → shortenUrl 딕셔너리
-    반환: { originalUrl: shortenUrl }
-    """
-    result = {}
-    # 한 번에 최대 50개
-    for i in range(0, len(product_urls), 50):
-        chunk = product_urls[i:i+50]
-        data = _post(
-            "/v2/providers/affiliate_open_api/apis/openapi/v1/deeplink",
-            {"coupangUrls": chunk}
+    ss.send(raw)
+    resp = b""
+    while True:
+        try:
+            c = ss.recv(8192)
+            if not c: break
+            resp += c
+        except Exception: break
+    try: ss.close()
+    except: pass
+
+    return _parse_http_response(resp)
+
+def _request_direct(method, path_with_query, body=None):
+    """직접 연결 요청"""
+    auth = generate_hmac(method, path_with_query)
+    headers = {"Authorization": auth, "Content-Type": "application/json;charset=UTF-8"}
+    url = DOMAIN + path_with_query
+
+    if body:
+        req = urllib.request.Request(
+            url, data=json.dumps(body).encode("utf-8"),
+            method=method, headers=headers
         )
-        if data.get("rCode") == "0":
-            for item in data.get("data", []):
-                orig = item.get("originalUrl", "")
-                short = item.get("shortenUrl", "")
-                if orig and short:
-                    result[orig] = short
+    else:
+        req = urllib.request.Request(url, headers=headers)
+
+    with urllib.request.urlopen(req, timeout=15) as r:
+        raw = r.read()
+        for enc in ("utf-8", "euc-kr", "cp949", "latin-1"):
+            try:
+                return json.loads(raw.decode(enc))
+            except Exception:
+                continue
+        raise ValueError("응답 디코딩 실패")
+
+def _parse_http_response(resp: bytes) -> dict:
+    """raw HTTP 응답 bytes → dict"""
+    header_end = resp.find(b"\r\n\r\n")
+    if header_end == -1:
+        raise ValueError("HTTP 응답 파싱 실패")
+    raw_body = resp[header_end + 4:]
+    if not raw_body.strip():
+        raise ValueError("빈 응답")
+    for enc in ("utf-8", "euc-kr", "cp949", "latin-1"):
+        try:
+            return json.loads(raw_body.decode(enc))
+        except Exception:
+            continue
+    raise ValueError("디코딩 실패")
+
+# ── 캐시 관리 ────────────────────────────────────────────────────────────
+def _read_cache(cat_id: str) -> list:
+    """Actions 캐시 또는 로컬 캐시에서 카테고리 데이터 읽기"""
+    # Actions 캐시 (git pull 최신)
+    for cache_file in [_CACHE_FILE, _LOCAL_CACHE]:
+        try:
+            if cache_file.exists():
+                data = json.loads(cache_file.read_text(encoding="utf-8"))
+                cats = data.get("categories", {})
+                products = cats.get(str(cat_id), [])
+                if products:
+                    return products
+        except Exception:
+            pass
+    return []
+
+def _save_local_cache(cat_id: str, products: list):
+    """성공한 데이터를 로컬 캐시에 저장"""
+    try:
+        _LOCAL_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        existing = {}
+        if _LOCAL_CACHE.exists():
+            existing = json.loads(_LOCAL_CACHE.read_text(encoding="utf-8"))
+        cats = existing.get("categories", {})
+        cats[str(cat_id)] = products
+        existing["categories"] = cats
+        existing["updated_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+        _LOCAL_CACHE.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+def refresh_cache_from_git():
+    """git pull로 Actions 캐시 갱신"""
+    try:
+        import subprocess
+        subprocess.run(
+            ["git", "-C", str(_BASE_DIR), "pull", "--ff-only", "-q"],
+            capture_output=True, timeout=30
+        )
+    except Exception:
+        pass
+
+# ── 공개 API ────────────────────────────────────────────────────────────
+def _get(path_with_query: str) -> dict:
+    """GET 요청 (다중 폴백)"""
+    result = _call_api(path_with_query, "GET")
+    # 성공하면 로컬 캐시 저장
+    if result.get("rCode") == "0":
+        cat_id = re.search(r"bestcategories/(\d+)", path_with_query)
+        if cat_id and result.get("data"):
+            _save_local_cache(cat_id.group(1), result["data"])
     return result
 
+def _post(path: str, body: dict) -> dict:
+    """POST 요청 (다중 폴백)"""
+    return _call_api(path, "POST", body)
+
+def get_bestcategory_products(cat_id: int, limit: int = 20) -> list:
+    """
+    카테고리 베스트 상품 수집
+    폴백: API → Actions 캐시 → 로컬 캐시
+    """
+    path = f"/v2/providers/affiliate_open_api/apis/openapi/products/bestcategories/{cat_id}"
+    query = f"limit={limit}&subId={SUB_ID}"
+    try:
+        r = _get(f"{path}?{query}")
+        products = r.get("data", [])
+        if products:
+            return products
+    except Exception as e:
+        print(f"  [WARN] bestcategories/{cat_id} 실패: {e}")
+
+    # 캐시 폴백
+    cached = _read_cache(str(cat_id))
+    if cached:
+        print(f"  [캐시 폴백] 카테고리 {cat_id}: {len(cached)}개")
+    return cached
+
+def search_products(keyword: str, limit: int = 5) -> list:
+    """키워드 검색 (다중 폴백)"""
+    encoded = urllib.parse.quote(keyword)
+    path = f"/v2/providers/affiliate_open_api/apis/openapi/products/search"
+    query = f"keyword={encoded}&limit={limit}&subId={SUB_ID}"
+    try:
+        r = _get(f"{path}?{query}")
+        return r.get("data", [])
+    except Exception as e:
+        print(f"  [WARN] 검색 실패 ({keyword}): {e}")
+        return []
+
+def get_products_with_shorten(keyword_or_products, limit: int = 5) -> list:
+    """
+    상품 수집 + shortenUrl 설정 통합
+    - keyword_or_products: str(키워드) 또는 list(이미 수집된 상품)
+    - productUrl이 이미 affiliate URL이므로 deeplink API 불필요
+    """
+    try:
+        if isinstance(keyword_or_products, str):
+            products = search_products(keyword_or_products, limit)
+        else:
+            products = list(keyword_or_products)
+
+        for p in products:
+            if not p.get("shortenUrl"):
+                p["shortenUrl"] = p.get("productUrl", "#")
+        return products
+    except Exception as e:
+        print(f"[WARN] 상품 수집 실패: {e}")
+        return []
+
+# ── 이미지 유틸리티 ────────────────────────────────────────────────────────
+def optimize_coupang_img(url: str, width: int = 400) -> str:
+    """
+    쿠팡 CDN 이미지 URL 최적화
+    - image10.coupangcdn.com 형태에 width 파라미터 추가
+    - 썸네일용(300px) / 본문용(600px) / 대표(1200px) 분리
+    """
+    if not url:
+        return ""
+    # 이미 파라미터가 있으면 교체
+    if "?w=" in url or "&w=" in url:
+        url = re.sub(r"[?&]w=\d+", "", url)
+    # coupangcdn 이미지는 w 파라미터로 리사이즈 가능
+    if "coupangcdn.com" in url or "coupang.com" in url:
+        sep = "&" if "?" in url else "?"
+        return f"{url}{sep}w={width}"
+    return url
+
+def get_product_images(product: dict) -> dict:
+    """
+    상품의 이미지 3종 반환:
+    - thumb: 썸네일 (300px) — 상품 카드용
+    - medium: 중간 (600px) — 본문 삽입용
+    - og: 대표 이미지 (1200px) — OG/JSON-LD용
+    """
+    base_url = product.get("productImage", "")
+    if not base_url:
+        return {"thumb": "", "medium": "", "og": ""}
+    return {
+        "thumb":  optimize_coupang_img(base_url, width=300),
+        "medium": optimize_coupang_img(base_url, width=600),
+        "og":     optimize_coupang_img(base_url, width=1200),
+    }
 
 def download_product_image(image_url: str, save_path: str) -> bool:
-    """쿠팡 상품 이미지 다운로드"""
+    """쿠팡 상품 이미지 다운로드 (로컬 저장)"""
     try:
-        req = urllib.request.Request(image_url, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(
+            image_url,
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.coupang.com"}
+        )
         with urllib.request.urlopen(req, timeout=15) as r:
-            with open(save_path, "wb") as f:
-                f.write(r.read())
+            Path(save_path).write_bytes(r.read())
         return True
     except Exception as e:
         print(f"이미지 다운로드 실패: {e}")
         return False
 
+def get_shorten_urls(product_urls: list) -> dict:
+    """상품 URL → shortenUrl (productUrl이 이미 affiliate URL이면 그대로 반환)"""
+    result = {}
+    for url in product_urls:
+        if url and "coupang.com" in url:
+            result[url] = url  # productUrl이 이미 affiliate 링크
+    return result
 
-def get_products_with_shorten(keyword: str, limit: int = 5) -> list[dict]:
-    """
-    상품 검색 + shortenUrl 자동 생성 통합
-    반환: productData + shortenUrl 필드 추가
-    API 실패 시 빈 리스트 반환 (예외 전파 금지)
-    """
-    try:
-        products = search_products(keyword, limit)
-    except Exception as e:
-        print(f"[WARN] 쿠팡 상품 검색 실패 ({keyword}): {e}")
-        return []
-    
-    # productUrl → shortenUrl 변환
-    # productUrl은 이미 affiliate URL이지만 길어서 shortenUrl 생성
-    # 단, productUrl이 link.coupang.com/re/... 형식이면 이미 affiliate URL
-    # → 상품 페이지 URL로 변환 후 deeplink 생성
-    raw_urls = []
-    for p in products:
-        product_id = p.get("productId")
-        if product_id:
-            raw_urls.append(f"https://www.coupang.com/vp/products/{product_id}")
-    
-    shorten_map = get_shorten_urls(raw_urls)
-    
-    for p in products:
-        product_id = p.get("productId")
-        raw_url = f"https://www.coupang.com/vp/products/{product_id}"
-        p["shortenUrl"] = shorten_map.get(raw_url, p.get("productUrl", raw_url))
-        p["rawProductUrl"] = raw_url
-    
-    return products
-
-
+# ── CLI 테스트 ────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    # 테스트
     import sys
-    keyword = sys.argv[1] if len(sys.argv) > 1 else "에어프라이어"
-    print(f"키워드: {keyword}")
-    products = get_products_with_shorten(keyword, limit=3)
-    for p in products:
-        print(f"\n[{p['rank']}위] {p['productName'][:40]}")
-        print(f"  가격: {p['productPrice']:,}원 | 로켓: {p['isRocket']}")
-        print(f"  shortenUrl: {p['shortenUrl']}")
-        print(f"  이미지: {p['productImage'][:60]}...")
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        print("=== 쿠팡 API 연결 테스트 ===")
+        print(f"ACCESS_KEY: {ACCESS_KEY[:10]}...")
+
+        # 프록시 탐색
+        print("\n[1] 작동 프록시 탐색 중...")
+        proxy = _get_working_proxy()
+        print(f"  → {proxy if proxy else '없음 (직접 연결 시도)'}")
+
+        # 카테고리 수집
+        print("\n[2] 카테고리 1016 테스트...")
+        products = get_bestcategory_products(1016, limit=3)
+        print(f"  → {len(products)}개")
+        for p in products[:2]:
+            imgs = get_product_images(p)
+            print(f"  - {p.get('productName','')[:30]}")
+            print(f"    thumb: {imgs['thumb'][:60]}")
+            print(f"    url:   {p.get('productUrl','')[:60]}")

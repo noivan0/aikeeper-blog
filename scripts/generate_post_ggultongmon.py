@@ -205,10 +205,13 @@ def build_inline_card(product: dict, rank: int, title_seed: str = "") -> str:
     상품 인라인 카드 (본문 h2 섹션 안)
     - 모바일 반응형 (flex-wrap + 최소 너비)
     - 버튼 텍스트 랜덤
+    - 이미지: 썸네일(300px 카드) + 중간(600px 클릭 확대)
     """
+    from coupang_api import get_product_images
     name      = product.get("productName", "상품명 없음")[:55]
     price     = f"{int(product.get('productPrice', 0)):,}"
-    img_url   = optimize_coupang_img(product.get("productImage", ""), width=300)
+    imgs      = get_product_images(product)
+    img_url   = imgs["thumb"] or optimize_coupang_img(product.get("productImage", ""), width=300)
     buy_url   = product.get("shortenUrl", product.get("productUrl", "#"))
     is_rocket = product.get("isRocket", False)
     is_free   = product.get("isFreeShipping", False)
@@ -559,11 +562,20 @@ def build_full_html(title: str, content: str, products: list,
     _cat_key = next((k for k in DISCOVER_FALLBACK_IMAGES if k != "default" and k in title), "default")
     _discover_img = DISCOVER_FALLBACK_IMAGES[_cat_key]
 
-    hero_img = products[0].get("productImage", "") if products else ""
-    # og:image은 디스커버 폴백 이미지 사용 (1200px 보장)
-    og_hero_img = _discover_img
-    # 히든 썸네일: 쿠팡 상품 이미지 우선, 없으면 카테고리 폴백 이미지 사용 (대표이미지 항상 보장)
-    thumb_src = hero_img if hero_img else _discover_img
+    # 이미지 3종 준비 (coupang_api.get_product_images 활용)
+    from coupang_api import get_product_images, optimize_coupang_img as _opt_img
+    if products:
+        _p0_imgs = get_product_images(products[0])
+        hero_img     = _p0_imgs["medium"]   # 본문 대표 이미지 (600px)
+        hero_img_og  = _p0_imgs["og"]       # OG/JSON-LD (1200px)
+        hero_img_th  = _p0_imgs["thumb"]    # 히든 썸네일 (300px)
+    else:
+        hero_img = hero_img_og = hero_img_th = ""
+
+    # og:image: 쿠팡 상품 이미지(1200px) 우선, 없으면 카테고리 폴백
+    og_hero_img = hero_img_og if hero_img_og else _discover_img
+    # 히든 썸네일: 항상 보장 (상품 이미지 우선, 없으면 폴백)
+    thumb_src = hero_img_th if hero_img_th else (hero_img if hero_img else _discover_img)
     thumb_html = (
         f'<img src="{thumb_src}" alt="{title}" '
         f'style="position:absolute;width:1px;height:1px;overflow:hidden;'

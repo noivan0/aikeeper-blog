@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE_DIR, "scripts"))
 
-from coupang_api import _get, search_products
+from coupang_api import get_bestcategory_products, search_products, refresh_cache_from_git
 
 ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "")
 ANTHROPIC_MODEL    = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
@@ -206,20 +206,13 @@ def get_weekday_categories() -> list[int]:
 
 
 def get_best_products(cat_id: int, limit: int = 20) -> list:
-    """bestcategories API로 카테고리 베스트 상품 수집 + 가격 필터"""
-    path = f"/v2/providers/affiliate_open_api/apis/openapi/products/bestcategories/{cat_id}?limit={limit}&subId={COUPANG_SUB_ID}"
+    """bestcategories 상품 수집 — coupang_api 다중 폴백 사용"""
     try:
-        d = _get(path)
-        if d.get("rCode") != "0":
+        products = get_bestcategory_products(cat_id, limit)
+        if not products:
             return []
-        products = d.get("data", [])
         min_p = MIN_PRICE.get(cat_id, 3000)
-        # 가격 필터 + 로켓배송 우선 정렬
-        filtered = [
-            p for p in products
-            if int(p.get("productPrice", 0)) >= min_p
-        ]
-        # 로켓배송 우선
+        filtered = [p for p in products if int(p.get("productPrice", 0)) >= min_p]
         filtered.sort(key=lambda p: (0 if p.get("isRocket") else 1))
         return filtered
     except Exception as e:
@@ -278,6 +271,15 @@ def pick_category_and_products() -> tuple[int, str, list]:
             print(f"카테고리: {cat_name}({cat_id}) | 상품 {len(products)}개 수집")
             return cat_id, cat_name, products
         time.sleep(0.3)
+
+    # fallback 0.5: git pull로 Actions 캐시 갱신 후 재시도
+    print("[FALLBACK] git pull로 쿠팡 캐시 갱신 시도...")
+    refresh_cache_from_git()
+    for cat_id, cat_name in random.sample(priority_cats + other_cats, min(5, len(priority_cats + other_cats))):
+        products = get_best_products(cat_id)
+        if len(products) >= 3:
+            print(f"[캐시 폴백 성공] 카테고리: {cat_name}({cat_id}) | 상품 {len(products)}개")
+            return cat_id, cat_name, products
 
     # fallback 1: bestcategories 전체 실패 시 → 키워드 직접 검색으로 대체
     print("[FALLBACK] bestcategories API 전체 실패 → 키워드 검색 모드로 전환")
