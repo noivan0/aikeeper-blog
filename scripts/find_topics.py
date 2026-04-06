@@ -1900,8 +1900,28 @@ def select_best_topic(news_items, used_history):
         return {"topic": "AI 최신 트렌드 2026", "keywords": ["AI", "트렌드", "2026"],
                 "angle": "트렌드분석", "reason": "fallback", "source_news": ""}
 
-    # 중복 가능성 높은 뉴스 아이템 사전 필터 (Claude 재시도 방지)
+    # 중복 가능성 높은 아이템 사전 필터 (Claude 재시도 방지)
+    # 1단계: is_duplicate 기반
     merged_filtered = [i for i in merged if not is_duplicate(i.get("title",""), used_history, threshold=0.35)]
+    # 2단계: 기존 발행 포스트의 핵심 툴/브랜드명이 포함된 아이템 추가 필터
+    used_keywords = set()
+    for t in used_history:
+        for w in get_words(t.lower()):
+            if len(w) >= 4:  # 짧은 단어 제외 (ai, vs 등)
+                used_keywords.add(w)
+
+    def _has_overused_kw(title):
+        title_words = get_words(title.lower())
+        # 기존 포스트에서 3회 이상 등장한 키워드가 2개 이상 겹치면 중복 위험
+        from collections import Counter
+        wf = Counter(w for t in used_history for w in get_words(t.lower()) if len(w)>=4)
+        overused = {w for w,c in wf.items() if c >= 3}
+        overlap = sum(1 for w in title_words if w in overused)
+        return overlap >= 3
+
+    merged_filtered2 = [i for i in merged_filtered if not _has_overused_kw(i.get("title",""))]
+    if len(merged_filtered2) >= 5:
+        merged_filtered = merged_filtered2  # 충분히 남은 경우에만 적용
     if len(merged_filtered) < 5:
         merged_filtered = merged  # 필터 후 너무 적으면 원본 사용
 
