@@ -1084,8 +1084,15 @@ def inject_images(file_path: str) -> str:
 
     # ── 본문 이미지 삽입 (h2 섹션 사이, 최대 4개) ─────────────────────────────
     # hero는 제외하고 나머지(중복 없이)를 본문에 삽입
-    body_imgs = [img for img in images if img["url"] != hero["url"]]
+    # hero 제외 body 이미지 — URL base(쿼리스트링 제외)로 비교해 변형 URL도 차단
+    def _url_base(url: str) -> str:
+        return url.split("?")[0].rstrip("/")
+
+    hero_base = _url_base(hero["url"])
+    body_imgs = [img for img in images if _url_base(img["url"]) != hero_base]
     if body_imgs:
+        # insert_body_images는 images[0]을 hero로, images[1:]을 본문에 삽입
+        # hero를 images[0]에, body_imgs를 images[1:]에 배치
         body = insert_body_images(body, [hero] + body_imgs, title)
         print(f"  ✅ 본문 이미지 {min(len(body_imgs), 4)}개 삽입")
     else:
