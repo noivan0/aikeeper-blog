@@ -386,14 +386,178 @@ def extract_coupang_data_from_blogger(post_url: str) -> tuple[list, list, list]:
 
 
 # ── 로그인 & 세션 ─────────────────────────────────────────────────
-async def ensure_session(context, page) -> bool:
-    await page.goto("https://blog.naver.com", timeout=20000)
+async def check_login_by_url(page) -> bool:
+    """URL 기반 로그인 상태 확인 (HttpOnly 쿠키 우회)"""
+    await page.goto("https://blog.naver.com/kjjhad", timeout=20000)
     await page.wait_for_timeout(2000)
-    login_ok = await page.evaluate("() => document.cookie.includes('NID_SES')")
-    if login_ok:
-        print("  세션 유효 ✅")
+    url = page.url
+    # 로그인 페이지로 리다이렉트 안 됐으면 세션 유효
+    if "nidlogin" in url or "login" in url.lower():
+        return False
+    # 글쓰기 버튼 존재 여부로 이중 확인
+    write_btn = await page.query_selector("a[href*='PostWrite'], .blog_btn_write, a.btn_write")
+    if write_btn:
+        print("  세션 유효 ✅ (글쓰기 버튼 확인)")
         return True
+    # 블로그 홈 도달 = 로그인 상태
+    if "blog.naver.com" in url:
+        print("  세션 유효 ✅ (블로그 홈 접근 성공)")
+        return True
+    return False
+
+async def ensure_session(context, page) -> bool:
+    """세션 파일 우선 사용 → 만료 시에만 로그인 시도"""
+    if Path(SESSION_FILE).exists():
+        # 세션 파일이 있으면 URL 기반으로 유효성 확인
+        ok = await check_login_by_url(page)
+        if ok:
+            return True
+        print("  세션 만료 — 재로그인 시도...")
     return await do_login(page, context)
+
+async def is_captcha_page(page) -> bool:
+    """CAPTCHA 화면 감지"""
+    body = await page.inner_text("body")
+    captcha_hints = ["자동입력 방지", "영수증", "몇 개 입니까", "보안문자", "captcha", "CAPTCHA",
+                     "auto-input", "unit price", "most bought", "Please enter the answer"]
+    return any(h in body for h in captcha_hints)
+
+async def solve_captcha_with_vision(page) -> bool:
+    """Claude Vision으로 네이버 영수증 CAPTCHA 해결"""
+    import base64, sys as _sys
+    _sys.path.insert(0, str(Path(__file__).parent))
+    try:
+        from env_loader import load_env, make_anthropic_client, get_model
+        load_env()
+    except Exception as e:
+        print(f"  ⚠️  env_loader 로드 실패: {e}")
+        return False
+
+    # 1. 질문 텍스트 추출 (DOM에서 직접)
+    question = ""
+    for sel in ["a.captcha_question", ".captcha_question", "p.question", ".naver_captcha .question",
+                "[class*='question']", "p:has-text('?')"]:
+        try:
+            el = await page.query_selector(sel)
+            if el:
+                question = (await el.inner_text()).strip()
+                break
+        except Exception:
+            pass
+
+    if not question:
+        # body 텍스트에서 질문 패턴 추출
+        body = await page.inner_text("body")
+        for line in body.split('\n'):
+            line = line.strip()
+            if line.endswith('?') and len(line) > 5:
+                question = line
+                break
+
+    print(f"  📝 CAPTCHA 질문: {question[:80]}")
+
+    # 2. CAPTCHA 이미지 캡처
+    captcha_img_el = None
+    for sel in ["img.captcha_image", ".captcha_image img", "img[src*='captcha']",
+                ".naver_captcha img", "img.receipt", ".receipt_wrap img", "img[alt*='captcha']"]:
+        captcha_img_el = await page.query_selector(sel)
+        if captcha_img_el:
+            break
+
+    # 셀렉터 실패 시 스크린샷으로 대체
+    screenshot_bytes = None
+    if captcha_img_el:
+        screenshot_bytes = await captcha_img_el.screenshot()
+    else:
+        # 로그인 박스 영역만 캡처
+        box_el = await page.query_selector(".login_wrap, .login_container, form")
+        if box_el:
+            screenshot_bytes = await box_el.screenshot()
+        else:
+            screenshot_bytes = await page.screenshot()
+
+    img_b64 = base64.b64encode(screenshot_bytes).decode()
+
+    # 3. Claude Vision으로 분석
+    try:
+        client = make_anthropic_client(timeout=30)
+        prompt = f"""다음은 네이버 로그인 CAPTCHA의 영수증 이미지입니다.
+
+질문: {question if question else "이미지에서 질문을 찾아 답하세요"}
+
+영수증을 읽고 질문에 대한 답(숫자만)을 출력하세요.
+답만 출력하고 설명은 하지 마세요. 예: 3"""
+
+        with client.messages.stream(
+            model=get_model(),
+            max_tokens=20,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img_b64}},
+                    {"type": "text", "text": prompt}
+                ]
+            }]
+        ) as stream:
+            answer = ""
+            for chunk in stream.text_stream:
+                answer += chunk
+        answer = answer.strip().replace(" ", "")
+        print(f"  🤖 Claude 답: '{answer}'")
+    except Exception as e:
+        print(f"  ❌ Claude Vision 실패: {e}")
+        return False
+
+    # 4. CAPTCHA 답 입력
+    try:
+        inp = None
+        for sel in ["input.captcha_input", "input[name='captcha']", "input[placeholder*='answer']",
+                    "input[placeholder*='Answer']", "input[placeholder*='답']", ".captcha_wrap input"]:
+            inp = await page.query_selector(sel)
+            if inp:
+                await inp.click()
+                await inp.fill("")
+                for c in answer:
+                    await page.keyboard.type(c); await asyncio.sleep(0.08)
+                print(f"  ✏️  CAPTCHA 답 입력: '{answer}'")
+                break
+        if not inp:
+            print("  ⚠️  CAPTCHA 입력창을 찾지 못함")
+            return False
+
+        # 5. 비밀번호 재입력 (CAPTCHA 후 pw 필드가 초기화됨)
+        pw_field = await page.query_selector("#pw")
+        if pw_field:
+            pw_val = await pw_field.input_value()
+            if not pw_val:
+                await pw_field.click()
+                for c in NAVER_PW:
+                    await page.keyboard.type(c); await asyncio.sleep(0.1)
+                print("  🔑 비밀번호 재입력 완료")
+
+        # 6. 로그인 버튼 (활성화 대기 후 클릭)
+        await page.wait_for_timeout(500)
+        btn = await page.query_selector(".btn_login:not([disabled]), button[type='submit']:not([disabled])")
+        if not btn:
+            btn = await page.query_selector(".btn_login, button[type='submit']")
+        if btn:
+            await btn.click()
+        await page.wait_for_timeout(6000)
+
+        if "nidlogin" not in page.url:
+            print("  ✅ CAPTCHA 해결 + 로그인 성공!")
+            return True
+        else:
+            # 오답이면 새 CAPTCHA가 발생함
+            new_body = await page.inner_text("body")
+            if "Please enter the answer" in new_body:
+                print("  ❌ CAPTCHA 오답 — 새 CAPTCHA 발생")
+            else:
+                print(f"  ❌ 로그인 실패: {page.url}")
+            return False
+    except Exception as e:
+        print(f"  ❌ CAPTCHA 입력 오류: {e}")
+        return False
 
 async def do_login(page, context) -> bool:
     if not NAVER_ID or not NAVER_PW:
@@ -401,6 +565,17 @@ async def do_login(page, context) -> bool:
         return False
     await page.goto("https://nid.naver.com/nidlogin.login?mode=form&url=https://www.naver.com", timeout=20000)
     await page.wait_for_timeout(3000)
+
+    # CAPTCHA 선제 감지 — 이미 CAPTCHA면 바로 Vision으로 해결 시도
+    if await is_captcha_page(page):
+        print("  ⚠️  로그인 전 CAPTCHA 감지 — Vision으로 해결 시도")
+        solved = await solve_captcha_with_vision(page)
+        if solved:
+            await context.storage_state(path=SESSION_FILE)
+            print(f"  ✅ 세션 저장: {SESSION_FILE}")
+            return True
+        return False
+
     await page.locator("#id").click()
     for c in NAVER_ID:
         await page.keyboard.press(c); await asyncio.sleep(0.12)
@@ -412,9 +587,21 @@ async def do_login(page, context) -> bool:
     btn = await page.query_selector(".btn_login")
     if btn: await btn.click()
     await page.wait_for_timeout(5000)
+
+    # CAPTCHA 발동 감지 → Vision으로 자동 해결
+    if await is_captcha_page(page):
+        print("  ⚠️  로그인 후 CAPTCHA 발동 — Vision으로 자동 해결 시도")
+        solved = await solve_captcha_with_vision(page)
+        if solved:
+            await context.storage_state(path=SESSION_FILE)
+            print(f"  ✅ 세션 저장: {SESSION_FILE}")
+            return True
+        print("  ❌ CAPTCHA 해결 실패")
+        return False
+
     if "nidlogin" not in page.url:
         await context.storage_state(path=SESSION_FILE)
-        print(f"  세션 저장: {SESSION_FILE}")
+        print(f"  ✅ 로그인 성공 — 세션 저장: {SESSION_FILE}")
         return True
     print("  ❌ 로그인 실패")
     return False
