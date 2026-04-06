@@ -328,7 +328,7 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
     else:
         product_summary = f"[상품 데이터 없음] 카테고리: {cat_name}\n→ 카테고리명을 기반으로 2026년 인기 상품 TOP3 주제를 창의적으로 선정하세요."
 
-    client = make_anthropic_client(timeout=120, max_retries=2)
+    client = make_anthropic_client(timeout=180, max_retries=2)
 
     # 고CPC 카테고리 힌트 구성
     high_cpc_hint = (
@@ -408,13 +408,19 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
             "selected_products": selected,
         }
 
+    def _stream_call(p):
+        """스트리밍으로 Claude 호출 → 텍스트 반환"""
+        buf = ""
+        with client.messages.stream(
+            model=ANTHROPIC_MODEL, max_tokens=600,
+            messages=[{"role": "user", "content": p}]
+        ) as stream:
+            for chunk in stream.text_stream:
+                buf += chunk
+        return buf
+
     # 첫 시도
-    msg = client.messages.create(
-        model=ANTHROPIC_MODEL,
-        max_tokens=600,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    result = parse_result(msg.content[0].text)
+    result = parse_result(_stream_call(prompt))
 
     # 중복 감지 → 최대 2회 재시도
     for attempt in range(2):
@@ -424,12 +430,7 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
         retry_prompt = (prompt +
             f"\n\n[필수] 방금 제안한 '{result['topic']}'는 기존 포스트와 너무 유사합니다. "
             f"완전히 다른 상품 조합과 주제로 다시 선정하세요.")
-        msg2 = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=600,
-            messages=[{"role": "user", "content": retry_prompt}]
-        )
-        result = parse_result(msg2.content[0].text)
+        result = parse_result(_stream_call(retry_prompt))
 
     if is_duplicate_topic(result["topic"], used_titles):
         print(f"  [WARN] 재시도 후에도 유사 주제 — 그대로 진행")

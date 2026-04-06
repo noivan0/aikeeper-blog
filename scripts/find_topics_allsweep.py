@@ -454,12 +454,14 @@ def select_best_topic(news_items, used_history, target_category=None):
 차별화된 글쓰기 각도
 ===END==="""
 
-    client = make_anthropic_client(timeout=120, max_retries=2)
-    resp = client.messages.create(
+    client = make_anthropic_client(timeout=180, max_retries=2)
+    text = ""
+    with client.messages.stream(
         model=get_model(), max_tokens=600,
         messages=[{"role": "user", "content": prompt}]
-    )
-    text = resp.content[0].text
+    ) as stream:
+        for chunk in stream.text_stream:
+            text += chunk
 
     def extract(t, key):
         tags = ["===TOPIC===","===CATEGORY===","===KEYWORDS===","===SEARCH_INTENT===","===ANGLE===","===END==="]

@@ -21,7 +21,7 @@ else:
     # find_topics.py 한 번만 실행 (stdout 캡처)
     r = subprocess.run(
         [sys.executable, "scripts/find_topics.py"],
-        capture_output=True, text=True, timeout=180,
+        capture_output=True, text=True, timeout=300,
     )
     output = r.stdout + r.stderr
     print(output)

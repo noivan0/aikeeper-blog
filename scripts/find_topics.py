@@ -2002,13 +2002,16 @@ AI키퍼 블로그(신생 한국어 AI 전문 블로그)의 다음 포스트 주
 참고한 원본 후보 제목
 ===END==="""
 
-    client = make_anthropic_client(timeout=120, max_retries=2)
-    response = client.messages.create(
+    client = make_anthropic_client(timeout=180, max_retries=2)
+    # 스트리밍 사용 — 큰 프롬프트에서 첫 응답까지 대기 시간 단축
+    text = ""
+    with client.messages.stream(
         model=ANTHROPIC_MODEL,
         max_tokens=800,
         messages=[{"role": "user", "content": prompt}]
-    )
-    text = response.content[0].text
+    ) as stream:
+        for chunk in stream.text_stream:
+            text += chunk
 
     def extract(t, key):
         tags = ["===TOPIC===","===KEYWORDS===","===SEARCH_INTENT===","===REASON===","===ANGLE===","===SOURCE_NEWS===","===END==="]
