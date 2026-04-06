@@ -12,6 +12,8 @@ hero_image_alt: "Korean government AI voucher program business support technolog
 hero_credit: "Ars Technica"
 hero_credit_url: "https://arstechnica.com/information-technology/2026/03/cloud-service-providers-ask-eu-regulator-to-reinstate-vmware-partner-program/"
 hero_source_label: "📰 Ars Technica"
+published: true
+blogger_url: "https://aikeeper.allsweep.xyz/2026/04/2026-ai-ai.html"
 ---
 
 "AI 쓰고 싶은데 비용이 너무 비싸요." 이 한 마디로 모든 게 설명된다

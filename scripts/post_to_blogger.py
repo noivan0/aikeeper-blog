@@ -904,7 +904,7 @@ def post_to_blogger(file_path: str):
             print(f"[WARN] Blogger API 429 — {_wait}초 대기 후 재시도...")
             import time as _time; _time.sleep(_wait)
             r = blogger_request(
-                "POST", f"/blogger/v3/blogs/{blog_id}/posts/",
+                "POST", f"/blogs/{BLOG_ID}/posts",
                 token, body=body, params={"isDraft": str(is_draft).lower()},
             )
         if r.status_code not in (200, 201):

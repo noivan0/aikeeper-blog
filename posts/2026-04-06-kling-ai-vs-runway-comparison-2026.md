@@ -12,6 +12,8 @@ hero_image_alt: "AI video generation tools comparison Kling Runway Pika 2026"
 hero_credit: "Ars Technica"
 hero_credit_url: "https://arstechnica.com/tech-policy/2026/03/leading-ai-datacenter-companies-sign-pledge-to-buy-their-own-power/"
 hero_source_label: "📰 Ars Technica"
+published: true
+blogger_url: "https://aikeeper.allsweep.xyz/2026/04/kling-ai-vs-runway-vs-pika-labs-2026.html"
 ---
 
 유튜브 쇼츠 하나 만들려고 AI 영상 도구 찾아봤다가 머리가 터질 뻔한 경험, 여러분도 있으시죠?
