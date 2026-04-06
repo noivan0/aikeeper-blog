@@ -299,129 +299,48 @@ def build_related_section(related_posts: list) -> str:
 
     section = f"""
 <!-- 내부링크: 관련 글 카드 섹션 (internal_links.py 자동 생성) -->
-<div class="il-related-section">
-  <style>
-    .il-related-section {{
-      margin: 3.5em 0 2em;
-      padding: 24px 20px 20px;
-      background: #f4f6ff;
-      border-top: 4px solid {THEME_COLOR};
-      border-radius: 0 0 16px 16px;
-    }}
-    .il-related-header {{
-      font-size: 1em;
-      font-weight: 800;
-      color: #0d1b4b;
-      margin: 0 0 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      letter-spacing: -0.3px;
-    }}
-    .il-related-header-icon {{
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      background: {THEME_COLOR};
-      border-radius: 8px;
-      font-size: 0.85em;
-    }}
-    .il-grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 12px;
-    }}
-    .il-card {{
-      display: block;
-      text-decoration: none;
-      color: inherit;
-      background: #fff;
-      border: 1.5px solid #dde4ff;
-      border-radius: 12px;
-      transition: box-shadow 0.18s, border-color 0.18s, transform 0.15s;
-      overflow: hidden;
-    }}
-    .il-card:hover {{
-      box-shadow: 0 6px 20px rgba(79,110,247,0.18);
-      border-color: {THEME_COLOR};
-      transform: translateY(-3px);
-      text-decoration: none;
-    }}
-    .il-card-inner {{
-      display: flex;
-      align-items: stretch;
-      gap: 0;
-    }}
-    .il-card-accent {{
-      width: 5px;
-      flex-shrink: 0;
-      background: {THEME_COLOR};
-      border-radius: 0;
-      transition: background 0.15s;
-    }}
-    .il-card:hover .il-card-accent {{
-      background: #2a4fff;
-    }}
-    .il-card-body {{
-      flex: 1;
-      min-width: 0;
-      padding: 13px 14px;
-    }}
-    .il-card-title {{
-      font-size: 0.9em;
-      font-weight: 700;
-      color: #1a237e;
-      margin: 0 0 5px;
-      line-height: 1.45;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }}
-    .il-card-desc {{
-      font-size: 0.76em;
-      color: #777;
-      margin: 0;
-      line-height: 1.5;
-      display: -webkit-box;
-      -webkit-line-clamp: 1;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }}
-    .il-arrow {{
-      font-size: 1.1em;
-      color: {THEME_COLOR};
-      flex-shrink: 0;
-      font-weight: 700;
-      padding: 13px 12px 13px 0;
-      transition: transform 0.15s;
-      align-self: center;
-    }}
-    .il-card:hover .il-arrow {{
-      transform: translateX(4px);
-    }}
-    @media (max-width: 500px) {{
-      .il-related-section {{
-        padding: 18px 14px 16px;
-      }}
-      .il-grid {{
-        grid-template-columns: 1fr;
-        gap: 9px;
-      }}
-      .il-card-title {{
-        font-size: 0.86em;
-      }}
-    }}
-  </style>
-  <p class="il-related-header">
-    <span class="il-related-header-icon">📚</span>
-    함께 읽으면 좋은 글
-  </p>
-  <div class="il-grid">{cards_html}
+<div class="il-related-section" style="margin:2.5em 0 2.5em;border:2px solid {THEME_COLOR};border-radius:16px;overflow:hidden;box-shadow:0 4px 18px rgba(67,97,238,0.10);">
+  <div class="il-related-header" style="background:{THEME_COLOR};padding:14px 20px;display:flex;align-items:center;gap:10px;">
+    <span style="font-size:1.3em;">📚</span>
+    <span style="font-size:1em;font-weight:800;color:#fff;letter-spacing:-0.3px;">함께 읽으면 좋은 글</span>
+  </div>
+  <div class="il-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0;background:#f4f6ff;padding:16px;gap:12px;">
+    {cards_html}
   </div>
 </div>
+<style>
+  .il-card {{
+    display:block;text-decoration:none;color:inherit;
+    background:#fff;border:1.5px solid #dde4ff;border-radius:12px;
+    transition:box-shadow 0.18s,border-color 0.18s,transform 0.15s;overflow:hidden;
+  }}
+  .il-card:hover {{
+    box-shadow:0 6px 20px rgba(79,110,247,0.18);border-color:{THEME_COLOR};
+    transform:translateY(-3px);text-decoration:none;
+  }}
+  .il-card-inner {{display:flex;align-items:stretch;gap:0;}}
+  .il-card-accent {{width:5px;flex-shrink:0;background:{THEME_COLOR};transition:background 0.15s;}}
+  .il-card:hover .il-card-accent {{background:#2a4fff;}}
+  .il-card-body {{flex:1;min-width:0;padding:13px 14px;}}
+  .il-card-title {{
+    font-size:0.9em;font-weight:700;color:#1a237e;margin:0 0 5px;line-height:1.45;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }}
+  .il-card-desc {{
+    font-size:0.76em;color:#777;margin:0;line-height:1.5;
+    display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;
+  }}
+  .il-arrow {{
+    font-size:1.1em;color:{THEME_COLOR};flex-shrink:0;font-weight:700;
+    padding:13px 12px 13px 0;transition:transform 0.15s;align-self:center;
+  }}
+  .il-card:hover .il-arrow {{transform:translateX(4px);}}
+  @media(max-width:500px) {{
+    .il-related-section {{margin:2em 0!important;}}
+    .il-grid {{grid-template-columns:1fr!important;}}
+    .il-card-title {{font-size:0.86em;}}
+  }}
+</style>
 <!-- /내부링크 -->
 """
     return section
@@ -538,19 +457,33 @@ def inject_anchor_links(html: str, related_posts: list, max_anchors: int = 2) ->
 # ══════════════════════════════════════════════════════════════════════════════
 
 def find_insert_position(html: str) -> int:
-    """관련 글 섹션 삽입 위치 결정 v2
+    """관련 글 섹션 삽입 위치 결정 v3
 
-    목표: 본문이 끝난 직후, 광고보다 앞, FAQ보다 앞
-    → 독자가 글을 다 읽은 시점에 연관글 노출 → 클릭률 최대화
-    → 광고 바로 위에 배치하면 AdSense 정책상 광고와 혼동 문제 우려 → 광고 앞 배치
+    목표: 본문 읽기 흐름 중간 — 독자가 충분히 읽은 후 자연스럽게 노출
+    → 본문 중간 h2 직후에 삽입 (읽다가 자연스럽게 연관글 발견)
+    → AdSense 광고와 혼동 없도록 광고 블록과 충분히 거리 둠
 
     우선순위:
-      1. FAQ 섹션 h2 바로 직전 (가장 이상적)
-      2. 첫 번째 AdSense 광고 블록 직전 (본문 후 첫 광고)
-      3. 마지막 </div> (ak-post / gg-post 래퍼) 직전
-      4. HTML 끝
+      1. 본문 전체 h2 중 60~70% 위치의 h2 직전 (본문 중간 적절한 위치)
+      2. FAQ/마치며 h2 직전 (글 마무리 직전)
+      3. 두 번째 AdSense 광고 블록 직전 (광고 사이)
+      4. HTML 끝 직전
     """
-    # 1. FAQ h2 탐색 (자주 묻는 질문 / FAQ / Q&A)
+    # 전체 h2 목록 수집
+    h2_matches = list(re.finditer(r'<h2[^>]*>', html, re.I))
+
+    # 1. 본문 h2 중 60~70% 위치 선택 (가장 자연스러운 중간 위치)
+    if len(h2_matches) >= 3:
+        # 60% 지점의 h2 선택
+        target_idx = max(1, int(len(h2_matches) * 0.6))
+        target_idx = min(target_idx, len(h2_matches) - 1)
+        target_h2 = h2_matches[target_idx]
+        # h2 블록 끝(닫는 태그) 뒤 위치
+        h2_end = html.find('</h2>', target_h2.start())
+        if h2_end != -1:
+            return h2_end + len('</h2>')
+
+    # 2. FAQ/마치며 h2 직전
     faq_match = re.search(
         r'<h2[^>]*>[^<]*(?:자주\s*묻|FAQ|Q&amp;A|자주하는|마치며|정리하며)[^<]*</h2>',
         html, re.I | re.S
@@ -558,23 +491,25 @@ def find_insert_position(html: str) -> int:
     if faq_match:
         return faq_match.start()
 
-    # 2. 첫 번째 AdSense ins 블록 직전 (본문 뒤 광고 앞)
+    # 3. 두 번째 AdSense 블록 직전
     ad_matches = list(re.finditer(r'<ins\s[^>]*class="adsbygoogle"', html, re.I))
-    if ad_matches:
-        first_ad = ad_matches[0]
-        # 광고 감싸는 <div style="margin:..."> 찾기
-        pre_ad = html[:first_ad.start()].rfind('<div style="margin:')
+    if len(ad_matches) >= 2:
+        second_ad = ad_matches[1]
+        pre_ad = html[:second_ad.start()].rfind('<div style="margin:')
         if pre_ad != -1:
             return pre_ad
-        return first_ad.start()
+        return second_ad.start()
 
-    # 3. ak-post / gg-post 닫는 태그 직전
-    for cls in ['</div>\n</div>', '</div>\n\n</div>', '</div>']:
-        pos = html.rfind(cls)
-        if pos != -1:
-            return pos
+    # 4. 첫 번째 AdSense 직전
+    if ad_matches:
+        pre_ad = html[:ad_matches[0].start()].rfind('<div style="margin:')
+        if pre_ad != -1:
+            return pre_ad
+        return ad_matches[0].start()
 
-    return len(html)
+    # 5. HTML 끝 직전
+    pos = html.rfind('</div>')
+    return pos if pos != -1 else len(html)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -917,24 +917,85 @@ def inject_images(file_path: str) -> str:
 
     # 이미지 5개 수집 (hero 1 + 본문 4)
     images = collect_images(query, labels)
-    # 부족하면 추가 수집 시도
+
+    # 중복 URL 제거 (same URL 여러 번 들어오는 경우 방지)
+    seen_urls = set()
+    deduped = []
+    for img in images:
+        if img["url"] not in seen_urls:
+            seen_urls.add(img["url"])
+            deduped.append(img)
+    images = deduped
+
+    # 부족하면 추가 수집 시도 (다른 키워드로 재시도)
     if len(images) < 5:
-        extra = collect_images(query + " technology", labels)
-        for img in extra:
-            if img["url"] not in {i["url"] for i in images}:
-                images.append(img)
+        extra_queries = [query + " 2026", query + " guide", query + " technology"]
+        for eq in extra_queries:
             if len(images) >= 5:
                 break
+            extra = collect_images(eq, labels)
+            for img in extra:
+                if img["url"] not in seen_urls:
+                    seen_urls.add(img["url"])
+                    images.append(img)
+                if len(images) >= 5:
+                    break
+
+    # 여전히 부족하면 Pollinations AI로 주제 맞춤 이미지 생성
+    if len(images) < 3:
+        print(f"  🤖 이미지 부족({len(images)}장) — AI 이미지 생성으로 보완...")
+        # Pollinations.ai — 무료 AI 이미지 생성, API 키 불필요
+        import hashlib as _hl
+        ai_prompts = [
+            f"{query}, professional blog illustration, clean modern style, 16:9",
+            f"{query} concept, infographic style, Korean blog, bright colors",
+            f"{query} overview, minimalist design, technology, 2026",
+        ]
+        for i, ap in enumerate(ai_prompts):
+            if len(images) >= 5:
+                break
+            # seed를 title+index 기반으로 고정 → 매번 같은 이미지 생성 방지
+            seed_val = int(_hl.md5(f"{title}{i}".encode()).hexdigest(), 16) % 99999
+            encoded_prompt = urllib.parse.quote(ap)
+            ai_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1200&height=630&seed={seed_val}&nologo=true"
+            try:
+                req_check = urllib.request.Request(ai_url, headers={"User-Agent": "Mozilla/5.0"}, method="HEAD")
+                with urllib.request.urlopen(req_check, timeout=15) as _r:
+                    if _r.status == 200 and ai_url not in seen_urls:
+                        seen_urls.add(ai_url)
+                        images.append({
+                            "url": ai_url,
+                            "alt": f"{query} 설명 이미지",
+                            "credit": "Pollinations AI",
+                            "credit_url": "https://pollinations.ai",
+                            "source": "ai_generated",
+                            "source_label": "🤖 AI 생성 이미지",
+                        })
+                        print(f"  ✅ AI 이미지 생성 성공 [{i+1}]")
+            except Exception as _ae:
+                print(f"  ⚠️  AI 이미지 생성 실패 [{i+1}]: {_ae}")
+
+    # Unsplash 고정 풀에서 추가 (최후 보완, 항상 다른 사진)
+    if len(images) < 3:
+        import hashlib as _hl2
+        for fi, fb in enumerate(FALLBACK_IMAGES):
+            if len(images) >= 5:
+                break
+            if fb["url"] not in seen_urls:
+                seen_urls.add(fb["url"])
+                images.append(fb)
 
     hero = images[0]
-    print(f"  ✅ 대표 이미지 확보 ({hero['source']})")
+    print(f"  ✅ 대표 이미지 확보 ({hero['source']}) — 총 {len(images)}장")
 
     # ── 본문 이미지 삽입 (h2 섹션 사이, 최대 4개) ─────────────────────────────
-    if len(images) >= 2:
-        body = insert_body_images(body, images, title)
-        print(f"  ✅ 본문 이미지 {min(len(images)-1, 4)}개 삽입")
+    # hero는 제외하고 나머지(중복 없이)를 본문에 삽입
+    body_imgs = [img for img in images[1:] if img["url"] != hero["url"]]
+    if body_imgs:
+        body = insert_body_images(body, [hero] + body_imgs, title)
+        print(f"  ✅ 본문 이미지 {min(len(body_imgs), 4)}개 삽입")
     else:
-        print(f"  ⚠️  이미지 부족 — 본문 삽입 스킵")
+        print(f"  ⚠️  본문 삽입용 이미지 없음 — hero만 사용")
 
     # ── front matter에 hero 정보 저장 ──────────────────────────────
     hero_url          = hero["url"]

@@ -132,7 +132,7 @@ AD_DISPLAY = AD_DISPLAY_INS
 PREMIUM_CSS = """
 <style>
 .ak-post{font-family:'Noto Sans KR',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',sans-serif;font-size:17px;line-height:1.9;color:#1a1a2e;max-width:760px;margin:0 auto;padding:0 4px;word-break:keep-all;overflow-wrap:break-word;content-visibility:auto;}
-.ak-post > p:first-of-type{font-size:1.08em;color:#2c3e70;line-height:2;padding:20px 24px;background:linear-gradient(135deg,#f0f4ff 0%,#e8f4f8 100%);border-radius:12px;border-left:4px solid #4f6ef7;margin-bottom:2em;}
+.ak-post > p:first-of-type{font-size:1.05em;color:#2c3e70;line-height:1.9;margin-bottom:1.4em;}
 .ak-post h2{font-size:1.5em;font-weight:700;color:#0d1b4b;margin:2.5em 0 0.9em;padding:0 0 0.5em;border-bottom:2px solid #e8ecf4;position:relative;}
 .ak-post h2::before{content:'';position:absolute;bottom:-2px;left:0;width:60px;height:2px;background:#4f6ef7;}
 .ak-post h3{font-size:1.15em;font-weight:600;color:#1a237e;margin:1.8em 0 0.6em;padding-left:12px;border-left:3px solid #7c8ef7;}
@@ -674,8 +674,9 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
 {read_badge}
 <!-- 네이버 웹문서 스마트블록: 요약 박스 — 크롤러가 미리보기 텍스트로 우선 사용 -->
 <!-- META(구글 검색결과 설명)와 다른 내용으로 채워 네이버 중복 패널티 방지 -->
-<div class="post-summary" style="background:#f0f4ff;border-left:4px solid #4361ee;border-radius:0 10px 10px 0;padding:1em 1.4em;margin:0 0 1.8em;font-size:0.97em;line-height:1.7;color:#333;">
-<strong>📌 이 글 핵심 요약</strong><br>{safe_summary}
+<div class="post-summary" style="background:linear-gradient(135deg,#eef1ff 0%,#f4f7ff 100%);border:1.5px solid #c5ceff;border-radius:14px;padding:1.2em 1.6em 1.2em 1.4em;margin:0 0 2em;font-size:0.95em;line-height:1.8;color:#1a237e;box-shadow:0 2px 10px rgba(67,97,238,0.08);">
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:0.5em;font-weight:800;font-size:0.97em;color:#3949ab;">📌 이 글 핵심 요약</div>
+<div style="color:#333;font-size:0.94em;line-height:1.75;">{safe_summary}</div>
 </div>
 {hero_figure}{processed}
 
