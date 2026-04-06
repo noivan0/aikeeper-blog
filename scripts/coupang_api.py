@@ -2,6 +2,7 @@
 쿠팡 파트너스 Open API V1 클라이언트
 - HMAC 인증: yyMMddTHHmmssZ 형식 (공식 문서 기준)
 - 상품 검색 / shortenUrl 생성 / 이미지 수집
+- 네트워크 웹필터 우회: SOCKS5 프록시 경유 (회사 네트워크 차단 대응)
 """
 import hmac
 import hashlib
@@ -10,7 +11,93 @@ import urllib.parse
 import json
 import os
 import re
+import ssl
+import socket
 from time import gmtime, strftime
+
+# ── SOCKS5 프록시 설정 (회사 웹필터 우회용) ──────────────────────────────
+# 87.117.11.57:1080 — 쿠팡 API 접근 확인된 프록시
+# 프록시 실패 시 자동으로 다음 프록시로 폴백
+_PROXY_LIST = [
+    ("87.117.11.57", 1080),
+    ("91.201.119.198", 1337),
+    ("178.207.10.110", 1080),
+]
+_working_proxy = None  # 한 번 성공한 프록시 캐시
+
+def _get_socks_socket(host, port, timeout=20):
+    """SOCKS5 프록시를 경유한 SSL 소켓 반환. 실패 시 None."""
+    try:
+        import socks as _socks
+        for proxy_host, proxy_port in _PROXY_LIST:
+            try:
+                s = _socks.socksocket()
+                s.set_proxy(_socks.SOCKS5, proxy_host, proxy_port)
+                s.settimeout(timeout)
+                s.connect((host, port))
+                ctx = ssl.create_default_context()
+                ss = ctx.wrap_socket(s, server_hostname=host)
+                return ss, f"{proxy_host}:{proxy_port}"
+            except Exception:
+                continue
+    except ImportError:
+        pass
+    return None, None
+
+def _http_via_proxy(method, path_with_query, body=None, extra_headers=None):
+    """SOCKS5 프록시를 통해 쿠팡 API 호출. 성공 시 dict 반환."""
+    host = "api-gateway.coupang.com"
+    auth = generate_hmac(method, path_with_query)
+    headers = {
+        "Host": host,
+        "Authorization": auth,
+        "Content-Type": "application/json;charset=UTF-8",
+        "Connection": "close",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+
+    ss, proxy_used = _get_socks_socket(host, 443)
+    if ss is None:
+        raise ConnectionError("모든 SOCKS5 프록시 연결 실패")
+
+    header_str = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
+    if body:
+        body_bytes = json.dumps(body).encode("utf-8")
+        header_str += f"Content-Length: {len(body_bytes)}\r\n"
+        req_bytes = f"{method} {path_with_query} HTTP/1.1\r\n{header_str}\r\n".encode() + body_bytes
+    else:
+        req_bytes = f"{method} {path_with_query} HTTP/1.1\r\n{header_str}\r\n".encode()
+
+    ss.send(req_bytes)
+    resp = b""
+    while True:
+        try:
+            chunk = ss.recv(8192)
+            if not chunk: break
+            resp += chunk
+        except Exception: break
+    try: ss.close()
+    except: pass
+
+    # HTTP 응답 파싱
+    header_end = resp.find(b"\r\n\r\n")
+    if header_end == -1:
+        raise ValueError(f"응답 파싱 실패 (proxy={proxy_used})")
+    status_line = resp[:resp.find(b"\r\n")].decode("utf-8", errors="replace")
+    status_code = int(status_line.split()[1]) if len(status_line.split()) > 1 else 0
+    raw_body = resp[header_end + 4:]
+
+    if not raw_body.strip():
+        raise ValueError("빈 응답")
+    for enc in ("utf-8", "euc-kr", "cp949", "latin-1"):
+        try:
+            text = raw_body.decode(enc)
+            if text.strip():
+                return json.loads(text)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+    raise ValueError(f"응답 디코딩/파싱 실패 (status={status_code})")
 
 DOMAIN = "https://api-gateway.coupang.com"
 ACCESS_KEY = os.environ.get("COUPANG_ACCESS_KEY", "")
@@ -39,6 +126,13 @@ def generate_hmac(method: str, url: str) -> str:
 
 
 def _get(path_with_query: str) -> dict:
+    # 1차: SOCKS5 프록시 경유 (웹필터 우회)
+    try:
+        return _http_via_proxy("GET", path_with_query)
+    except Exception as proxy_err:
+        pass  # 프록시 실패 시 직접 연결 시도
+
+    # 2차: 직접 연결 (프록시 없는 환경 대비)
     auth = generate_hmac("GET", path_with_query)
     req = urllib.request.Request(
         DOMAIN + path_with_query,
@@ -48,7 +142,6 @@ def _get(path_with_query: str) -> dict:
         raw = r.read()
         if not raw or not raw.strip():
             raise ValueError("빈 응답")
-        # 응답 인코딩 감지: utf-8 → euc-kr → latin-1 순으로 fallback
         for enc in ("utf-8", "euc-kr", "cp949", "latin-1"):
             try:
                 text = raw.decode(enc)
@@ -56,7 +149,6 @@ def _get(path_with_query: str) -> dict:
                     return json.loads(text)
             except (UnicodeDecodeError, json.JSONDecodeError):
                 continue
-        # 마지막 수단: 디코딩 불가 바이트 무시
         decoded = raw.decode("utf-8", errors="ignore")
         if not decoded.strip():
             raise ValueError("디코딩 후 빈 응답")
@@ -64,6 +156,13 @@ def _get(path_with_query: str) -> dict:
 
 
 def _post(path: str, body: dict) -> dict:
+    # 1차: SOCKS5 프록시 경유
+    try:
+        return _http_via_proxy("POST", path, body=body)
+    except Exception:
+        pass
+
+    # 2차: 직접 연결
     auth = generate_hmac("POST", path)
     req = urllib.request.Request(
         DOMAIN + path,
