@@ -959,32 +959,32 @@ def inject_images(file_path: str) -> str:
 
     print(f"  🔍 이미지 검색: {query}")
 
+    # 전역 중복 추적 set — collect_images가 검증 실패로 버린 URL도 여기에 누적
+    global_seen: set = set()
+
+    def _merge(new_images: list) -> list:
+        """새 이미지 목록에서 global_seen에 없는 것만 추가하고 global_seen 업데이트"""
+        result = []
+        for img in new_images:
+            if img["url"] not in global_seen:
+                global_seen.add(img["url"])
+                result.append(img)
+        return result
+
     # 이미지 5개 수집 (hero 1 + 본문 4)
-    images = collect_images(query, labels)
+    images = _merge(collect_images(query, labels, exclude_urls=global_seen))
 
-    # 중복 URL 제거 (same URL 여러 번 들어오는 경우 방지)
-    seen_urls = set()
-    deduped = []
-    for img in images:
-        if img["url"] not in seen_urls:
-            seen_urls.add(img["url"])
-            deduped.append(img)
-    images = deduped
-
-    # 부족하면 추가 수집 시도 (다른 키워드로 재시도 — seen_urls 전달로 중복 원천 차단)
+    # 부족하면 추가 수집 시도 (다른 키워드로 재시도)
     if len(images) < 5:
         extra_queries = [query + " 2026", query + " guide", query + " technology"]
         for eq in extra_queries:
             if len(images) >= 5:
                 break
-            # exclude_urls로 기존 수집 URL 전달 → collect_images 내부에서 처음부터 제외
-            extra = collect_images(eq, labels, exclude_urls=seen_urls)
-            for img in extra:
-                if img["url"] not in seen_urls:
-                    seen_urls.add(img["url"])
-                    images.append(img)
-                    if len(images) >= 5:
-                        break
+            # global_seen 전달 → collect_images 내부에서 검증 실패 URL 포함 모두 제외
+            extra = _merge(collect_images(eq, labels, exclude_urls=global_seen))
+            images.extend(extra)
+            if len(images) >= 5:
+                break
 
     # 여전히 부족하면 Pollinations AI로 주제 맞춤 이미지 생성
     if len(images) < 3:
