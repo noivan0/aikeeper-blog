@@ -7,6 +7,12 @@
 - SEO: FAQ 스키마, 롱테일 키워드, E-E-A-T 신호
 """
 import os
+
+# .env 자동 로드 (cron/subprocess 환경에서도 동작)
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from env_loader import load_env, make_anthropic_client, get_model
+load_env()
 import sys
 import re
 import json
@@ -375,10 +381,7 @@ A5: 상세 답변
 완성된 마크다운 본문 (10,000자 이상)
 ===END==="""
 
-    client_kwargs = dict(base_url=ANTHROPIC_BASE_URL, timeout=600, max_retries=2)
-    if ANTHROPIC_API_KEY:
-        client_kwargs["api_key"] = ANTHROPIC_API_KEY
-    client = _anthropic.Anthropic(**client_kwargs)
+    client = make_anthropic_client(timeout=600, max_retries=2)
 
     # 블로그 타입에 따라 시스템 프롬프트 선택
     active_system_prompt = SYSTEM_PROMPT_NEWS if BLOG_TYPE == "NEWS" else SYSTEM_PROMPT

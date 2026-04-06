@@ -4,6 +4,12 @@ aikeeper의 find_topics.py 방식 그대로 적용.
 카테고리: 세계/사회/경제/IT/생활 뉴스 (한국 시사 중심)
 """
 import os, sys, re, subprocess, datetime, hashlib, json, time, math
+
+# .env 자동 로드 (cron/subprocess 환경에서도 동작)
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from env_loader import load_env, make_anthropic_client, get_model
+load_env()
 import urllib.request, urllib.parse
 
 import anthropic as _anthropic
@@ -448,12 +454,9 @@ def select_best_topic(news_items, used_history, target_category=None):
 차별화된 글쓰기 각도
 ===END==="""
 
-    _ck = dict(base_url=ANTHROPIC_BASE_URL, timeout=120, max_retries=2)
-    if ANTHROPIC_API_KEY:
-        _ck["api_key"] = ANTHROPIC_API_KEY
-    client = _anthropic.Anthropic(**_ck)
+    client = make_anthropic_client(timeout=120, max_retries=2)
     resp = client.messages.create(
-        model=ANTHROPIC_MODEL, max_tokens=600,
+        model=get_model(), max_tokens=600,
         messages=[{"role": "user", "content": prompt}]
     )
     text = resp.content[0].text

@@ -10,6 +10,12 @@
 - 하드코딩 최소화
 """
 import os, sys, json, re, anthropic
+
+# .env 자동 로드 (cron/subprocess 환경에서도 동작)
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from env_loader import load_env, make_anthropic_client, get_model
+load_env()
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -380,14 +386,11 @@ A4:
 ===END===
 """
 
-    client = anthropic.Anthropic(
-        api_key=os.environ["ANTHROPIC_API_KEY"],
-        base_url=ANTHROPIC_BASE_URL,
-    )
+    client = make_anthropic_client(timeout=600, max_retries=2)
 
-    print(f"   Claude 포스트 생성 중... ({ANTHROPIC_MODEL}) | 제목패턴: {title_pattern[:30]}...")
+    print(f"   Claude 포스트 생성 중... ({get_model()}) | 제목패턴: {title_pattern[:30]}...")
     msg = client.messages.create(
-        model=ANTHROPIC_MODEL,
+        model=get_model(),
         max_tokens=8192,
         system=SYSTEM_PROMPT_COUPANG,
         messages=[{"role": "user", "content": prompt}]

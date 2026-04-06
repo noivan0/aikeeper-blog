@@ -7,6 +7,12 @@
 - 중복 주제 방지: Blogger API로 최근 30개 포스트 제목 수집 → 유사도 차단
 """
 import os, sys, json, random, time, re, hashlib, urllib.request, urllib.parse, urllib.error, anthropic
+
+# .env 자동 로드 (cron/subprocess 환경에서도 동작)
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from env_loader import load_env, make_anthropic_client, get_model
+load_env()
 from datetime import datetime, timezone, timedelta
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -322,10 +328,7 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
     else:
         product_summary = f"[상품 데이터 없음] 카테고리: {cat_name}\n→ 카테고리명을 기반으로 2026년 인기 상품 TOP3 주제를 창의적으로 선정하세요."
 
-    client = anthropic.Anthropic(
-        api_key=os.environ["ANTHROPIC_API_KEY"],
-        base_url=ANTHROPIC_BASE_URL,
-    )
+    client = make_anthropic_client(timeout=120, max_retries=2)
 
     # 고CPC 카테고리 힌트 구성
     high_cpc_hint = (

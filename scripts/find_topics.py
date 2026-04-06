@@ -3,6 +3,10 @@
 도메인 116개, 앵글 875개, 중복방지, 도메인 로테이션
 """
 import os, sys, re, subprocess, tempfile, datetime, hashlib, json, time, math
+# .env 자동 로드 (crон/subprocess 환경에서도 동작)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from env_loader import load_env, make_anthropic_client, get_model
+load_env()
 import urllib.request, urllib.parse
 
 import anthropic as _anthropic
@@ -10,12 +14,9 @@ import anthropic as _anthropic
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
-ANTHROPIC_BASE_URL = os.environ.get(
-    "ANTHROPIC_BASE_URL",
-    "https://internal-apigw-kr.hmg-corp.io/hchat-in/api/v3/claude"
-)
-ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-BRAVE_API_KEY   = os.environ.get("BRAVE_API_KEY", "")
+ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://internal-apigw-kr.hmg-corp.io/hchat-in/api/v3/claude")
+ANTHROPIC_MODEL    = get_model()
+BRAVE_API_KEY      = os.environ.get("BRAVE_API_KEY", "")
 
 TODAY   = datetime.date.today().isoformat()
 YEAR_WW = datetime.date.today().strftime("%Y-W%V")
@@ -2001,10 +2002,7 @@ AI키퍼 블로그(신생 한국어 AI 전문 블로그)의 다음 포스트 주
 참고한 원본 후보 제목
 ===END==="""
 
-    _ck = dict(base_url=ANTHROPIC_BASE_URL, timeout=120, max_retries=2)
-    if ANTHROPIC_API_KEY:
-        _ck["api_key"] = ANTHROPIC_API_KEY
-    client = _anthropic.Anthropic(**_ck)
+    client = make_anthropic_client(timeout=120, max_retries=2)
     response = client.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=800,
