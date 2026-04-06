@@ -36,29 +36,42 @@ jobs:
           access = os.environ['COUPANG_ACCESS_KEY']
           secret = os.environ['COUPANG_SECRET_KEY']
 
-          def make_auth(method, path, query=''):
+          def make_auth(method, path, query='', with_question_mark=False):
               from time import gmtime, strftime
               dt = strftime('%y%m%d', gmtime()) + 'T' + strftime('%H%M%S', gmtime()) + 'Z'
-              # 쿠팡 공식: message = datetime + method + path + query (? 미포함)
-              msg = dt + method + path + (query if query else '')
+              # 방식 A: ? 없음 (서버 coupang_api.py 방식)
+              # 방식 B: ? 포함 (일부 문서 방식)
+              q_part = ('?' + query if with_question_mark else query) if query else ''
+              msg = dt + method + path + q_part
               sig = hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
               return f'CEA algorithm=HmacSHA256, access-key={access}, signed-date={dt}, signature={sig}'
 
           def fetch_category(cat_id, limit=20):
               path = f'/v2/providers/affiliate_open_api/apis/openapi/products/bestcategories/{cat_id}'
               query = f'limit={limit}&subId=ggultongmon'
-              auth = make_auth('GET', path, query)
-              req = urllib.request.Request(
-                  f'https://api-gateway.coupang.com{path}?{query}',
-                  headers={'Authorization': auth, 'Content-Type': 'application/json;charset=UTF-8'}
-              )
-              try:
-                  with urllib.request.urlopen(req, timeout=15) as r:
-                      data = json.loads(r.read())
-                      if data.get('rCode') == '0':
-                          return data.get('data', [])
-              except Exception as e:
-                  print(f'  cat {cat_id} 실패: {e}', file=sys.stderr)
+              # 두 방식 모두 시도
+              for with_q in [False, True]:
+                  auth = make_auth('GET', path, query, with_question_mark=with_q)
+                  req = urllib.request.Request(
+                      f'https://api-gateway.coupang.com{path}?{query}',
+                      headers={'Authorization': auth, 'Content-Type': 'application/json;charset=UTF-8'}
+                  )
+                  try:
+                      with urllib.request.urlopen(req, timeout=15) as r:
+                          raw = r.read()
+                          for enc in ['utf-8', 'euc-kr', 'cp949', 'latin-1']:
+                              try:
+                                  data = json.loads(raw.decode(enc))
+                                  if data.get('rCode') == '0':
+                                      print(f'  cat {cat_id} 성공 (방식{"B" if with_q else "A"}): {len(data.get("data",[]))}개')
+                                      return data.get('data', [])
+                                  else:
+                                      print(f'  cat {cat_id} rCode={data.get("rCode")} (방식{"B" if with_q else "A"})', file=sys.stderr)
+                                  break
+                              except Exception:
+                                  continue
+                  except Exception as e:
+                      print(f'  cat {cat_id} 연결실패 (방식{"B" if with_q else "A"}): {e}', file=sys.stderr)
               return []
 
           cats_str = os.environ.get('INPUT_CATEGORIES', '1001,1002,1010,1011,1012,1013,1015,1016,1017,1018,1019,1020')
