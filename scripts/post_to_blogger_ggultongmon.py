@@ -68,13 +68,26 @@ def publish_to_blogger(title: str, html: str, labels: list, token: str) -> dict:
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json;charset=UTF-8",
     })
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode('utf-8', errors='replace')[:500]
-        print(f"[ERROR] Blogger API {e.code}: {err_body}")
-        raise
+    import time as _time
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode('utf-8', errors='replace')[:500]
+            if e.code == 429:
+                wait = 60 * (attempt + 1)  # 60초 → 120초 → 180초
+                print(f"[WARN] Blogger API 429 Rate Limit — {wait}초 대기 후 재시도 ({attempt+1}/3)")
+                _time.sleep(wait)
+                # 토큰 만료 대비 req 재생성
+                req = urllib.request.Request(url, data=body, method="POST", headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json;charset=UTF-8",
+                })
+                continue
+            print(f"[ERROR] Blogger API {e.code}: {err_body}")
+            raise
+    raise RuntimeError("Blogger API 429 — 3회 재시도 모두 실패")
 
 
 def save_markdown(title: str, content: str, labels: list, products: list) -> Path:
