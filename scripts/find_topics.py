@@ -1910,8 +1910,9 @@ def select_best_topic(news_items, used_history):
         for item in ordered_merged[:35]
     ])
 
-    # 기존 발행 제목 목록을 프롬프트에 주입
-    used_titles_text = "\n".join(f"- {t}" for t in sorted(used_history)) if used_history else "없음"
+    # 기존 발행 제목 목록 — 최근 30개만 (오래된 건 중복 허용)
+    recent_used = sorted(used_history)[-30:] if len(used_history) > 30 else sorted(used_history)
+    used_titles_text = "\n".join(f"- {t}" for t in recent_used) if recent_used else "없음"
 
     # 실제 반복 패턴 분석 → 동적 금지 패턴 생성
     from collections import Counter
