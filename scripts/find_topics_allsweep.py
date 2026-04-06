@@ -201,13 +201,11 @@ def similarity(a, b):
     return (ws + bs) / 2.0
 
 def is_duplicate(query, used, threshold=0.30):
-    q = query.lower()
-    for u in used:
-        if similarity(q, u) >= threshold:
-            return True
-        if len(get_words(q) & get_words(u)) >= 3:
-            return True
-    return False
+    """검색 의도(Search Intent) 기반 중복 판단 — intent_dedup 공통 모듈 사용"""
+    import sys as _sys, os as _os
+    _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+    from intent_dedup import is_duplicate as _dedup
+    return _dedup(query, used, threshold)
 
 def has_ad(text):
     tl = text.lower()
