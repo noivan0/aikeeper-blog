@@ -6,7 +6,8 @@ GITHUB_OUTPUT = os.environ.get("GITHUB_OUTPUT", "/tmp/gh_output.txt")
 
 topic = sys.argv[1] if len(sys.argv) > 1 else "AI 최신 뉴스"
 keywords = sys.argv[2] if len(sys.argv) > 2 else ""
-angle = sys.argv[3] if len(sys.argv) > 3 else ""
+# angle: argv[3] 또는 환경변수 ANGLE (shell special char 안전하게 env로 전달)
+angle = os.environ.get("ANGLE", "") or (sys.argv[3] if len(sys.argv) > 3 else "")
 
 r = subprocess.run(
     [sys.executable, "scripts/generate_post.py", topic, keywords, angle],

@@ -81,7 +81,9 @@ jobs:
 
       - name: Generate post
         id: gen
-        run: python3 scripts/ci_generate.py "${{ steps.topic.outputs.topic }}" "${{ steps.topic.outputs.keywords }}" "${{ steps.topic.outputs.angle }}"
+        run: python3 scripts/ci_generate.py "${{ steps.topic.outputs.topic }}" "${{ steps.topic.outputs.keywords }}"
+        env:
+          ANGLE: ${{ steps.topic.outputs.angle }}
 
       - name: Add images
         continue-on-error: true
