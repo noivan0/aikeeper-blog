@@ -88,12 +88,11 @@ jobs:
         id: gen
         env:
           POSTS_DIR: posts-allsweep
+          ANGLE: ${{ steps.topic.outputs.angle }}
         run: |
           python3 scripts/ci_generate.py \
             "${{ steps.topic.outputs.topic }}" \
             "${{ steps.topic.outputs.keywords }}"
-        env:
-          ANGLE: ${{ steps.topic.outputs.angle }}
 
       - name: 이미지 추가
         continue-on-error: true
