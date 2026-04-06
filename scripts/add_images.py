@@ -1058,6 +1058,15 @@ def inject_images(file_path: str) -> str:
                 seen_urls.add(fb["url"])
                 images.append(fb)
 
+    # ── images 리스트 자체 중복 제거 (global_seen 타이밍 이슈 최종 방어) ──────────
+    _seen_final = set()
+    images_dedup = []
+    for img in images:
+        if img["url"] not in _seen_final:
+            _seen_final.add(img["url"])
+            images_dedup.append(img)
+    images = images_dedup
+
     # ── hero 이미지 선택: 배경+텍스트 형태로 대표이미지 최적화 ───────────────────
     # 크롤링 이미지(news/reddit/wikimedia)가 있으면 hero로 사용,
     # 없거나 AI생성만 있으면 make_hero_image로 배경+텍스트 썸네일 생성
