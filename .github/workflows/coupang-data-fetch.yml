@@ -25,6 +25,8 @@ jobs:
         env:
           COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
           COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+          INPUT_CATEGORIES: ${{ github.event.inputs.categories || '1001,1002,1010,1011,1012,1013,1015,1016,1017,1018,1019,1020' }}
+          INPUT_LIMIT: ${{ github.event.inputs.limit || '20' }}
         run: |
           python3 - << 'PYEOF'
           import hmac, hashlib, datetime, urllib.request, json, os, sys
@@ -56,8 +58,10 @@ jobs:
                   print(f'  cat {cat_id} 실패: {e}', file=sys.stderr)
               return []
 
-          cats = [int(x.strip()) for x in '${{ github.event.inputs.categories || "1001,1002,1010,1011,1012,1013,1015,1016,1017,1018,1019,1020" }}'.split(',')]
-          limit = int('${{ github.event.inputs.limit || "20" }}')
+          cats_str = os.environ.get('INPUT_CATEGORIES', '1001,1002,1010,1011,1012,1013,1015,1016,1017,1018,1019,1020')
+          limit_str = os.environ.get('INPUT_LIMIT', '20')
+          cats = [int(x.strip()) for x in cats_str.split(',')]
+          limit = int(limit_str)
 
           all_data = {}
           for cat in cats:
