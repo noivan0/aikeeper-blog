@@ -24,6 +24,15 @@ fi
 echo $$ > "$LOCK_FILE"
 trap "rm -f '$LOCK_FILE'" EXIT
 
+# 일일 발행 횟수 제한 (Blogger API 할당량 보호)
+MAX_DAILY=20
+TODAY=$(date '+%Y-%m-%d')
+TODAY_COUNT=$(grep "$TODAY" "$LOG_FILE" 2>/dev/null | grep -c "✅ 포스팅 완료" || echo 0)
+if [ "$TODAY_COUNT" -ge "$MAX_DAILY" ]; then
+    echo "[SKIP] 오늘 발행 ${TODAY_COUNT}회 달성 (최대 ${MAX_DAILY}회) — 종료"
+    exit 0
+fi
+
 mkdir -p "$POSTS_DIR"
 echo "[$KST] ===== 포스팅 시작 [blog: $BLOG_KEY] =====" | tee -a "$LOG_FILE"
 

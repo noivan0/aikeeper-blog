@@ -17,6 +17,17 @@ fi
 echo $$ > "$LOCK_FILE"
 trap "rm -f '$LOCK_FILE'" EXIT
 
+# 일일 발행 횟수 제한 (Blogger API 할당량 보호 — 3개 블로그 균등 분배)
+MAX_DAILY=20
+TODAY=$(date '+%Y-%m-%d')
+TODAY_COUNT=$(grep -c "✅ 포스팅 완료" /var/log/aikeeper_cron.log 2>/dev/null | head -1 || echo 0)
+# 오늘 날짜 기준으로만 카운트
+TODAY_COUNT=$(grep "$TODAY" /var/log/aikeeper_cron.log 2>/dev/null | grep -c "✅ 포스팅 완료" || echo 0)
+if [ "$TODAY_COUNT" -ge "$MAX_DAILY" ]; then
+    echo "[SKIP] 오늘 발행 ${TODAY_COUNT}회 달성 (최대 ${MAX_DAILY}회) — 종료"
+    exit 0
+fi
+
 # .env 로드 (JSON 값 포함 안전 처리 — xargs 방식은 JSON 다중줄 값에서 오류 발생)
 set +e
 while IFS= read -r line; do
