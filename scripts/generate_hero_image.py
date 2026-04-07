@@ -118,7 +118,7 @@ def generate_marketing_copy(title: str, blog: str = "aikeeper") -> str:
         }).encode("utf-8")
 
         base_url = ANTHROPIC_BASE_URL.rstrip("/")
-        api_url = f"{base_url}/messages"
+        api_url = f"{base_url}/v1/messages"
 
         req = urllib.request.Request(
             api_url,
