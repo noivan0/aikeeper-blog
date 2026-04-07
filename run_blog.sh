@@ -18,7 +18,15 @@ for arg in "$@"; do
 done
 
 # ── .env 로드 (공통 API 키) ─────────────────────────────────
-export $(grep -v '^#' .env | xargs)
+# .env 로드 (JSON 값 포함 안전 처리 — xargs 방식은 JSON 다중줄 값에서 오류 발생)
+while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    val="${val#\'}" ; val="${val%\'}"   # 싱글쿼트 제거
+    val="${val#\"}" ; val="${val%\"}"   # 더블쿼트 제거
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && export "$key=$val"
+done < .env
 
 LOG_FILE="/var/log/aikeeper_cron.log"
 TIMESTAMP() { date '+%Y-%m-%d %H:%M:%S KST'; }
@@ -52,28 +60,37 @@ fi
 # 블로그별 환경변수 주입
 # blogs.json의 env 섹션 키:값 → 환경변수명:환경변수명 매핑
 # (현재는 .env 파일의 동일 키 사용, 향후 블로그별 독립 키 지원)
-eval $(python3 -c "
-import json, os
+# 블로그 메타 환경변수 — Python으로 env 파일에 쓰고 source (JSON 값 eval 오류 방지)
+_BLOG_ENV_TMP=$(mktemp)
+python3 - <<PYEOF > "$_BLOG_ENV_TMP"
+import json, os, shlex
 b = json.loads('''$BLOG_CONFIG''')
 env_map = b.get('env', {})
 for env_key, src_key in env_map.items():
     val = os.environ.get(src_key, os.environ.get(env_key, ''))
-    if val:
-        print(f'export {env_key}=\"{val}\"')
-# 블로그 메타 환경변수
-print(f'export TARGET_BLOG_ID=\"{b[\"blog_id\"]}\"')
-print(f'export TARGET_BLOG_URL=\"{b[\"blog_url\"]}\"')
-print(f'export TARGET_BLOG_NAME=\"{b[\"name\"]}\"')
-print(f'export ADSENSE_PUB=\"{b.get(\"adsense_pub\",\"\")}\"')
-print(f'export ADSENSE_IN_ARTICLE_SLOT=\"{b.get(\"adsense_in_article_slot\",\"\")}\"')
-print(f'export ADSENSE_DISPLAY_SLOT=\"{b.get(\"adsense_display_slot\",\"\")}\"')
-print(f'export NAVER_SITE_VERIFICATION=\"{b.get(\"naver_site_verification\",\"\")}\"')
-print(f'export BLOG_TYPE=\"{b.get(\"topic_domain\",\"AI\")}\"')
+    if val and '\n' not in val:
+        print(f'export {env_key}={shlex.quote(val)}')
+meta = {
+    'TARGET_BLOG_ID': b['blog_id'],
+    'TARGET_BLOG_URL': b['blog_url'],
+    'TARGET_BLOG_NAME': b['name'],
+    'ADSENSE_PUB': b.get('adsense_pub',''),
+    'ADSENSE_IN_ARTICLE_SLOT': b.get('adsense_in_article_slot',''),
+    'ADSENSE_DISPLAY_SLOT': b.get('adsense_display_slot',''),
+    'NAVER_SITE_VERIFICATION': b.get('naver_site_verification',''),
+    'BLOG_TYPE': b.get('topic_domain','AI'),
+}
 gh = b.get('github', {})
-print(f'export GITHUB_REPO=\"{gh.get(\"repo\",\"\")}\"')
-print(f'export GITHUB_BRANCH=\"{gh.get(\"branch\",\"main\")}\"')
-print(f'export POSTS_DIR=\"{gh.get(\"posts_dir\",\"posts\")}\"')
-")
+meta['GITHUB_REPO']   = gh.get('repo','')
+meta['GITHUB_BRANCH'] = gh.get('branch','main')
+meta['POSTS_DIR']     = gh.get('posts_dir','posts')
+for k, v in meta.items():
+    if '\n' not in str(v):
+        print(f'export {k}={shlex.quote(str(v))}')
+PYEOF
+# shellcheck source=/dev/null
+source "$_BLOG_ENV_TMP"
+rm -f "$_BLOG_ENV_TMP"
 
 echo "[$(TIMESTAMP)] 블로그: $TARGET_BLOG_NAME ($TARGET_BLOG_URL)" | tee -a "$LOG_FILE"
 
