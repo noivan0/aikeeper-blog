@@ -47,6 +47,14 @@ FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
 ]
 
+# Bold 전용 폰트 (카피 텍스트용)
+FONT_BOLD_CANDIDATES = [
+    str(FONTS_DIR / "NotoSansKR-Bold.otf"),
+    str(FONTS_DIR / "NotoSansKR.ttf"),
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+]
+
 # ── 환경변수 로드 ─────────────────────────────────────────────────
 def _load_env():
     env_path = PROJECT_DIR / ".env"
@@ -170,8 +178,9 @@ def _default_copy(title: str, blog: str) -> str:
 
 # ── 2. 폰트 로드 ─────────────────────────────────────────────────
 def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    """사용 가능한 폰트 중 첫 번째를 로드"""
-    for path in FONT_CANDIDATES:
+    """사용 가능한 폰트 중 첫 번째를 로드. bold=True 시 Bold 전용 폰트 우선."""
+    candidates = FONT_BOLD_CANDIDATES if bold else FONT_CANDIDATES
+    for path in candidates:
         if os.path.exists(path):
             try:
                 return ImageFont.truetype(path, size)
@@ -257,10 +266,11 @@ def generate_image(title: str, copy_text: str, blog: str = "aikeeper",
     # ── Step 1: Solid dark background ──────────────────────────
     img = Image.new("RGB", (W, H), bg)
 
-    # ── Step 2: Point color radial glow (5 layers, center) ─────
+    # ── Step 2: Point color radial glow (multi-layer, immersive) ─
+    # Center glow
     cx, cy = W // 2, H // 2
-    glow_radii = [420, 320, 220, 150, 80]
-    glow_alphas = [18, 28, 38, 50, 60]
+    glow_radii = [500, 380, 260, 170, 90]
+    glow_alphas = [22, 35, 50, 65, 80]
     for radius, alpha in zip(glow_radii, glow_alphas):
         glow_ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         gd = ImageDraw.Draw(glow_ov)
@@ -271,43 +281,65 @@ def generate_image(title: str, copy_text: str, blog: str = "aikeeper",
         img = img.convert("RGBA")
         img = Image.alpha_composite(img, glow_ov)
         img = img.convert("RGB")
+    # Left-side secondary glow (카피 텍스트 영역 강조)
+    lx, ly = W // 5, H // 2
+    for radius, alpha in zip([300, 180, 90], [15, 25, 38]):
+        glow_ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(glow_ov)
+        gd.ellipse(
+            [lx - radius, ly - radius, lx + radius, ly + radius],
+            fill=(pc[0], pc[1], pc[2], alpha),
+        )
+        img = img.convert("RGBA")
+        img = Image.alpha_composite(img, glow_ov)
+        img = img.convert("RGB")
 
     draw = ImageDraw.Draw(img)
 
-    # ── Step 3: Top 3px point color line ───────────────────────
-    draw.rectangle([0, 0, W, 3], fill=pc)
+    # ── Step 3: Top 4px point color line ───────────────────────
+    draw.rectangle([0, 0, W, 4], fill=pc)
 
     # ── Step 4: Top-left brand pill button ─────────────────────
-    brand_font = _load_font(26)
+    # bar_x 는 Step 5와 동일하게 PAD 사용 (좌측 정렬 기준점 공유)
+    bar_x = PAD
+    bar_w = 6
+
+    brand_font = _load_font(24, bold=True)
     brand_text = theme["brand"]
+
+    # textbbox: (x0, y0, x1, y1) — y0 은 폰트 내부 상단 여백(ascent offset)
     bb = draw.textbbox((0, 0), brand_text, font=brand_font)
-    btw = bb[2] - bb[0]
-    bth = bb[3] - bb[1]
-    pill_px, pill_py = 16, 10
-    pill_x0 = PAD
-    pill_y0 = 28
-    pill_x1 = pill_x0 + btw + pill_px * 2
-    pill_y1 = pill_y0 + bth + pill_py * 2
+    # 실제 글리프 너비/높이 (내부 여백 포함하지 않음)
+    glyph_w = bb[2] - bb[0]   # 실제 문자 폭
+    glyph_h = bb[3] - bb[1]   # 실제 문자 높이
+    pill_pad_x = 20            # 좌우 패딩
+    pill_pad_y = 10            # 상하 패딩
+
+    pill_x0 = bar_x + bar_w + 12
+    pill_y0 = PAD              # PAD(60)만큼 내려서 상단 여백 확보
+    pill_x1 = pill_x0 + glyph_w + pill_pad_x * 2
+    pill_y1 = pill_y0 + glyph_h + pill_pad_y * 2
 
     pill_ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     pd_draw = ImageDraw.Draw(pill_ov)
     try:
         pd_draw.rounded_rectangle(
             [pill_x0, pill_y0, pill_x1, pill_y1],
-            radius=20,
-            fill=(pc[0], pc[1], pc[2], 200),
+            radius=22,
+            fill=(pc[0], pc[1], pc[2], 230),
         )
     except AttributeError:
         pd_draw.rectangle(
             [pill_x0, pill_y0, pill_x1, pill_y1],
-            fill=(pc[0], pc[1], pc[2], 200),
+            fill=(pc[0], pc[1], pc[2], 230),
         )
     img = img.convert("RGBA")
     img = Image.alpha_composite(img, pill_ov)
     img = img.convert("RGB")
     draw = ImageDraw.Draw(img)
+    # 텍스트 draw 위치: pill 상단 + pad - 폰트 내부 상단 여백(bb[1]) 보정
     draw.text(
-        (pill_x0 + pill_px, pill_y0 + pill_py),
+        (pill_x0 + pill_pad_x - bb[0], pill_y0 + pill_pad_y - bb[1]),
         brand_text,
         font=brand_font,
         fill=(255, 255, 255),
@@ -315,34 +347,43 @@ def generate_image(title: str, copy_text: str, blog: str = "aikeeper",
 
     # ── Step 5: Bold left-aligned copy text + vertical accent bar ──
     copy_font_size = 84
-    copy_font = _load_font(copy_font_size)
-    bar_x = PAD
-    bar_w = 4
-    text_x = bar_x + bar_w + 20
+    copy_font = _load_font(copy_font_size, bold=True)
+    # text_x = bar 오른쪽 + 간격 (pill_x0와 동일 기준)
+    text_x = bar_x + bar_w + 12
     copy_max_width = W - text_x - PAD
 
     copy_lines = _wrap_text(copy_text, copy_font, copy_max_width, draw)
     if len(copy_lines) > 3:
         copy_font_size = 64
-        copy_font = _load_font(copy_font_size)
+        copy_font = _load_font(copy_font_size, bold=True)
         copy_lines = _wrap_text(copy_text, copy_font, copy_max_width, draw)
 
     copy_line_h = copy_font_size + 14
     copy_total_h = len(copy_lines) * copy_line_h
-    # vertical center (slightly above center)
-    copy_start_y = (H - copy_total_h) // 2 - 30
 
-    # vertical accent bar
-    bar_top = copy_start_y
-    bar_bot = copy_start_y + copy_total_h
+    # vertical center: pill 아래 ~ 하단 title 위 영역에서 수직 중앙
+    brand_bottom = pill_y1 + 24
+    title_reserve = 90      # 하단 포스트 제목 영역 확보
+    available_h = H - brand_bottom - title_reserve
+    copy_start_y = brand_bottom + (available_h - copy_total_h) // 2
+
+    # vertical accent bar: 첫/마지막 줄 실제 글리프 bbox 기준으로 정확히 정렬
+    first_cb = draw.textbbox((0, 0), copy_lines[0], font=copy_font)
+    last_cb  = draw.textbbox((0, 0), copy_lines[-1], font=copy_font)
+    # bar top: 첫 줄 draw y + 폰트 내부 상단 여백(first_cb[1])
+    bar_top = copy_start_y + first_cb[1]
+    # bar bot: 마지막 줄 draw y + 폰트 내부 하단 (last_cb[3])
+    last_line_y = copy_start_y + (len(copy_lines) - 1) * copy_line_h
+    bar_bot = last_line_y + last_cb[3]
     draw.rectangle([bar_x, bar_top, bar_x + bar_w, bar_bot], fill=pc)
 
-    # copy text lines
+    # copy text lines (multi-layer shadow for depth)
     for i, line in enumerate(copy_lines):
         y = copy_start_y + i * copy_line_h
-        # subtle shadow
-        draw.text((text_x + 2, y + 2), line, font=copy_font,
-                  fill=(0, 0, 0))
+        # shadow layers
+        for ox, oy in [(3, 3), (2, 2), (1, 1)]:
+            draw.text((text_x + ox, y + oy), line, font=copy_font,
+                      fill=(0, 0, 0))
         # main text
         draw.text((text_x, y), line, font=copy_font,
                   fill=(255, 255, 255))
