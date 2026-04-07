@@ -578,6 +578,101 @@ def make_seo_slug(title: str, topic: str) -> str:
     return slug or "ai-post"
 
 
+def slugify_heading(text: str) -> str:
+    """h2 헤딩 텍스트를 anchor id로 변환 (한글 포함 slugify).
+    - 이모지/특수문자 제거, 공백->하이픈, 소문자
+    - 한글은 그대로 유지 (URL 인코딩은 브라우저가 처리)
+    """
+    # 이모지 제거
+    text = re.sub(r'[\U00010000-\U0010ffff\U00002600-\U000027BF\U0001F300-\U0001F9FF]', '', text)
+    # 마크다운 강조 기호 제거
+    text = re.sub(r'[*_`#]', '', text)
+    # 앞뒤 공백 제거
+    text = text.strip()
+    # 영문 소문자로
+    text = text.lower()
+    # 영문/숫자/한글 이외 -> 하이픈
+    text = re.sub(r'[^\w\uAC00-\uD7A3a-z0-9]', '-', text)
+    # 연속 하이픈 압축
+    text = re.sub(r'-+', '-', text).strip('-')
+    return text or 'section'
+
+
+def build_toc_and_cta(content: str, blog_type: str) -> str:
+    """포스트 본문 마크다운에서 ## 헤딩을 추출해 목차+CTA HTML을 생성,
+    첫 번째 ## 헤딩 직전에 삽입해서 반환.
+
+    - blog_type == 'NEWS' -> allsweep CTA
+    - 그 외              -> aikeeper CTA
+    """
+    # 모든 ## 헤딩 추출 (### 이상 제외)
+    h2_pattern = re.compile(r'^## (.+)$', re.MULTILINE)
+    headings = h2_pattern.findall(content)
+
+    if not headings:
+        return content  # ## 헤딩 없으면 원본 반환
+
+    # 목차 아이템 생성
+    items_html = ''
+    for heading in headings:
+        anchor = slugify_heading(heading)
+        # 이모지/마크다운 제거한 표시용 텍스트
+        display = re.sub(r'[\U00010000-\U0010ffff\U00002600-\U000027BF\U0001F300-\U0001F9FF]', '', heading)
+        display = re.sub(r'[*_`#]', '', display).strip()
+        items_html += (
+            '<li>'
+            '<a href="#' + anchor + '" style="color:#4f6ef7;text-decoration:none;">'
+            + display +
+            '</a></li>\n    '
+        )
+
+    toc_html = (
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;'
+        'padding:20px 24px;margin:2em 0;">\n'
+        '<p style="font-weight:700;font-size:1em;margin:0 0 12px;color:#1a202c;">'
+        '\U0001F4CB \ubaa9\ucc28'  # 📋 목차
+        '</p>\n'
+        '<ol style="margin:0;padding-left:20px;color:#4a5568;line-height:2;">\n    '
+        + items_html.rstrip() + '\n'
+        '</ol>\n'
+        '</div>\n'
+    )
+
+    # CTA HTML (blog_type 분기)
+    if blog_type == 'NEWS':
+        cta_html = (
+            '<div style="background:linear-gradient(135deg,#1a0a00,#8B0000);border-radius:12px;'
+            'padding:20px 24px;margin:1em 0 2em;text-align:center;">\n'
+            '<p style="color:#fff;font-weight:700;font-size:1em;margin:0 0 8px;">'
+            '\U0001F4F0 \uc62c\uc2a4\uc715 \u2014 \ub9e4\uc77c \ud575\uc2ec \ub274\uc2a4\ub97c \ube60\ub974\uac8c \uc815\ub9ac\ud569\ub2c8\ub2e4'
+            '</p>\n'
+            '<a href="https://www.allsweep.xyz" style="color:#ffa040;font-size:.9em;">'
+            'allsweep.xyz \ubc14\ub85c\uac00\uae30 \u2192'
+            '</a>\n'
+            '</div>\n'
+        )
+    else:
+        cta_html = (
+            '<div style="background:linear-gradient(135deg,#0D1B4B,#1565c0);border-radius:12px;'
+            'padding:20px 24px;margin:1em 0 2em;text-align:center;">\n'
+            '<p style="color:#fff;font-weight:700;font-size:1em;margin:0 0 8px;">'
+            '\U0001F916 AI\ud0a4\ud37c \u2014 \ub9e4\uc77c \ucd5c\uc2e0 AI \ud2b8\ub80c\ub4dc\ub97c \ud55c\uad6d\uc5b4\ub85c \uc815\ub9ac\ud569\ub2c8\ub2e4'
+            '</p>\n'
+            '<a href="https://aikeeper.allsweep.xyz" style="color:#63b3ed;font-size:.9em;">'
+            'aikeeper.allsweep.xyz \ubc14\ub85c\uac00\uae30 \u2192'
+            '</a>\n'
+            '</div>\n'
+        )
+
+    insert_block = toc_html + cta_html
+
+    # 첫 번째 ## 헤딩 직전에 삽입
+    match = h2_pattern.search(content)
+    insert_pos = match.start()
+    new_content = content[:insert_pos] + insert_block + content[insert_pos:]
+    return new_content
+
+
 def save_as_markdown(post_data: dict, topic: str) -> str:
     today = datetime.date.today().strftime("%Y-%m-%d")
     slug = make_seo_slug(post_data.get("title", topic), topic)
@@ -594,6 +689,9 @@ def save_as_markdown(post_data: dict, topic: str) -> str:
     # G-4: FAQPage JSON-LD 생성 (post_to_blogger.py가 faqs로 처리하지만 fallback용으로 저장)
     faq_jsonld = build_faq_jsonld(post_data.get("faq_raw_text", ""))
 
+    # 목차 + CTA 자동 삽입
+    body_content = build_toc_and_cta(post_data['content'], BLOG_TYPE)
+
     content = f"""---
 title: "{safe_title}"
 labels: {labels_yaml}
@@ -605,7 +703,7 @@ faqs: {faq_yaml}
 image_query: "{post_data.get('image_query', 'technology AI')}"
 ---
 
-{post_data['content']}
+{body_content}
 """
 
     os.makedirs("posts", exist_ok=True)
