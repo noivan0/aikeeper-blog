@@ -19,6 +19,7 @@ import json
 import base64
 import hashlib
 import argparse
+import random
 import textwrap
 import urllib.request
 import urllib.error
@@ -68,18 +69,16 @@ GITHUB_BRANCH       = "gh-pages"
 # ── 블로그별 디자인 설정 ──────────────────────────────────────────
 BLOG_THEMES = {
     "aikeeper": {
-        "brand": "AI키퍼",
-        "color_top":    (13,  27,  75),   # #0D1B4B
-        "color_bottom": (21, 101, 192),   # #1565c0
-        "accent":       (99, 179, 237),   # 밝은 파란색 강조
-        "credit":       "AI키퍼",
+        "brand": "AI KEEPER",
+        "bg_color":    (8, 14, 31),
+        "point_color": (79, 142, 247),
+        "credit":      "AI\ucf00\ud37c",
     },
     "allsweep": {
-        "brand": "올스윕 뉴스",
-        "color_top":    (26,  10,   0),   # #1a0a00
-        "color_bottom": (139,  0,   0),   # #8B0000
-        "accent":       (255, 160,  64),  # 주황/골드 강조
-        "credit":       "올스윕",
+        "brand": "ALL SWEEP",
+        "bg_color":    (10, 10, 10),
+        "point_color": (245, 166, 35),
+        "credit":      "\uc62c\uc2a4\uc717",
     },
 }
 
@@ -240,112 +239,157 @@ def _wrap_text(text: str, font: ImageFont.FreeTypeFont,
 def generate_image(title: str, copy_text: str, blog: str = "aikeeper",
                    slug: str = "") -> BytesIO:
     """
-    1200×630 PNG 생성:
-    - 그라디언트 배경
-    - 좌상단: 브랜드명
-    - 중앙: 마케팅 카피 (크고 굵게)
-    - 하단: 포스트 제목 (작게, 줄바꿈)
+    1200x630 PNG (Trendy Dark Style):
+    - Dark solid bg + point color radial glow
+    - Top 3px accent line
+    - Top-left brand pill button
+    - Bold left-aligned copy text + vertical accent bar
+    - Bottom-left post title (32px, gray)
+    - Bottom-right large semi-transparent "2026" decoration
     """
     theme = BLOG_THEMES.get(blog, BLOG_THEMES["aikeeper"])
     W, H = 1200, 630
     PAD = 60
 
-    # 배경 그라디언트
-    img = _make_gradient(W, H, theme["color_top"], theme["color_bottom"])
-    
-    # 반투명 오버레이 (가독성 향상)
-    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 60))
-    img = img.convert("RGBA")
-    img = Image.alpha_composite(img, overlay)
-    img = img.convert("RGB")
+    bg = theme["bg_color"]
+    pc = theme["point_color"]
+
+    # ── Step 1: Solid dark background ──────────────────────────
+    img = Image.new("RGB", (W, H), bg)
+
+    # ── Step 2: Point color radial glow (5 layers, center) ─────
+    cx, cy = W // 2, H // 2
+    glow_radii = [420, 320, 220, 150, 80]
+    glow_alphas = [18, 28, 38, 50, 60]
+    for radius, alpha in zip(glow_radii, glow_alphas):
+        glow_ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(glow_ov)
+        gd.ellipse(
+            [cx - radius, cy - radius, cx + radius, cy + radius],
+            fill=(pc[0], pc[1], pc[2], alpha),
+        )
+        img = img.convert("RGBA")
+        img = Image.alpha_composite(img, glow_ov)
+        img = img.convert("RGB")
 
     draw = ImageDraw.Draw(img)
 
-    # ── 상단 좌측: 브랜드명 ────────────────────────────────────────
-    brand_font = _load_font(32)
+    # ── Step 3: Top 3px point color line ───────────────────────
+    draw.rectangle([0, 0, W, 3], fill=pc)
+
+    # ── Step 4: Top-left brand pill button ─────────────────────
+    brand_font = _load_font(26)
     brand_text = theme["brand"]
-    draw.text((PAD, PAD), brand_text, font=brand_font, fill=(255, 255, 255, 200))
+    bb = draw.textbbox((0, 0), brand_text, font=brand_font)
+    btw = bb[2] - bb[0]
+    bth = bb[3] - bb[1]
+    pill_px, pill_py = 16, 10
+    pill_x0 = PAD
+    pill_y0 = 28
+    pill_x1 = pill_x0 + btw + pill_px * 2
+    pill_y1 = pill_y0 + bth + pill_py * 2
 
-    # ── 상단 우측: 장식 점 ────────────────────────────────────────
-    accent = theme["accent"]
-    for i, r in enumerate([6, 4, 3]):
-        draw.ellipse(
-            [W - PAD - 20 - i*18, PAD + 8, W - PAD - 8 - i*18, PAD + 8 + r*2],
-            fill=accent
+    pill_ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    pd_draw = ImageDraw.Draw(pill_ov)
+    try:
+        pd_draw.rounded_rectangle(
+            [pill_x0, pill_y0, pill_x1, pill_y1],
+            radius=20,
+            fill=(pc[0], pc[1], pc[2], 200),
         )
+    except AttributeError:
+        pd_draw.rectangle(
+            [pill_x0, pill_y0, pill_x1, pill_y1],
+            fill=(pc[0], pc[1], pc[2], 200),
+        )
+    img = img.convert("RGBA")
+    img = Image.alpha_composite(img, pill_ov)
+    img = img.convert("RGB")
+    draw = ImageDraw.Draw(img)
+    draw.text(
+        (pill_x0 + pill_px, pill_y0 + pill_py),
+        brand_text,
+        font=brand_font,
+        fill=(255, 255, 255),
+    )
 
-    # ── 구분선 ───────────────────────────────────────────────────
-    line_y = PAD + 55
-    draw.line([(PAD, line_y), (W - PAD, line_y)], fill=(*accent, 120), width=1)
-
-    # ── 중앙: 마케팅 카피 (크고 굵게) ────────────────────────────
-    copy_font_size = 78
+    # ── Step 5: Bold left-aligned copy text + vertical accent bar ──
+    copy_font_size = 84
     copy_font = _load_font(copy_font_size)
+    bar_x = PAD
+    bar_w = 4
+    text_x = bar_x + bar_w + 20
+    copy_max_width = W - text_x - PAD
 
-    copy_max_width = W - PAD * 2 - 40
     copy_lines = _wrap_text(copy_text, copy_font, copy_max_width, draw)
-    
-    # 카피가 너무 길면 폰트 축소
     if len(copy_lines) > 3:
-        copy_font_size = 58
+        copy_font_size = 64
         copy_font = _load_font(copy_font_size)
         copy_lines = _wrap_text(copy_text, copy_font, copy_max_width, draw)
 
-    copy_line_h = copy_font_size + 12
+    copy_line_h = copy_font_size + 14
     copy_total_h = len(copy_lines) * copy_line_h
+    # vertical center (slightly above center)
+    copy_start_y = (H - copy_total_h) // 2 - 30
 
-    # 수직 중앙 배치 (전체 영역 기준, 약간 위)
-    center_y = H // 2 - 40
-    copy_start_y = center_y - copy_total_h // 2
+    # vertical accent bar
+    bar_top = copy_start_y
+    bar_bot = copy_start_y + copy_total_h
+    draw.rectangle([bar_x, bar_top, bar_x + bar_w, bar_bot], fill=pc)
 
+    # copy text lines
     for i, line in enumerate(copy_lines):
-        bbox = draw.textbbox((0, 0), line, font=copy_font)
-        lw = bbox[2] - bbox[0]
-        x = (W - lw) // 2
         y = copy_start_y + i * copy_line_h
+        # subtle shadow
+        draw.text((text_x + 2, y + 2), line, font=copy_font,
+                  fill=(0, 0, 0))
+        # main text
+        draw.text((text_x, y), line, font=copy_font,
+                  fill=(255, 255, 255))
 
-        # 그림자 효과
-        draw.text((x + 3, y + 3), line, font=copy_font, fill=(0, 0, 0, 100))
-        # 메인 텍스트
-        draw.text((x, y), line, font=copy_font, fill=(255, 255, 255))
-
-    # ── 하단 구분선 ───────────────────────────────────────────────
-    bottom_line_y = H - PAD - 80
-    draw.line([(PAD, bottom_line_y), (W - PAD, bottom_line_y)],
-              fill=(*accent, 80), width=1)
-
-    # ── 하단: 포스트 제목 ────────────────────────────────────────
-    title_font_size = 34
+    # ── Step 6: Post title bottom-left (32px, gray) ────────────
+    title_font_size = 32
     title_font = _load_font(title_font_size)
-    title_max_width = W - PAD * 2 - 40
+    title_max_width = W * 3 // 4
 
     title_lines = _wrap_text(title, title_font, title_max_width, draw)
-    # 최대 2줄
     if len(title_lines) > 2:
         title_lines = title_lines[:2]
         if len(title_lines[1]) > 3:
             title_lines[1] = title_lines[1][:-3] + "..."
 
-    title_line_h = title_font_size + 8
-    title_start_y = bottom_line_y + 16
+    title_line_h = title_font_size + 10
+    title_total_h = len(title_lines) * title_line_h
+    title_start_y = H - PAD - title_total_h
 
     for i, line in enumerate(title_lines):
-        bbox = draw.textbbox((0, 0), line, font=title_font)
-        lw = bbox[2] - bbox[0]
-        x = (W - lw) // 2
         y = title_start_y + i * title_line_h
-        # 그림자
-        draw.text((x + 2, y + 2), line, font=title_font, fill=(0, 0, 0, 80))
-        # 텍스트
-        draw.text((x, y), line, font=title_font, fill=(220, 220, 220))
+        draw.text((PAD, y), line, font=title_font,
+                  fill=(160, 174, 192))
 
-    # ── 좌하단: 출처 라벨 ────────────────────────────────────────
-    label_font = _load_font(22)
-    label_text = f"© {theme['brand']} | 마케팅 카피 이미지"
-    draw.text((PAD, H - PAD - 4), label_text,
-              font=label_font, fill=(180, 180, 180))
+    # ── Step 7: Bottom-right "2026" large semi-transparent deco ─
+    deco_font_size = 120
+    deco_font = _load_font(deco_font_size)
+    deco_text = "2026"
 
-    # BytesIO로 반환
+    deco_ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    deco_draw = ImageDraw.Draw(deco_ov)
+    db = deco_draw.textbbox((0, 0), deco_text, font=deco_font)
+    dw = db[2] - db[0]
+    dh = db[3] - db[1]
+    deco_x = W - PAD - dw
+    deco_y = H - PAD - dh
+    deco_draw.text(
+        (deco_x, deco_y),
+        deco_text,
+        font=deco_font,
+        fill=(255, 255, 255, 20),
+    )
+    img = img.convert("RGBA")
+    img = Image.alpha_composite(img, deco_ov)
+    img = img.convert("RGB")
+
+    # BytesIO 반환
     buf = BytesIO()
     img.save(buf, format="PNG", optimize=True)
     buf.seek(0)
@@ -452,7 +496,7 @@ def generate_and_upload(title: str, blog: str = "aikeeper",
             "alt": str,             # 이미지 대체 텍스트
             "credit": str,          # 출처명
             "source": str,          # "generated_hero"
-            "source_label": str,    # "🎨 마케팅 카피 이미지"
+            "source_label": str,    # "🎨 AI키퍼" or "🎨 올스윕"
         }
     """
     theme = BLOG_THEMES.get(blog, BLOG_THEMES["aikeeper"])
@@ -483,13 +527,14 @@ def generate_and_upload(title: str, blog: str = "aikeeper",
         print(f"  💾 로컬 저장: {local_path}")
         url = f"[local] {local_path}"
 
+    brand_label = "🎨 AI키퍼" if blog == "aikeeper" else "🎨 올스윕"
     return {
         "url": url,
         "alt": f"{title} — {copy_text}",
         "credit": theme["credit"],
         "credit_url": f"https://noivan0.github.io/aikeeper-blog/",
         "source": "generated_hero",
-        "source_label": "🎨 마케팅 카피 이미지",
+        "source_label": brand_label,
     }
 
 
@@ -522,6 +567,7 @@ def generate_section_image(section_title: str, post_title: str, blog: str = "aik
         slug=slug,
     )
 
+    section_brand_label = "🎨 AI키퍼" if blog == "aikeeper" else "🎨 올스윕"
     try:
         url = upload_to_github(buf, slug)
     except Exception as e:
@@ -532,7 +578,7 @@ def generate_section_image(section_title: str, post_title: str, blog: str = "aik
             "credit": theme["credit"],
             "credit_url": "https://noivan0.github.io/aikeeper-blog/",
             "source": "generated_section",
-            "source_label": "🎨 마케팅 카피 이미지",
+            "source_label": section_brand_label,
         }
 
     return {
@@ -541,7 +587,7 @@ def generate_section_image(section_title: str, post_title: str, blog: str = "aik
         "credit": theme["credit"],
         "credit_url": "https://noivan0.github.io/aikeeper-blog/",
         "source": "generated_section",
-        "source_label": "🎨 마케팅 카피 이미지",
+        "source_label": section_brand_label,
     }
 
 # ── CLI 진입점 ────────────────────────────────────────────────────
