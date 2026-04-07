@@ -493,6 +493,57 @@ def generate_and_upload(title: str, blog: str = "aikeeper",
     }
 
 
+
+
+def generate_section_image(section_title: str, post_title: str, blog: str = "aikeeper", idx: int = 0) -> dict:
+    """본문 섹션용 마케팅 카피 이미지 생성
+
+    Args:
+        section_title: h2 섹션 제목
+        post_title: 포스트 전체 제목 (문맥용)
+        blog: aikeeper or allsweep
+        idx: 섹션 순서 (슬러그 고유성용)
+    Returns:
+        dict with url, alt, credit, source
+    """
+    # 섹션별 고유 슬러그
+    slug_base = _make_slug(f"{post_title}-sec{idx}-{section_title}")
+    slug = slug_base[:50]
+
+    # 섹션 카피: 섹션 제목 중심으로 생성
+    combined = f"{post_title}: {section_title}"
+    copy_text = generate_marketing_copy(combined, blog)
+
+    theme = BLOG_THEMES.get(blog, BLOG_THEMES["aikeeper"])
+    buf = generate_image(
+        title=section_title,
+        copy_text=copy_text,
+        blog=blog,
+        slug=slug,
+    )
+
+    try:
+        url = upload_to_github(buf, slug)
+    except Exception as e:
+        print(f"  ❌ 섹션 이미지 업로드 실패: {e}")
+        return {
+            "url": "",
+            "alt": section_title,
+            "credit": theme["credit"],
+            "credit_url": "https://noivan0.github.io/aikeeper-blog/",
+            "source": "generated_section",
+            "source_label": "🎨 마케팅 카피 이미지",
+        }
+
+    return {
+        "url": url,
+        "alt": f"{section_title} — {copy_text}",
+        "credit": theme["credit"],
+        "credit_url": "https://noivan0.github.io/aikeeper-blog/",
+        "source": "generated_section",
+        "source_label": "🎨 마케팅 카피 이미지",
+    }
+
 # ── CLI 진입점 ────────────────────────────────────────────────────
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

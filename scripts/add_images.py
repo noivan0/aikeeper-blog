@@ -918,14 +918,14 @@ def collect_images(query: str, labels: list = None, exclude_urls: set = None):
     return all_images[:5], seen_urls
 
 
-def insert_body_images(body: str, images: list, title: str = "") -> str:
+def insert_body_images(body: str, images: list, title: str = "", blog: str = "aikeeper") -> str:
     """
-    본문 마크다운에 이미지를 최대 4개 자연스럽게 삽입
-    - images[1:5] (hero 제외 최대 4개)를 h2 섹션에 배분
-    - h2 섹션이 부족하면 있는 만큼만 삽입
-    - <pre>, <code> 블록 사이에는 삽입하지 않음
+    본문 h2 섹션에 마케팅 카피 생성형 이미지 삽입 (최대 3개)
+    - generate_hero_image.generate_section_image() 사용
+    - 외부 이미지 수집 불필요, 포스트별/섹션별 고유 이미지 생성
+    - <pre>, <code> 블록에는 삽입하지 않음
     """
-    if len(images) < 2:
+    if not body:
         return body
 
     lines = body.split("\n")
@@ -948,58 +948,65 @@ def insert_body_images(body: str, images: list, title: str = "") -> str:
             in_code = False
 
     def is_forbidden(pos: int) -> bool:
-        for start, end in forbidden_ranges:
-            if start <= pos <= end:
+        for s, e in forbidden_ranges:
+            if s <= pos <= e:
                 return True
         return False
 
-    # body 이미지: images[1:5] — 최대 4개
-    body_images = images[1:5]
-    num_to_insert = min(len(body_images), len(h2_positions) - 1)
+    # 최대 3개 섹션에 삽입 (2번째 h2부터)
+    h2_slots = h2_positions[1:]
+    num_to_insert = min(3, len(h2_slots))
 
     if num_to_insert == 0:
         return body
 
-    # h2 섹션을 균등 분배하여 삽입 위치 계산
-    # 예: h2 5개, 이미지 4개 → 2번째, 3번째, 4번째, 5번째 h2 뒤에 삽입
-    # h2가 3개이고 이미지 4개이면 → 2번째, 3번째 h2 뒤에만 삽입 (2개)
-    h2_slots = h2_positions[1:]  # 1번째 h2 이후부터 사용
-    if len(h2_slots) < num_to_insert:
-        num_to_insert = len(h2_slots)
-
-    # 균등 간격으로 슬롯 선택
     step = len(h2_slots) / num_to_insert
     selected_h2s = [h2_slots[int(i * step)] for i in range(num_to_insert)]
 
+    # 삽입 위치 계산
     insert_positions = []
     for h2_pos in selected_h2s:
-        # 해당 h2 뒤 첫 빈 줄 다음 위치 탐색
+        section_title = lines[h2_pos].lstrip("#").strip()
         insert_at = h2_pos + 2
         for i in range(h2_pos + 1, min(h2_pos + 6, len(lines))):
             if lines[i].strip() == "":
                 insert_at = i + 1
                 break
-        # 금지 구간이면 다음 줄로
         while is_forbidden(insert_at) and insert_at < len(lines):
             insert_at += 1
-        insert_positions.append(insert_at)
+        insert_positions.append((insert_at, section_title))
 
-    # 이미지 HTML 생성
-    def make_img_md(img: dict) -> str:
-        url = img["url"]
-        alt = img.get("alt", title or "관련 이미지")[:100]
-        credit_url = img.get("credit_url", "")
-        source_label = img.get("source_label", "📷 출처")
+    # 마케팅 카피 이미지 생성 및 삽입 (역순)
+    for rank, (pos, section_title) in enumerate(sorted(insert_positions, key=lambda x: -x[0])):
+        img_dict = None
+        # generate_hero_image 모듈 사용
+        if _GHI_AVAILABLE:
+            try:
+                idx = len(insert_positions) - 1 - rank
+                img_dict = _ghi.generate_section_image(
+                    section_title=section_title,
+                    post_title=title,
+                    blog=blog,
+                    idx=idx,
+                )
+                print(f"  🎨 섹션 이미지 [{idx+1}] 생성: {img_dict.get('url', '')[:60]}")
+            except Exception as e:
+                print(f"  ⚠️  섹션 이미지 생성 실패: {e}")
 
-        # 도메인명만 표시 (기사 제목/영어 텍스트 제거)
-        domain_name = get_domain_name(credit_url) if credit_url else img.get("credit", "출처")
+        if not img_dict or not img_dict.get("url"):
+            continue
 
+        url = img_dict["url"]
+        alt = img_dict.get("alt", section_title)[:100]
+        source_label = img_dict.get("source_label", "🎨 마케팅 카피 이미지")
+        credit_url = img_dict.get("credit_url", "")
+        domain_name = get_domain_name(credit_url) if credit_url else img_dict.get("credit", "출처")
         credit_html = (
             f'<a href="{credit_url}" rel="nofollow noopener"'
             f' style="color:#4f6ef7;text-decoration:none;">{domain_name}</a>'
             if credit_url else domain_name
         )
-        return (
+        img_md = (
             f'\n<figure style="margin:2em 0;text-align:center;">'
             f'<img src="{url}" alt="{alt}" '
             f'width="800" height="450" '
@@ -1010,11 +1017,6 @@ def insert_body_images(body: str, images: list, title: str = "") -> str:
             f'{source_label}: {credit_html}'
             f'</figcaption></figure>\n'
         )
-
-    # 역순으로 삽입 (인덱스 밀림 방지)
-    pairs = list(zip(insert_positions[:num_to_insert], body_images[:num_to_insert]))
-    for pos, img in sorted(pairs, key=lambda x: -x[0]):
-        img_md = make_img_md(img)
         lines.insert(min(pos, len(lines)), img_md)
 
     return "\n".join(lines)
@@ -1142,7 +1144,7 @@ def inject_images(file_path: str, blog: str = "") -> str:
     if body_imgs:
         # insert_body_images는 images[0]을 hero로, images[1:]을 본문에 삽입
         # hero를 images[0]에, body_imgs를 images[1:]에 배치
-        body = insert_body_images(body, [hero] + body_imgs, title)
+        body = insert_body_images(body, [hero] + body_imgs, title, blog=blog)
         print(f"  ✅ 본문 이미지 {min(len(body_imgs), 4)}개 삽입")
     else:
         print(f"  ⚠️  본문 삽입용 이미지 없음 — hero만 사용")
