@@ -7,7 +7,8 @@
      - Reddit r/artificial, r/MachineLearning 스레드
   2. Wikimedia Commons — 무료 CC 라이선스
   3. Unsplash (API 키 있으면 API, 없으면 Source API)
-  4. FALLBACK_IMAGES — Unsplash 고정 URL (폴백)
+  4. generate_hero_image — Pillow 기반 마케팅 카피 이미지 생성 (항상 성공)
+  5. FALLBACK_IMAGES — Unsplash 고정 URL (최최후 폴백)
 
 Reddit 이미지: CDN preview(만료됨) 대신 direct URL / thumbnail 우선 사용
 모든 이미지: HTTP HEAD 검증 후 접근 불가 URL 자동 제외
@@ -28,6 +29,15 @@ import urllib.parse
 import hashlib
 import datetime
 from pathlib import Path
+
+# generate_hero_image 모듈 임포트 (동일 디렉토리)
+_SCRIPT_DIR = Path(__file__).parent
+sys.path.insert(0, str(_SCRIPT_DIR))
+try:
+    import generate_hero_image as _ghi
+    _GHI_AVAILABLE = True
+except ImportError:
+    _GHI_AVAILABLE = False
 
 UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "").strip()
 
@@ -747,16 +757,28 @@ def _make_pollinations_image(query: str, idx: int = 0) -> dict:
     }
 
 
-def make_hero_image(title: str, query: str) -> dict:
-    """대표(hero) 이미지 생성 — 배경+텍스트 형태로 미리보기 최적화
+def make_hero_image(title: str, query: str, blog: str = "aikeeper", slug: str = "") -> dict:
+    """대표(hero) 이미지 생성 — Pillow 기반 마케팅 카피 이미지
 
-    Pollinations AI에 제목 텍스트를 포함한 썸네일용 이미지를 생성.
-    블로그 카드/SNS 미리보기에서 제목이 배경에 표시되는 형태.
+    generate_hero_image 모듈을 사용해 Claude API로 카피를 생성하고
+    Pillow로 1200×630 PNG를 직접 그려 GitHub Pages에 업로드.
+    외부 이미지 URL에 의존하지 않아 항상 안정적으로 작동.
     """
-    import hashlib as _hl
-    # 제목에서 핵심어 추출 (앞 30자)
-    short_title = re.sub(r'[^\w\s가-힣]', ' ', title).strip()[:40]
+    if _GHI_AVAILABLE:
+        try:
+            result = _ghi.generate_and_upload(
+                title=title,
+                blog=blog,
+                slug=slug or None,
+            )
+            print(f"  🎨 Hero: 마케팅 카피 이미지 생성 완료")
+            return result
+        except Exception as e:
+            print(f"  ⚠️  generate_hero_image 실패: {e} — Pollinations 폴백")
 
+    # generate_hero_image 미사용 시 기존 Pollinations AI 폴백
+    import hashlib as _hl
+    short_title = re.sub(r'[^\w\s가-힣]', ' ', title).strip()[:40]
     prompt = (
         f"Blog thumbnail image, dark gradient background, "
         f"large bold Korean text overlay '{short_title}', "
@@ -853,21 +875,39 @@ def collect_images(query: str, labels: list = None, exclude_urls: set = None):
                 all_images.append(ai_img)
                 print(f"  ✅ Pollinations AI 이미지 [{i+1}]")
 
-    # ── 최후 폴백: FALLBACK_IMAGES (날짜+idx로 다양하게) ──────────────────────
-    if len(all_images) < 3:
-        seed_str = query + datetime.date.today().isoformat()
-        seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16)
-        for fi in range(len(FALLBACK_IMAGES)):
-            if len(all_images) >= 5:
-                break
-            fb = FALLBACK_IMAGES[(seed + fi) % len(FALLBACK_IMAGES)]
-            if fb["url"] not in seen_urls:
-                seen_urls.add(fb["url"])
-                all_images.append(fb)
+    # ── 최후 폴백: 생성형 Hero 이미지 (항상 성공, 중복 없음) ────────────────
+    if len(all_images) < 3 and _GHI_AVAILABLE:
+        need = 3 - len(all_images)
+        print(f"  🎨 이미지 부족({len(all_images)}장) — 마케팅 카피 Hero 이미지 생성...")
+        try:
+            # query 기반 슬러그 생성 (영문만)
+            import re as _re
+            _q_ascii = _re.sub(r'[^a-z0-9\s-]', ' ', query.lower())
+            _q_words = [w for w in _q_ascii.split() if len(w) >= 2][:4]
+            _q_slug = '-'.join(_q_words) if _q_words else "news"
+            _q_h = hashlib.md5(query.encode()).hexdigest()[:8]
+            _slug = f"{_q_slug}-{_q_h}"
 
-    # 최종 폴백: FALLBACK_IMAGES (Unsplash 고정 URL, 항상 안정적)
+            hero_img = _ghi.generate_and_upload(title=query, blog="aikeeper", slug=_slug)
+            if hero_img["url"] not in seen_urls:
+                seen_urls.add(hero_img["url"])
+                all_images.append(hero_img)
+                print(f"  ✅ 마케팅 카피 Hero 이미지 생성 완료")
+        except Exception as _e:
+            print(f"  ⚠️  생성형 Hero 실패: {_e} — FALLBACK_IMAGES 사용")
+            # generate_hero_image 실패 시 FALLBACK 사용
+            seed_str = query + datetime.date.today().isoformat()
+            seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16)
+            for fi in range(len(FALLBACK_IMAGES)):
+                if len(all_images) >= 5:
+                    break
+                fb = FALLBACK_IMAGES[(seed + fi) % len(FALLBACK_IMAGES)]
+                if fb["url"] not in seen_urls:
+                    seen_urls.add(fb["url"])
+                    all_images.append(fb)
+
+    # ── 최최후 폴백: FALLBACK_IMAGES (generate_hero_image 미설치 시) ──────────
     if not all_images:
-        # query + 날짜 기반 hash — 날짜마다 다른 이미지 선택
         seed_str = query + datetime.date.today().isoformat()
         seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16)
         fallback = FALLBACK_IMAGES[seed % len(FALLBACK_IMAGES)]
@@ -980,7 +1020,7 @@ def insert_body_images(body: str, images: list, title: str = "") -> str:
     return "\n".join(lines)
 
 
-def inject_images(file_path: str) -> str:
+def inject_images(file_path: str, blog: str = "") -> str:
     content = Path(file_path).read_text(encoding="utf-8")
     meta, body = parse_front_matter(content)
 
@@ -990,7 +1030,15 @@ def inject_images(file_path: str) -> str:
     if isinstance(labels, str):
         labels = [l.strip() for l in labels.split(",")]
 
-    print(f"  🔍 이미지 검색: {query}")
+    # blog 종류 판별 (파일 경로 기반)
+    if not blog:
+        fp_str = str(file_path).lower()
+        if "allsweep" in fp_str:
+            blog = "allsweep"
+        else:
+            blog = "aikeeper"
+
+    print(f"  🔍 이미지 검색: {query} [{blog}]")
 
     # 전역 중복 추적 set — 검증 실패 URL 포함 모든 수집 시도 URL 기록
     global_seen: set = set()
@@ -1034,8 +1082,8 @@ def inject_images(file_path: str) -> str:
             try:
                 req_check = urllib.request.Request(ai_url, headers={"User-Agent": "Mozilla/5.0"}, method="HEAD")
                 with urllib.request.urlopen(req_check, timeout=15) as _r:
-                    if _r.status == 200 and ai_url not in seen_urls:
-                        seen_urls.add(ai_url)
+                    if _r.status == 200 and ai_url not in global_seen:
+                        global_seen.add(ai_url)
                         images.append({
                             "url": ai_url,
                             "alt": f"{query} 설명 이미지",
@@ -1054,8 +1102,8 @@ def inject_images(file_path: str) -> str:
         for fi, fb in enumerate(FALLBACK_IMAGES):
             if len(images) >= 5:
                 break
-            if fb["url"] not in seen_urls:
-                seen_urls.add(fb["url"])
+            if fb["url"] not in global_seen:
+                global_seen.add(fb["url"])
                 images.append(fb)
 
     # ── images 리스트 자체 중복 제거 (global_seen 타이밍 이슈 최종 방어) ──────────
@@ -1067,18 +1115,19 @@ def inject_images(file_path: str) -> str:
             images_dedup.append(img)
     images = images_dedup
 
-    # ── hero 이미지 선택: 배경+텍스트 형태로 대표이미지 최적화 ───────────────────
-    # 크롤링 이미지(news/reddit/wikimedia)가 있으면 hero로 사용,
-    # 없거나 AI생성만 있으면 make_hero_image로 배경+텍스트 썸네일 생성
-    real_imgs = [img for img in images if img.get("source") not in ("ai_generated", "ai_hero", "fallback")]
-    if real_imgs:
-        hero = real_imgs[0]  # 실제 이미지 중 첫 번째를 hero로
-    else:
-        # 크롤링 이미지 없음 → 배경+텍스트 AI 썸네일 생성
-        hero = make_hero_image(title, query)
-        if hero["url"] not in global_seen:
-            global_seen.add(hero["url"])
-        print(f"  🎨 Hero: 배경+텍스트 AI 썸네일 생성")
+    # ── hero 이미지 선택: 마케팅 카피 기반 생성형 이미지 우선 ────────────────────
+    # 크롤링 이미지(news/reddit/wikimedia)가 있어도 hero는 항상 생성형으로
+    # (외부 이미지 만료/중복 방지), 나머지 크롤링 이미지는 본문에 삽입
+    real_imgs = [img for img in images if img.get("source") not in ("ai_generated", "ai_hero", "fallback", "generated_hero")]
+
+    # slug: 포스트 파일명 기반 생성
+    _post_slug = Path(file_path).stem
+
+    # hero는 항상 마케팅 카피 생성형으로 생성 (중복 없음 보장)
+    hero = make_hero_image(title, query, blog=blog, slug=_post_slug)
+    if hero["url"] not in global_seen:
+        global_seen.add(hero["url"])
+    print(f"  🎨 Hero: {hero.get('source_label', '생성형 이미지')} 사용")
 
     print(f"  ✅ 대표 이미지 확보 ({hero['source']}) — 총 {len(images)}장")
 
