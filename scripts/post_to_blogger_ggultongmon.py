@@ -223,6 +223,23 @@ def main():
     print(f"✅ 포스팅 완료: {title}")
     print(f"   URL: {post_url}")
     
+    # 4-1. 카드뉴스 자동 생성 (비치명적 — 실패해도 포스팅은 완료)
+    if post_url:
+        try:
+            sys.path.insert(0, str(BASE_DIR / "instagram"))
+            from carousel_auto import generate_carousel
+            carousel_result = generate_carousel(
+                post_url=post_url,
+                topic=TOPIC,
+                products=products,
+            )
+            print(f"  ✅ 카드뉴스 생성 완료: {carousel_result['out_dir']}")
+            print(f"     슬라이드 {len(carousel_result['slides'])}장")
+            # 출력 경로를 환경변수로 노출 (향후 업로드 연동용)
+            os.environ["CAROUSEL_OUT_DIR"] = str(carousel_result["out_dir"])
+        except Exception as _ce:
+            print(f"  ℹ️  카드뉴스 생성 스킵 (비치명적): {_ce}")
+
     # 5. Google Indexing API — 즉시 색인 요청
     if post_url:
         try:
