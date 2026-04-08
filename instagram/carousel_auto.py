@@ -574,6 +574,53 @@ RANK_CONFIGS = [
 ]
 
 
+def split_title(topic: str, max_w: int = W - 100) -> tuple:
+    """
+    주제 문자열을 커버 2줄로 분리.
+    폰트 78pt 기준으로 전체가 max_w 안에 들어오면 절반 분리,
+    들어오지 않으면 초과 직전 단어까지를 1줄로.
+    목표: 두 줄의 길이가 최대한 균형잡히게.
+    """
+    f = F(78)
+    words = topic.split()
+    if len(words) <= 1:
+        return topic, "완전 비교"
+
+    # 전체가 1줄에 들어가는 경우 → 균형잡힌 분리 탐색
+    # 전체가 너무 길면 → max_w 초과 직전까지 1줄
+    total_w = tw(f, topic)
+
+    # 균형 분리: 두 줄 너비 차이 최소화 + 조사로 끝나지 않게 패널티
+    # 한국어 조사/접미사로 끝나는 단어는 1줄 끝에 오지 않도록 패널티 부여
+    JOSA = ("게","이","가","을","를","은","는","도","와","과","의","로","으로","에","서","만","도","까")
+    best_split = max(1, len(words) // 2)
+    best_score = float("inf")
+    for i in range(1, len(words)):
+        l1 = " ".join(words[:i])
+        l2 = " ".join(words[i:])
+        w1 = tw(f, l1); w2 = tw(f, l2)
+        if w1 > max_w or w2 > max_w:
+            continue
+        diff = abs(w1 - w2)
+        # 2줄 시작이 조사/짧은 단어이면 큰 패널티 (매우 어색)
+        # 1줄 끝이 조사이면 작은 패널티 (덜 어색)
+        last_word   = words[i - 1]
+        first_word2 = words[i] if i < len(words) else ""
+        penalty = 0
+        if first_word2 in JOSA or len(first_word2) <= 1:
+            penalty += 400   # 2줄 시작 조사: 매우 어색
+        if last_word in JOSA or len(last_word) <= 1:
+            penalty += 100   # 1줄 끝 조사: 다소 어색
+        score = diff + penalty
+        if score < best_score:
+            best_score = score
+            best_split = i
+
+    l1 = " ".join(words[:best_split])
+    l2 = " ".join(words[best_split:])
+    return l1, (l2 if l2 else "완전 비교")
+
+
 def build_products(raw_list: list) -> list:
     """raw products → 슬라이드용 dict (없는 필드는 DEFAULTS로 채움)"""
     result = []
@@ -622,11 +669,8 @@ def generate_carousel(
     print("[carousel] 상품 이미지 다운로드...")
     img_paths = fetch_product_images(post_url, out, count=3)
 
-    # 주제 → 커버 2줄
-    words = topic.split()
-    mid = max(1, len(words) // 2)
-    tl1 = " ".join(words[:mid])
-    tl2 = " ".join(words[mid:]) if len(words) > mid else "완전 비교"
+    # 주제 → 커버 2줄 (폰트 너비 기준 자동 분리)
+    tl1, tl2 = split_title(topic)
     sub = f"2026 최신  |  {len(prods)}종 직접 비교"
 
     print("[carousel] 슬라이드 생성...")
