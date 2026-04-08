@@ -235,8 +235,31 @@ def main():
             )
             print(f"  ✅ 카드뉴스 생성 완료: {carousel_result['out_dir']}")
             print(f"     슬라이드 {len(carousel_result['slides'])}장")
-            # 출력 경로를 환경변수로 노출 (향후 업로드 연동용)
             os.environ["CAROUSEL_OUT_DIR"] = str(carousel_result["out_dir"])
+
+            # 4-2. Instagram 자동 업로드 (비치명적)
+            try:
+                sys.path.insert(0, str(BASE_DIR / "instagram"))
+                from upload_instagram import publish_carousel_from_dir
+                caption = (
+                    f"{TOPIC}\n\n"
+                    f"쿠팡 추천 상품 링크는 프로필 참고\n"
+                    f"블로그 상세 리뷰 → 프로필 링크\n\n"
+                    f"#쿠팡추천 #가성비 #꿀통몬 #헬스보충제 #운동영양제"
+                )
+                ig_result = publish_carousel_from_dir(
+                    slides_dir=carousel_result["out_dir"],
+                    caption=caption,
+                    topic=TOPIC,
+                    post_url=post_url,
+                )
+                if ig_result.get("success"):
+                    print(f"  ✅ Instagram 업로드 완료: {ig_result.get('permalink','')}")
+                else:
+                    print(f"  ℹ️  Instagram 업로드 실패: {ig_result.get('error','')}")
+            except Exception as _ie:
+                print(f"  ℹ️  Instagram 업로드 스킵 (비치명적): {_ie}")
+
         except Exception as _ce:
             print(f"  ℹ️  카드뉴스 생성 스킵 (비치명적): {_ce}")
 
