@@ -577,48 +577,63 @@ RANK_CONFIGS = [
 def split_title(topic: str, max_w: int = W - 100) -> tuple:
     """
     주제 문자열을 커버 2줄로 분리.
-    폰트 78pt 기준으로 전체가 max_w 안에 들어오면 절반 분리,
-    들어오지 않으면 초과 직전 단어까지를 1줄로.
-    목표: 두 줄의 길이가 최대한 균형잡히게.
+    Claude API로 한국어 문법에 맞는 자연스러운 줄바꿈 위치를 결정.
+    API 실패 시 단어 절반으로 폴백.
     """
-    f = F(78)
     words = topic.split()
     if len(words) <= 1:
         return topic, "완전 비교"
 
-    # 전체가 1줄에 들어가는 경우 → 균형잡힌 분리 탐색
-    # 전체가 너무 길면 → max_w 초과 직전까지 1줄
-    total_w = tw(f, topic)
+    # Claude API로 문법적 줄바꿈 판단
+    try:
+        import urllib.request, urllib.parse, json as _json, os as _os
+        api_key    = _os.environ.get("ANTHROPIC_API_KEY", "")
+        api_base   = _os.environ.get("ANTHROPIC_BASE_URL",
+                                     "https://internal-apigw-kr.hmg-corp.io/hchat-in/api/v3/claude")
+        model      = _os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
-    # 균형 분리: 두 줄 너비 차이 최소화 + 조사로 끝나지 않게 패널티
-    # 한국어 조사/접미사로 끝나는 단어는 1줄 끝에 오지 않도록 패널티 부여
-    JOSA = ("게","이","가","을","를","은","는","도","와","과","의","로","으로","에","서","만","도","까")
-    best_split = max(1, len(words) // 2)
-    best_score = float("inf")
-    for i in range(1, len(words)):
-        l1 = " ".join(words[:i])
-        l2 = " ".join(words[i:])
-        w1 = tw(f, l1); w2 = tw(f, l2)
-        if w1 > max_w or w2 > max_w:
-            continue
-        diff = abs(w1 - w2)
-        # 2줄 시작이 조사/짧은 단어이면 큰 패널티 (매우 어색)
-        # 1줄 끝이 조사이면 작은 패널티 (덜 어색)
-        last_word   = words[i - 1]
-        first_word2 = words[i] if i < len(words) else ""
-        penalty = 0
-        if first_word2 in JOSA or len(first_word2) <= 1:
-            penalty += 400   # 2줄 시작 조사: 매우 어색
-        if last_word in JOSA or len(last_word) <= 1:
-            penalty += 100   # 1줄 끝 조사: 다소 어색
-        score = diff + penalty
-        if score < best_score:
-            best_score = score
-            best_split = i
+        prompt = (
+            f"아래 한국어 제목을 인스타그램 카드뉴스용 2줄로 나눠주세요.\n"
+            f"규칙:\n"
+            f"- 한국어 문법과 의미 단위에 맞게 자연스럽게\n"
+            f"- 조사나 어미가 다음 줄 첫 단어가 되지 않도록\n"
+            f"- 두 줄 길이가 최대한 비슷하게\n"
+            f"- JSON으로만 응답: {{\"line1\": \"...\", \"line2\": \"...\"}}\n\n"
+            f"제목: {topic}"
+        )
+        payload = _json.dumps({
+            "model": model,
+            "max_tokens": 100,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode()
+        req = urllib.request.Request(
+            f"{api_base}/messages",
+            data=payload,
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+        )
+        resp = urllib.request.urlopen(req, timeout=10).read()
+        data = _json.loads(resp)
+        text = data["content"][0]["text"].strip()
+        # JSON 추출
+        import re as _re
+        m = _re.search(r'\{.*?\}', text, _re.DOTALL)
+        if m:
+            result = _json.loads(m.group())
+            l1 = result.get("line1", "").strip()
+            l2 = result.get("line2", "").strip()
+            if l1 and l2:
+                print(f"[split_title] Claude: [{l1}] / [{l2}]")
+                return l1, l2
+    except Exception as e:
+        print(f"[split_title] Claude 실패, 폴백: {e}")
 
-    l1 = " ".join(words[:best_split])
-    l2 = " ".join(words[best_split:])
-    return l1, (l2 if l2 else "완전 비교")
+    # 폴백: 단어 절반으로 분리
+    mid = max(1, len(words) // 2)
+    return " ".join(words[:mid]), " ".join(words[mid:])
 
 
 def build_products(raw_list: list) -> list:
