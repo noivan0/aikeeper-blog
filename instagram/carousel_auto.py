@@ -173,7 +173,7 @@ def fetch_product_images(post_url: str, out: Path, count: int = 3) -> list:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 슬라이드 1 — 커버 (v6 확정)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def make_s1(out, img_paths, topic_line1, topic_line2, sub_line):
+def make_s1(out, img_paths, topic_line1, topic_line2, sub_line, total=8):
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
     for y in range(H):
@@ -214,7 +214,7 @@ def make_s1(out, img_paths, topic_line1, topic_line2, sub_line):
     ct(d, "쿠팡 로켓배송  |  꿀통몬 추천", y, F(30, False), GRAY_L)
 
     mm(d, "꿀통몬 PICKS", W // 2, H - 32, F(26), ORANGE)
-    slide_no(d, 1, 8)
+    slide_no(d, 1, total)
     add_grain(img)
     path = out / "slide_01_cover.jpg"
     img.save(path, quality=96); print("OK s1")
@@ -224,7 +224,7 @@ def make_s1(out, img_paths, topic_line1, topic_line2, sub_line):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 슬라이드 2 — 체크리스트 (v6 확정)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def make_s2(out, items=None):
+def make_s2(out, items=None, total=8):
     CARD_H = 163; CARDS_TOP = 175
     if items is None:
         items = [
@@ -258,7 +258,7 @@ def make_s2(out, items=None):
         lm(d, sub,  text_x, y + (CARD_H - 5) * 67 // 100, F(25, False), GRAY_L, max_w=avail_w)
         y += CARD_H
 
-    slide_no(d, 2, 8); add_grain(img, 5)
+    slide_no(d, 2, total); add_grain(img, 5)
     path = out / "slide_02_checklist.jpg"
     img.save(path, quality=96); print("OK s2")
     return path
@@ -285,7 +285,7 @@ def make_product_slide(out, n,
                        box_title,       # 하단 박스 제목
                        box_lines,       # list[str] 설명 1~2줄
                        stars, star_col,
-                       sum_bg):
+                       sum_bg, total=8):
 
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
@@ -349,7 +349,7 @@ def make_product_slide(out, n,
     link_y = EVAL_Y2 + 18 if EVAL_Y2 < H - 75 else H - 62
     mm(d, "쿠팡 로켓배송  /  링크는 프로필 참고", W // 2, link_y, F(24, False), GRAY_M)
 
-    slide_no(d, n, 8); add_grain(img)
+    slide_no(d, n, total); add_grain(img)
     path = out / f"slide_{n:02d}_product.jpg"
     img.save(path, quality=96); print(f"OK s{n}")
     return path
@@ -358,7 +358,8 @@ def make_product_slide(out, n,
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 슬라이드 6 — 비교표 (v7 확정: 포스트 원문 기반)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def make_s6(out, products):
+def make_s6(out, products, total=8):
+    """비교표 슬라이드 — 상품 수에 따라 컬럼 동적 조정 (최대 4개 표시)"""
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
     top_bar(d); bot_bar(d)
@@ -367,16 +368,27 @@ def make_s6(out, products):
     ct(d, "한눈에 비교", 54, F(60), WHITE)
     divider(d, 128, width=130, h=4)
 
-    CX = [68, 305, 558, 810]
-    CW = [228, 244, 244, 240]
+    # 상품 수에 따라 비교표 컬럼 동적 계산 (최대 4개 상품 표시)
+    prods = products[:4]
+    n = len(prods)
+
+    # 컬럼 레이아웃: 항목명 컬럼 + 상품 n개 컬럼
+    TOTAL_W = W - PAD * 2   # 사용 가능한 너비
+    LABEL_W = 200           # 항목명 컬럼 너비 (고정)
+    prod_w  = (TOTAL_W - LABEL_W) // n  # 상품 컬럼 너비
+    CX = [PAD] + [PAD + LABEL_W + prod_w * i for i in range(n)]
+    CW = [LABEL_W] + [prod_w] * n
+
     ROW_TOP = 144; ROW_H = 86
 
-    # 헤더 — 제품 name_short 동적 적용
+    # 헤더 색상 (1위~4위)
+    RANK_COLS = [ORANGE, SILVER, BRONZE, (120, 200, 120)]
+
     def get_short(p):
         return str(p.get("name_short", p.get("productName", "상품")[:8]))
 
-    hdrs  = ["항목"] + [get_short(p) for p in products[:3]]
-    hcols = [GRAY_L, ORANGE, SILVER, BRONZE]
+    hdrs  = ["항목"] + [get_short(p) for p in prods]
+    hcols = [GRAY_L] + RANK_COLS[:n]
     d.rectangle([PAD, ROW_TOP, W - PAD, ROW_TOP + ROW_H], fill=(18, 18, 28))
     for cx, cw, hdr, hcol in zip(CX, CW, hdrs, hcols):
         f_ = shrink(F(25), hdr, cw - 8)
@@ -394,15 +406,15 @@ def make_s6(out, products):
         except: return "-"
 
     rows = [
-        ("가격",)      + tuple(price_str(p) for p in products[:3]),
-        ("주요 성분",) + tuple(pv(p, "ingredient", "확인 필요") for p in products[:3]),
-        ("제형",)      + tuple(pv(p, "form", "분말") for p in products[:3]),
-        ("용량",)      + tuple(pv(p, "volume", "-") for p in products[:3]),
-        ("1회 단가",)  + tuple(pv(p, "unit_price", "-") for p in products[:3]),
-        ("인증",)      + tuple(pv(p, "cert", "-") for p in products[:3]),
-        ("추천 대상",) + tuple(pv(p, "target", "-") for p in products[:3]),
+        ("가격",)      + tuple(price_str(p) for p in prods),
+        ("주요 성분",) + tuple(pv(p, "ingredient", "확인 필요") for p in prods),
+        ("제형",)      + tuple(pv(p, "form", "-") for p in prods),
+        ("용량",)      + tuple(pv(p, "volume", "-") for p in prods),
+        ("1회 단가",)  + tuple(pv(p, "unit_price", "-") for p in prods),
+        ("인증",)      + tuple(pv(p, "cert", "-") for p in prods),
+        ("추천 대상",) + tuple(pv(p, "target", "-") for p in prods),
     ]
-    vcols = [GRAY_L, ORANGE, SILVER, BRONZE]
+    vcols = [GRAY_L] + RANK_COLS[:n]
 
     y = ROW_TOP + ROW_H
     for ri, row in enumerate(rows):
@@ -428,7 +440,7 @@ def make_s6(out, products):
     d.text(((W - w_) // 2, sum_y1 + (sum_y2 - sum_y1) // 2 - int(vis_cy)),
            txt_, font=f_, fill=WHITE)
 
-    slide_no(d, 6, 8); add_grain(img, 5)
+    slide_no(d, 6, total); add_grain(img, 5)
     path = out / "slide_06_compare.jpg"
     img.save(path, quality=96); print("OK s6")
     return path
@@ -437,7 +449,7 @@ def make_s6(out, products):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 슬라이드 7 — 핵심 메시지 (v6 확정: 밑줄 없음)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def make_s7(out, line1="비싸다고", line2="좋은 건 아닙니다"):
+def make_s7(out, line1="비싸다고", line2="좋은 건 아닙니다", total=8):
     img = Image.new("RGB", (W, H), (10, 6, 2))
     d = ImageDraw.Draw(img)
     for x in range(0, W, 90): d.line([(x, 0), (x, H)], fill=(18, 12, 5), width=1)
@@ -457,7 +469,7 @@ def make_s7(out, line1="비싸다고", line2="좋은 건 아닙니다"):
     ct(d, "목적에 맞는 제품이 진짜 가성비", y, f_sub, GRAY_L); y += h_sub + 16
     ct(d, "블로그 전문 비교 리뷰 기반", y, f_cap, GRAY_M)
 
-    slide_no(d, 7, 8); add_grain(img, 5)
+    slide_no(d, 7, total); add_grain(img, 5)
     path = out / "slide_07_quote.jpg"
     img.save(path, quality=96); print("OK s7")
     return path
@@ -466,7 +478,7 @@ def make_s7(out, line1="비싸다고", line2="좋은 건 아닙니다"):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 슬라이드 8 — CTA (v6 확정)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def make_s8(out, account="@ggultongmon"):
+def make_s8(out, account="@ggultongmon", total=8):
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
     glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -498,7 +510,7 @@ def make_s8(out, account="@ggultongmon"):
     y += BTN_H + GAP_M + 6
 
     ct(d, "#쿠팡추천  #가성비  #꿀통몬", y, f_hash, GRAY_M)
-    slide_no(d, 8, 8); add_grain(img, 5)
+    slide_no(d, 8, total); add_grain(img, 5)
     path = out / "slide_08_cta.jpg"
     img.save(path, quality=96); print("OK s8")
     return path
@@ -564,14 +576,26 @@ DEFAULTS = [
     },
 ]
 
-RANK_CONFIGS = [
+_RANK_BASE = [
     {"rank_txt": "1위  추천",       "rank_bg": ORANGE,      "rank_fg": BG,
      "price_bg": ORANGE,            "tag_col": ORANGE,      "star_col": ORANGE},
     {"rank_txt": "2위",             "rank_bg": (88,88,124), "rank_fg": WHITE,
      "price_bg": (88,88,130),       "tag_col": SILVER,      "star_col": SILVER},
     {"rank_txt": "3위  (중급자용)", "rank_bg": (72,48,10),  "rank_fg": CREAM,
      "price_bg": (68,44,8),         "tag_col": BRONZE,      "star_col": BRONZE},
+    {"rank_txt": "4위",             "rank_bg": (50,70,50),  "rank_fg": WHITE,
+     "price_bg": (45,65,45),        "tag_col": (120,200,120), "star_col": (120,200,120)},
+    {"rank_txt": "5위",             "rank_bg": (60,50,80),  "rank_fg": WHITE,
+     "price_bg": (55,45,75),        "tag_col": (160,140,220), "star_col": (160,140,220)},
 ]
+
+def _get_rank_config(i: int) -> dict:
+    """인덱스에 맞는 순위 설정 반환 (5개 초과 시 마지막 스타일 재사용)"""
+    if i < len(_RANK_BASE):
+        return _RANK_BASE[i]
+    return {**_RANK_BASE[-1], "rank_txt": f"{i+1}위"}
+
+RANK_CONFIGS = _RANK_BASE  # 하위 호환
 
 
 def split_title(topic: str, max_w: int = W - 100) -> tuple:
@@ -639,8 +663,8 @@ def split_title(topic: str, max_w: int = W - 100) -> tuple:
 def build_products(raw_list: list) -> list:
     """raw products → 슬라이드용 dict (없는 필드는 DEFAULTS로 채움)"""
     result = []
-    for i, raw in enumerate(raw_list[:3]):
-        d = dict(DEFAULTS[i])
+    for i, raw in enumerate(raw_list):
+        d = dict(DEFAULTS[i] if i < len(DEFAULTS) else DEFAULTS[-1])
         name = raw.get("productName", d["name1"])
         try:   price = int(float(raw.get("productPrice", 0)))
         except: price = 0
@@ -670,7 +694,13 @@ def generate_carousel(
     out_dir: str = None,
 ) -> dict:
     """
-    카드뉴스 8장 자동 생성 (v7 확정 포맷)
+    카드뉴스 자동 생성 — 상품 수에 따라 슬라이드 수 자동 조정
+
+    상품 수별 구성:
+      1개: 커버 + 체크리스트 + 상품1 + 비교표(총평) + 명언 + CTA = 6장
+      2개: 커버 + 체크리스트 + 상품1 + 상품2 + 비교표 + 명언 + CTA = 7장
+      3개: 커버 + 체크리스트 + 상품1~3 + 비교표 + 명언 + CTA = 8장
+      4개+: 커버 + 체크리스트 + 상품1~N + 비교표 + 명언 + CTA = N+5장
 
     Returns:
         {"slides": [Path,...], "out_dir": Path, "topic": str, "post_url": str}
@@ -681,19 +711,31 @@ def generate_carousel(
     print(f"[carousel] 출력: {out}")
 
     prods = build_products(products)
-    print("[carousel] 상품 이미지 다운로드...")
-    img_paths = fetch_product_images(post_url, out, count=3)
+    n_prods = len(prods)
+    print(f"[carousel] 상품 {n_prods}개")
 
-    # 주제 → 커버 2줄 (폰트 너비 기준 자동 분리)
+    print("[carousel] 상품 이미지 다운로드...")
+    img_paths = fetch_product_images(post_url, out, count=n_prods)
+
+    # 주제 → 커버 2줄
     tl1, tl2 = split_title(topic)
-    sub = f"2026 최신  |  {len(prods)}종 직접 비교"
+    sub = f"2026 최신  |  {n_prods}종 직접 비교"
 
     print("[carousel] 슬라이드 생성...")
     slides = []
-    slides.append(make_s1(out, img_paths, tl1, tl2, sub))
-    slides.append(make_s2(out))
 
-    for i, (prod, cfg) in enumerate(zip(prods, RANK_CONFIGS)):
+    # 총 슬라이드 수 미리 계산: 커버 + 체크리스트 + 상품N장 + 비교표 + 명언 + CTA
+    total_slides = 2 + n_prods + 3
+
+    # S1: 커버
+    slides.append(make_s1(out, img_paths, tl1, tl2, sub, total=total_slides))
+
+    # S2: 체크리스트
+    slides.append(make_s2(out, total=total_slides))
+
+    # S3~: 상품 슬라이드 (상품 수만큼 동적 생성)
+    for i, prod in enumerate(prods):
+        cfg = _get_rank_config(i)
         slides.append(make_product_slide(
             out, n=3 + i,
             rank_txt=cfg["rank_txt"],
@@ -708,13 +750,20 @@ def generate_carousel(
             stars=prod.get("stars", "★★★☆☆"),
             star_col=cfg["star_col"],
             sum_bg=prod.get("sum_bg", (22, 22, 42)),
+            total=total_slides,
         ))
 
-    slides.append(make_s6(out, prods))
-    slides.append(make_s7(out))
-    slides.append(make_s8(out))
+    # 비교표
+    slides.append(make_s6(out, prods, total=total_slides))
 
-    print(f"[carousel] 완료! {len(slides)}장")
+    # 명언
+    slides.append(make_s7(out, total=total_slides))
+
+    # CTA
+    slides.append(make_s8(out, total=total_slides))
+
+    total = len(slides)
+    print(f"[carousel] 완료! {total}장 (상품 {n_prods}개 → {total}슬라이드)")
     return {"slides": slides, "out_dir": out, "topic": topic, "post_url": post_url}
 
 
