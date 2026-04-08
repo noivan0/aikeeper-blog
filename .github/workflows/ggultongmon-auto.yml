@@ -114,6 +114,132 @@ jobs:
               print(f'색인 요청 스킵: {e}')
           "
 
+      - name: Instagram 카드뉴스 생성 및 업로드
+        id: instagram
+        continue-on-error: true
+        env:
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          POST_URL: ${{ steps.post.outputs.post_url }}
+          TOPIC: ${{ steps.topic.outputs.topic }}
+          PRODUCTS_JSON: ${{ steps.topic.outputs.products_json }}
+        run: |
+          if [ -z "$POST_URL" ]; then
+            echo "POST_URL 없음 — 카드뉴스 스킵"
+            exit 0
+          fi
+          pip3 install pillow requests -q
+          python3 -c "
+          import sys, os, json, subprocess
+          sys.path.insert(0, 'instagram')
+          from carousel_auto import generate_carousel
+          from upload_instagram import upload_carousel
+
+          topic   = os.environ.get('TOPIC','')
+          post_url= os.environ.get('POST_URL','')
+          prods_raw = os.environ.get('PRODUCTS_JSON','[]')
+          products = json.loads(prods_raw) if prods_raw else []
+
+          print(f'[카드뉴스] 주제: {topic}')
+          result = generate_carousel(topic=topic, post_url=post_url, products=products)
+          slides = result['slides']
+          out_dir = str(result['out_dir'])
+          print(f'[카드뉴스] 생성 완료: {len(slides)}장')
+
+          # Instagram 업로드
+          token   = os.environ.get('INSTAGRAM_ACCESS_TOKEN','')
+          acct_id = os.environ.get('INSTAGRAM_ACCOUNT_ID','')
+          repo    = os.environ.get('GITHUB_REPO','noivan0/aikeeper-blog')
+          gh_token= os.environ.get('GITHUB_TOKEN','')
+
+          if token and acct_id:
+              caption = f'{topic}\n\n#쿠팡추천 #가성비 #꿀통몬 #리뷰 #추천'
+              post_id = upload_carousel(slides, out_dir, token, acct_id, repo, gh_token, caption)
+              print(f'[Instagram] 게시 완료: {post_id}')
+              # out_dir 환경변수로 노출
+              with open(os.environ.get('GITHUB_OUTPUT',''), 'a') as f:
+                  f.write(f'carousel_dir={out_dir}\n')
+          else:
+              print('[Instagram] 토큰 없음 — 업로드 스킵')
+          "
+
+      - name: litt.ly 상품 등록 (이미지 포함)
+        continue-on-error: true
+        env:
+          LITTLY_EMAIL: ${{ secrets.LITTLY_EMAIL }}
+          LITTLY_PASSWORD: ${{ secrets.LITTLY_PASSWORD }}
+          PRODUCTS_JSON: ${{ steps.topic.outputs.products_json }}
+          CAROUSEL_DIR: ${{ steps.instagram.outputs.carousel_dir }}
+        run: |
+          if [ -z "$PRODUCTS_JSON" ] || [ "$PRODUCTS_JSON" = "[]" ]; then
+            echo "상품 없음 — litt.ly 등록 스킵"
+            exit 0
+          fi
+          python3 -c "
+          import sys, os, json
+          sys.path.insert(0, 'instagram')
+          from upload_littly import LittlyClient
+
+          prods = json.loads(os.environ.get('PRODUCTS_JSON', '[]'))
+          carousel_dir = os.environ.get('CAROUSEL_DIR', '')
+
+          if not prods:
+              print('상품 없음')
+              sys.exit(0)
+
+          # 상품 이미지 경로 (carousel_auto가 생성한 _prod1.jpg 등)
+          from pathlib import Path
+          img_paths = []
+          for i in range(len(prods)):
+              if carousel_dir:
+                  p = Path(carousel_dir) / f'_prod{i+1}.jpg'
+                  if p.exists():
+                      img_paths.append(str(p))
+                      continue
+              img_paths.append(None)
+
+          # None이면 임시 이미지 대체 (이미지 없이 등록)
+          final_imgs = []
+          final_prods = []
+          for prod, img in zip(prods, img_paths):
+              final_prods.append({
+                  'title': prod.get('name','상품'),
+                  'url':   prod.get('url', prod.get('coupang_url','')),
+                  'tags':  prod.get('tags', []),
+              })
+              final_imgs.append(img)
+
+          client = LittlyClient()
+          client.login()
+
+          # 이미지 있는 상품만 upload, 없으면 이미지 None으로 등록
+          import random, string
+          page = client.get_page()
+          blocks = page['data']['blocks']
+          pl_idx = next(i for i,b in enumerate(blocks) if b['type']=='productLink')
+          pl_block = blocks[pl_idx]
+          new_links = []
+          for prod, img_path in zip(final_prods, final_imgs):
+              print(f'등록: {prod[\"title\"]}')
+              img_field = None
+              if img_path:
+                  try:
+                      from pathlib import Path as P
+                      img_info = client.upload_image(P(img_path))
+                      img_field = {'url': img_info['url'], 'mediaId': img_info['mediaId']}
+                  except Exception as e:
+                      print(f'  이미지 업로드 실패: {e}')
+              key = ''.join(random.choices(string.ascii_letters+string.digits, k=7))
+              new_links.append({'key':key,'url':prod['url'],'tags':prod['tags'],'image':img_field,'title':prod['title'],'currency':'KRW'})
+          pl_block['links'] = new_links + pl_block.get('links',[])
+          blocks[pl_idx] = pl_block
+          page['data']['blocks'] = blocks
+          client.patch_page(page['data'])
+          print(f'litt.ly 등록 완료: {len(new_links)}개')
+          "
+
       - name: 네이버 블로그 크로스포스팅 (prosweep 쿠팡 카테고리)
         continue-on-error: true
         env:
