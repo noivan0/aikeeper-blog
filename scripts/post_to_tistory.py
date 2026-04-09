@@ -186,16 +186,14 @@ def cross_post(topic: str, products: list, post_url: str,
     labels = labels or []
     print(f"[tistory] 크로스포스팅 시작: {topic[:40]}...")
 
-    # 커버 이미지 자동 추출 — CAROUSEL_IMAGE_URLS 에서 slide_01_cover 우선
+    # 커버 이미지 — 파이프라인에서 넘겨받지 못한 경우 CAROUSEL_IMAGE_URLS 에서 추출
     if not cover_image_url:
-        carousel_urls = os.environ.get("CAROUSEL_IMAGE_URLS", "")
-        if carousel_urls:
-            urls = [u.strip() for u in carousel_urls.split(",") if u.strip().startswith("http")]
-            # slide_01_cover 를 가장 먼저
-            cover_candidates = [u for u in urls if "slide_01" in u or "cover" in u]
-            cover_image_url = (cover_candidates or urls)[0] if (cover_candidates or urls) else ""
-            if cover_image_url:
-                print(f"[tistory] 커버 이미지: {cover_image_url[:80]}...")
+        import json as _cj
+        _all = _cj.loads(os.environ.get("CAROUSEL_IMAGE_URLS", "[]"))
+        _candidates = [u for u in _all if u and ("slide_01" in u or "cover" in u)]
+        cover_image_url = (_candidates or _all or [""])[0]
+    if cover_image_url:
+        print(f"[tistory] 커버 이미지: {cover_image_url[:80]}...")
 
     print("[tistory] Claude 크로스포스트 생성 중...")
     data = generate_cross_post(topic, products, post_url, labels, cover_image_url)

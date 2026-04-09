@@ -388,11 +388,28 @@ def main():
         try:
             sys.path.insert(0, str(BASE_DIR / "scripts"))
             from post_to_tistory import cross_post as tistory_cross_post
+
+            # 커버 이미지: CAROUSEL_IMAGE_URLS 에서 slide_01_cover 우선 추출
+            import json as _ts_json
+            _ts_all_urls = _ts_json.loads(os.environ.get("CAROUSEL_IMAGE_URLS", "[]"))
+            _ts_cover = next(
+                (u for u in _ts_all_urls if "slide_01" in u or "cover" in u),
+                _ts_all_urls[0] if _ts_all_urls else ""
+            )
+            # CAROUSEL_IMAGE_URLS 가 없으면 carousel_dir 타임스탬프로 직접 구성
+            if not _ts_cover:
+                _ts_dir = os.environ.get("CAROUSEL_OUT_DIR", "")
+                if _ts_dir:
+                    from pathlib import Path as _TSP
+                    _ts_ts = _TSP(_ts_dir).name
+                    _ts_cover = f"https://noivan0.github.io/aikeeper-blog/carousel/{_ts_ts}/slide_01_cover.jpg"
+
             _ts_result = tistory_cross_post(
                 topic=TOPIC,
                 products=products,
                 post_url=post_url,
                 labels=LABELS,
+                cover_image_url=_ts_cover,
             )
             if _ts_result.get("success"):
                 print(f"  ✅ 티스토리 크로스포스팅 완료: {_ts_result.get('url','')}")
