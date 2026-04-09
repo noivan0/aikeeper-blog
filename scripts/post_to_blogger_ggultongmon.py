@@ -286,7 +286,7 @@ def main():
                 _littly_prods.append({
                     "title": p.get("productName", p.get("name", "상품")),
                     "url":   p.get("shortenUrl", p.get("coupang_url", p.get("url", ""))),
-                    "tags":  [],
+                    "tags":  LABELS[:3],   # 포스트 라벨을 강조 태그로 사용 (최대 3개)
                 })
 
             lc = LittlyClient()
