@@ -306,6 +306,7 @@ def main():
             if _tg_token:
                 from pathlib import Path as _P2
                 # 상품 이미지 전송 (상품 수 기준 가변)
+                _emoji_nums = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣"]
                 _prod_count = len(products) if products else 4
                 _sent = 0
                 for i in range(1, _prod_count + 1):
@@ -313,12 +314,18 @@ def main():
                     if not _img.exists():
                         continue
                     _img_data = _img.read_bytes()
-                    import io as _io
+                    # 상품명 추출
+                    _prod_name = products[i-1].get("productName", products[i-1].get("name", "")) if i-1 < len(products) else ""
+                    _emoji = _emoji_nums[i-1] if i-1 < len(_emoji_nums) else f"{i}."
+                    _photo_caption = f"{_emoji} {_prod_name}"
                     _boundary = "----FormBoundary7MA4YWxkTrZu0gW"
                     _body = (
                         f"--{_boundary}\r\n"
                         f'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
                         f"{_tg_chat_id}\r\n"
+                        f"--{_boundary}\r\n"
+                        f'Content-Disposition: form-data; name="caption"\r\n\r\n'
+                        f"{_photo_caption}\r\n"
                         f"--{_boundary}\r\n"
                         f'Content-Disposition: form-data; name="photo"; filename="_prod{i}.jpg"\r\n'
                         f"Content-Type: image/jpeg\r\n\r\n"
@@ -331,7 +338,7 @@ def main():
                     )
                     _ur.urlopen(_req, timeout=15)
                     _sent += 1
-                # 캡션 메시지 전송
+                # 포스트 링크 별도 메시지
                 _caption = f"[꿀통몬] {TOPIC[:60]}\n{post_url}"
                 _data = _up.urlencode({"chat_id": _tg_chat_id, "text": _caption}).encode()
                 _ur.urlopen(_ur.Request(
