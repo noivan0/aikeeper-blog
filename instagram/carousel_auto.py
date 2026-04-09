@@ -224,6 +224,71 @@ def make_s1(out, img_paths, topic_line1, topic_line2, sub_line, total=8):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 슬라이드 2 — 체크리스트 (v6 확정)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def _generate_checklist(topic: str) -> list:
+    """Claude API로 주제에 맞는 구매 전 체크리스트 5항목 생성"""
+    import os, json, urllib.request
+
+    API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
+    BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
+    MODEL    = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+
+    # 기본값 (API 실패 시)
+    default = [
+        ("가격 대비 품질", "리뷰 평점과 구매 후기 꼼꼼히 확인"),
+        ("브랜드 신뢰도",  "국내외 공인 인증 여부 체크"),
+        ("사이즈·규격",    "실제 사용 환경에 맞는지 확인"),
+        ("재질·소재",      "내구성과 안전성 기준 확인"),
+        ("AS·환불 정책",   "구매 후 지원 조건 미리 확인"),
+    ]
+
+    if not API_KEY:
+        return default
+
+    prompt = (
+        f"상품 카테고리: {topic}\n\n"
+        "이 상품을 구매하기 전에 반드시 확인해야 할 핵심 체크리스트 5가지를 작성하세요.\n"
+        "각 항목은 해당 상품 카테고리에 특화된 실용적인 내용이어야 합니다.\n\n"
+        "반드시 아래 JSON 형식으로만 출력하세요 (다른 텍스트 없이):\n"
+        '[\n'
+        '  {"main": "항목명(8자 이내)", "sub": "구체적 설명(20자 이내)"},\n'
+        '  ...\n'
+        ']\n'
+    )
+
+    try:
+        payload = json.dumps({
+            "model": MODEL,
+            "max_tokens": 400,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            f"{BASE_URL}/v1/messages",
+            data=payload, method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": API_KEY,
+                "anthropic-version": "2023-06-01",
+            }
+        )
+        with urllib.request.urlopen(req, timeout=20) as r:
+            data = json.loads(r.read())
+        text = data["content"][0]["text"].strip()
+
+        # JSON 추출
+        start = text.find("[")
+        end   = text.rfind("]") + 1
+        items_raw = json.loads(text[start:end])
+        items = [(it["main"][:10], it["sub"][:22]) for it in items_raw[:5]]
+        if len(items) == 5:
+            print(f"[carousel] 체크리스트 생성 완료: {[i[0] for i in items]}")
+            return items
+    except Exception as e:
+        print(f"[carousel] 체크리스트 생성 실패 ({e}) — 기본값 사용")
+
+    return default
+
+
 def make_s2(out, items=None, total=8):
     CARD_H = 163; CARDS_TOP = 175
     if items is None:
@@ -736,8 +801,9 @@ def generate_carousel(
     # S1: 커버
     slides.append(make_s1(out, img_paths, tl1, tl2, sub, total=total_slides))
 
-    # S2: 체크리스트
-    slides.append(make_s2(out, total=total_slides))
+    # S2: 체크리스트 (주제에 맞는 항목을 Claude로 생성)
+    checklist_items = _generate_checklist(topic)
+    slides.append(make_s2(out, items=checklist_items, total=total_slides))
 
     # S3~: 상품 슬라이드 (상품 수만큼 동적 생성)
     for i, prod in enumerate(prods):
