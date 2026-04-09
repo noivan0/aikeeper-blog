@@ -349,6 +349,26 @@ def main():
         except Exception as _te:
             print(f"  ℹ️  텔레그램 전송 스킵 (비치명적): {_te}")
 
+    # 4-5. Threads 스레드형 연속 포스팅 (비치명적)
+    if products and post_url:
+        try:
+            sys.path.insert(0, str(BASE_DIR / "instagram"))
+            from upload_threads import publish_thread
+            _prod_gh_urls = json.loads(os.environ.get("CAROUSEL_IMAGE_URLS", "[]"))
+            _th_result = publish_thread(
+                topic=TOPIC,
+                products=products,
+                image_urls=_prod_gh_urls,
+                post_url=post_url,
+                labels=LABELS,
+            )
+            if _th_result.get("success"):
+                print(f"  ✅ Threads 게시 완료: {_th_result.get('permalink','')}")
+            else:
+                print(f"  ℹ️  Threads 게시 실패: {_th_result.get('error','')}")
+        except Exception as _the:
+            print(f"  ℹ️  Threads 게시 스킵 (비치명적): {_the}")
+
     # 5. Google Indexing API — 즉시 색인 요청
     if post_url:
         try:
