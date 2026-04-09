@@ -429,19 +429,16 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
             "selected_products": selected,
         }
 
-    def _stream_call(p):
-        """스트리밍으로 Claude 호출 → 텍스트 반환"""
-        buf = ""
-        with client.messages.stream(
+    def _call(p):
+        """Claude 호출 → 텍스트 반환 (non-streaming)"""
+        msg = client.messages.create(
             model=ANTHROPIC_MODEL, max_tokens=600,
             messages=[{"role": "user", "content": p}]
-        ) as stream:
-            for chunk in stream.text_stream:
-                buf += chunk
-        return buf
+        )
+        return msg.content[0].text
 
     # 첫 시도
-    result = parse_result(_stream_call(prompt))
+    result = parse_result(_call(prompt))
 
     # 중복 감지 → 최대 2회 재시도
     for attempt in range(2):
@@ -451,7 +448,7 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
         retry_prompt = (prompt +
             f"\n\n[필수] 방금 제안한 '{result['topic']}'는 기존 포스트와 너무 유사합니다. "
             f"완전히 다른 상품 조합과 주제로 다시 선정하세요.")
-        result = parse_result(_stream_call(retry_prompt))
+        result = parse_result(_call(retry_prompt))
 
     if is_duplicate_topic(result["topic"], used_titles):
         print(f"  [WARN] 재시도 후에도 유사 주제 — 그대로 진행")

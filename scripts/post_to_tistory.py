@@ -22,8 +22,8 @@ if env_file.exists():
         os.environ.setdefault(k.strip(), v.strip())
 
 TSSESSION        = os.environ.get("TISTORY_SESSION", "")
-BLOG_NAME        = "banidad"
-CATEGORY_COUPANG = "1199098"   # '쿠팡' 카테고리 ID
+BLOG_NAME        = os.environ.get("TISTORY_BLOG_NAME", "banidad")
+CATEGORY_COUPANG = os.environ.get("TISTORY_CATEGORY_COUPANG", "1199098")
 API_BASE         = f"https://{BLOG_NAME}.tistory.com/manage"
 
 requests.packages.urllib3.disable_warnings()

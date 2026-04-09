@@ -19,9 +19,9 @@ import requests
 requests.packages.urllib3.disable_warnings()
 
 LITTLY_BASE  = "https://api.litt.ly/v0"
-LITTLY_EMAIL = os.environ.get("LITTLY_EMAIL", "noivan000@gmail.com")
-LITTLY_PW    = os.environ.get("LITTLY_PASSWORD", "RLAwlghks8*!")
-PAGE_ID      = int(os.environ.get("LITTLY_PAGE_ID", "228825"))
+LITTLY_EMAIL = os.environ.get("LITTLY_EMAIL", "")
+LITTLY_PW    = os.environ.get("LITTLY_PASSWORD", "")
+PAGE_ID      = int(os.environ.get("LITTLY_PAGE_ID", "0"))
 
 
 def rand_key(n=7):

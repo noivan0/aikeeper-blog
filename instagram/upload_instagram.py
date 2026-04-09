@@ -112,9 +112,9 @@ def upload_to_github_pages(slides: list, timestamp: str) -> list:
     import base64
 
     gh_token = os.environ.get("GITHUB_PAT", "")
-    repo     = "noivan0/aikeeper-blog"   # GitHub Pages 레포
-    branch   = "gh-pages"               # GitHub Pages 브랜치
-    base_url = "https://noivan0.github.io/aikeeper-blog"
+    repo     = os.environ.get("GITHUB_PAGES_REPO", "noivan0/aikeeper-blog")
+    branch   = os.environ.get("GITHUB_PAGES_BRANCH", "gh-pages")
+    base_url = os.environ.get("GITHUB_PAGES_BASE", "https://noivan0.github.io/aikeeper-blog")
 
     if not gh_token:
         print("[instagram] GITHUB_PAT 없음 — GitHub Pages 스킵")

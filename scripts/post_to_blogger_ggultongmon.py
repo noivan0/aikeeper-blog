@@ -287,7 +287,8 @@ def main():
             if not _prod_gh_urls and carousel_dir:
                 from pathlib import Path as _PL
                 _dir_name = _PL(carousel_dir).name
-                _gh_base = f"https://noivan0.github.io/aikeeper-blog/carousel/{_dir_name}"
+                _gh_pages_base = os.environ.get("GITHUB_PAGES_BASE", "https://noivan0.github.io/aikeeper-blog")
+                _gh_base = f"{_gh_pages_base}/carousel/{_dir_name}"
                 _prod_gh_urls = [
                     f"{_gh_base}/slide_0{i+3}_product.jpg"
                     for i in range(len(products))
@@ -402,7 +403,8 @@ def main():
                 if _ts_dir:
                     from pathlib import Path as _TSP
                     _ts_ts = _TSP(_ts_dir).name
-                    _ts_cover = f"https://noivan0.github.io/aikeeper-blog/carousel/{_ts_ts}/slide_01_cover.jpg"
+                    _gh_pages_base = os.environ.get("GITHUB_PAGES_BASE", "https://noivan0.github.io/aikeeper-blog")
+                    _ts_cover = f"{_gh_pages_base}/carousel/{_ts_ts}/slide_01_cover.jpg"
 
             _ts_result = tistory_cross_post(
                 topic=TOPIC,
