@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Threads OAuth Callback</title>
+<style>
+  body { font-family: monospace; background: #111; color: #0f0; padding: 40px; }
+  #code { background: #222; padding: 20px; border-radius: 8px; word-break: break-all; font-size: 18px; }
+  button { margin-top: 20px; padding: 10px 20px; font-size: 16px; cursor: pointer; background: #0f0; color: #111; border: none; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h2>✅ Threads OAuth 콜백</h2>
+<p>아래 <strong>code</strong> 값을 복사해서 대장에게 전달해주세요:</p>
+<div id="code">확인 중...</div>
+<button onclick="copyCode()">📋 복사</button>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const error = params.get('error');
+  const el = document.getElementById('code');
+  if (code) {
+    el.textContent = code;
+  } else if (error) {
+    el.style.color = '#f00';
+    el.textContent = '오류: ' + error + ' — ' + params.get('error_description');
+  } else {
+    el.textContent = 'code 파라미터가 없습니다. URL을 확인해주세요.';
+  }
+  function copyCode() {
+    navigator.clipboard.writeText(el.textContent).then(() => alert('복사됐습니다!'));
+  }
+</script>
+</body>
+</html>
