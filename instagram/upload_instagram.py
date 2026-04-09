@@ -335,7 +335,10 @@ def publish_carousel_from_dir(
     print("[instagram] GitHub Pages 반영 대기 (180초)...")
     time.sleep(180)
 
-    return upload_carousel(image_urls, caption)
+    result = upload_carousel(image_urls, caption)
+    # image_urls도 함께 반환 (litt.ly 등 외부 연동용)
+    result["image_urls"] = image_urls
+    return result
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

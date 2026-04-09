@@ -255,6 +255,10 @@ def main():
                 )
                 if ig_result.get("success"):
                     print(f"  ✅ Instagram 업로드 완료: {ig_result.get('permalink','')}")
+                    # Instagram 업로드 시 사용된 GitHub Pages URL 저장 (litt.ly 이미지용)
+                    os.environ["CAROUSEL_IMAGE_URLS"] = __import__("json").dumps(
+                        ig_result.get("image_urls", [])
+                    )
                 else:
                     print(f"  ℹ️  Instagram 업로드 실패: {ig_result.get('error','')}")
             except Exception as _ie:
@@ -264,28 +268,31 @@ def main():
             print(f"  ℹ️  카드뉴스 생성 스킵 (비치명적): {_ce}")
 
     # 4-3. litt.ly 상품 등록 (비치명적)
+    # 상품 슬라이드 URL: Instagram 업로드 시 사용한 GitHub Pages URL에서
+    # slide_03_product.jpg ~ slide_0N_product.jpg 를 상품 이미지로 활용
     carousel_dir = os.environ.get("CAROUSEL_OUT_DIR", "")
     if products and carousel_dir:
         try:
+            import json as _json
             sys.path.insert(0, str(BASE_DIR / "instagram"))
             from upload_littly import LittlyClient
-            from pathlib import Path as _P
-            import random as _r, string as _s
+
+            # GitHub Pages에 올라간 이미지 URL 목록 (slide_03_product ~ slide_0N_product)
+            _all_gh_urls = _json.loads(os.environ.get("CAROUSEL_IMAGE_URLS", "[]"))
+            _prod_gh_urls = [u for u in _all_gh_urls if u and "product" in (u or "")]
 
             _littly_prods = []
-            _littly_imgs  = []
             for i, p in enumerate(products):
                 _littly_prods.append({
                     "title": p.get("productName", p.get("name", "상품")),
                     "url":   p.get("shortenUrl", p.get("coupang_url", p.get("url", ""))),
                     "tags":  [],
                 })
-                img_path = _P(carousel_dir) / f"_prod{i+1}.jpg"
-                _littly_imgs.append(str(img_path) if img_path.exists() else None)
 
             lc = LittlyClient()
             lc.login()
-            lc.register_products(_littly_prods, _littly_imgs)
+            # public_urls로 GitHub Pages URL 전달 → S3 우회
+            lc.register_products(_littly_prods, [None]*len(_littly_prods), public_urls=_prod_gh_urls)
             print(f"  ✅ litt.ly 상품 등록 완료: {len(_littly_prods)}개")
         except Exception as _le:
             print(f"  ℹ️  litt.ly 등록 스킵 (비치명적): {_le}")
