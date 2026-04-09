@@ -354,7 +354,9 @@ def main():
         try:
             sys.path.insert(0, str(BASE_DIR / "instagram"))
             from upload_threads import publish_thread
-            _prod_gh_urls = json.loads(os.environ.get("CAROUSEL_IMAGE_URLS", "[]"))
+            _all_urls = json.loads(os.environ.get("CAROUSEL_IMAGE_URLS", "[]"))
+            # product 슬라이드만 (slide_03_product, slide_04_product, slide_05_product)
+            _prod_gh_urls = [u for u in _all_urls if u and "product" in u]
             _th_result = publish_thread(
                 topic=TOPIC,
                 products=products,
