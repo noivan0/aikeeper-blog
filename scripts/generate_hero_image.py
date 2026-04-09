@@ -495,7 +495,8 @@ def upload_to_github(image_buf: BytesIO, slug: str) -> str:
             result = json.loads(resp.read())
             download_url = result.get("content", {}).get("download_url", "")
             # GitHub Pages URL로 변환
-            pages_url = f"https://noivan0.github.io/aikeeper-blog/{path}"
+            _gh_base = os.environ.get("GITHUB_PAGES_BASE", "https://noivan0.github.io/aikeeper-blog")
+            pages_url = f"{_gh_base}/{path}"
             print(f"  ✅ GitHub Pages 업로드 성공: {pages_url}")
             return pages_url
     except urllib.error.HTTPError as e:
@@ -573,7 +574,7 @@ def generate_and_upload(title: str, blog: str = "aikeeper",
         "url": url,
         "alt": f"{title} — {copy_text}",
         "credit": theme["credit"],
-        "credit_url": f"https://noivan0.github.io/aikeeper-blog/",
+        "credit_url": os.environ.get("GITHUB_PAGES_BASE", "https://noivan0.github.io/aikeeper-blog") + "/",
         "source": "generated_hero",
         "source_label": brand_label,
     }
@@ -617,7 +618,7 @@ def generate_section_image(section_title: str, post_title: str, blog: str = "aik
             "url": "",
             "alt": section_title,
             "credit": theme["credit"],
-            "credit_url": "https://noivan0.github.io/aikeeper-blog/",
+            "credit_url": os.environ.get("GITHUB_PAGES_BASE", "https://noivan0.github.io/aikeeper-blog") + "/",
             "source": "generated_section",
             "source_label": section_brand_label,
         }
@@ -626,7 +627,7 @@ def generate_section_image(section_title: str, post_title: str, blog: str = "aik
         "url": url,
         "alt": f"{section_title} — {copy_text}",
         "credit": theme["credit"],
-        "credit_url": "https://noivan0.github.io/aikeeper-blog/",
+        "credit_url": os.environ.get("GITHUB_PAGES_BASE", "https://noivan0.github.io/aikeeper-blog") + "/",
         "source": "generated_section",
         "source_label": section_brand_label,
     }
