@@ -467,9 +467,9 @@ A4:
             model=get_model(), max_tokens=8192,
             system=SYSTEM_PROMPT_COUPANG,
             messages=[{"role": "user", "content": retry_prompt}]
-        ) as _stream:
-            for _chunk in _stream.text_stream:
-                _raw += _chunk
+        ) as stream:
+            for chunk in stream.text_stream:
+                _raw += chunk
         def _ex(tag, src=_raw):
             s = src.find(f"==={tag}===")
             if s == -1: return ""
@@ -607,11 +607,15 @@ def build_full_html(title: str, content: str, products: list,
     # og:image: 쿠팡 상품 이미지(1200px) 우선, 없으면 카테고리 폴백
     og_hero_img = hero_img_og if hero_img_og else _discover_img
     # 히든 썸네일: 항상 보장 (상품 이미지 우선, 없으면 폴백)
-    thumb_src = hero_img_th if hero_img_th else (hero_img if hero_img else _discover_img)
+    # og:image용: 1200px 이미지 우선 (구글 디스커버리 최적화)
+    thumb_src = hero_img_og if hero_img_og else (hero_img_th if hero_img_th else (hero_img if hero_img else _discover_img))
+    # 썸네일: Blogger 피드 추출 + 구글 크롤러 인식을 위해 실제 크기로 렌더링
+    # div로 감싸 overflow:hidden + max-height:0 → 레이아웃 비파괴, 크롤러 인식 OK
     thumb_html = (
-        f'<img src="{thumb_src}" alt="{title}" '
-        f'style="position:absolute;width:1px;height:1px;overflow:hidden;'
-        f'clip:rect(0,0,0,0);white-space:nowrap;" width="1" height="1" aria-hidden="true">\n'
+        f'<div style="overflow:hidden;max-height:0;max-width:0;line-height:0;font-size:0;">'
+        f'<img src="{thumb_src}" alt="{title}" width="1200" height="630" '
+        f'style="width:1200px;height:630px;display:block;" loading="eager">'
+        f'</div>\n'
     )
 
     keywords_str = ", ".join(labels)

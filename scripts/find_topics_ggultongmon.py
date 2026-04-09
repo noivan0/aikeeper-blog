@@ -226,21 +226,34 @@ def get_best_products(cat_id: int, limit: int = 20) -> list:
         return []
 
 
-def load_last_category() -> int:
-    """직전 발행 카테고리 ID 로드 (연속 중복 방지)"""
+def load_recent_categories(n: int = 5) -> list:
+    """최근 발행 카테고리 ID 목록 로드 (연속·당일 중복 방지용)"""
     state_file = os.path.join(BASE_DIR, "posts-ggultongmon", ".last_category.json")
     try:
         with open(state_file, encoding="utf-8") as f:
-            return json.load(f).get("cat_id", 0)
+            data = json.load(f)
+            # 구버전(단일 cat_id) 호환
+            if "cat_id" in data and "history" not in data:
+                return [data["cat_id"]]
+            return data.get("history", [])
     except Exception:
-        return 0
+        return []
+
+def load_last_category() -> int:
+    """직전 발행 카테고리 ID (하위 호환용)"""
+    hist = load_recent_categories(1)
+    return hist[0] if hist else 0
 
 def save_last_category(cat_id: int):
-    """직전 발행 카테고리 ID 저장"""
+    """최근 발행 카테고리 이력 저장 (최대 10개 유지)"""
     state_file = os.path.join(BASE_DIR, "posts-ggultongmon", ".last_category.json")
     os.makedirs(os.path.dirname(state_file), exist_ok=True)
+    hist = load_recent_categories(10)
+    # 앞에 추가, 최대 10개 유지
+    hist = [cat_id] + [c for c in hist if c != cat_id][:9]
     with open(state_file, "w", encoding="utf-8") as f:
-        json.dump({"cat_id": cat_id, "updated": datetime.now(timezone(timedelta(hours=9))).isoformat()}, f)
+        json.dump({"cat_id": cat_id, "history": hist,
+                   "updated": datetime.now(timezone(timedelta(hours=9))).isoformat()}, f)
 
 def pick_category_and_products() -> tuple[int, str, list]:
     """
@@ -248,11 +261,14 @@ def pick_category_and_products() -> tuple[int, str, list]:
     상품이 5개 미만이면 다음 우선순위 카테고리로 재시도
     연속 같은 카테고리 방지: 직전 카테고리와 같으면 다음 순위로 이동
     """
-    last_cat_id = load_last_category()
+    # 최근 5개 카테고리 이력 로드 (당일 중복 방지 강화)
+    recent_cats = load_recent_categories(5)
+    last_cat_id = recent_cats[0] if recent_cats else 0
+    print(f"[중복방지] 최근 {len(recent_cats)}개 카테고리 이력: {[CATEGORIES.get(c,'?') for c in recent_cats]}")
 
     # 시즌 힌트 확인 (50% 확률로 시즌 키워드 우선 적용 — 과도한 고정 방지)
     season = get_season_hint()
-    if season and random.random() < 0.5 and season["cat_id"] != last_cat_id:
+    if season and random.random() < 0.5 and season["cat_id"] not in recent_cats[:3]:
         cat_id = season["cat_id"]
         cat_name = CATEGORIES.get(cat_id, "기타")
         products = get_best_products(cat_id, limit=30)
@@ -260,17 +276,18 @@ def pick_category_and_products() -> tuple[int, str, list]:
             print(f"[시즌] 카테고리: {cat_name}({cat_id}) | 키워드: {season['keyword']} | 상품 {len(products)}개")
             return cat_id, cat_name, products
 
-    # 요일별 테마 카테고리 순서대로 시도 (직전 카테고리 건너뜀)
+    # 요일별 테마 카테고리 순서대로 시도 (최근 5개 카테고리 건너뜀)
     candidates = get_weekday_categories()
     weekday_names = ["월", "화", "수", "목", "금", "토", "일"]
     wd = datetime.now(timezone(timedelta(hours=9))).weekday()
     print(f"[요일테마] {weekday_names[wd]}요일 → 우선 카테고리: {[CATEGORIES.get(c,'?') for c in candidates[:3]]}")
-    if last_cat_id:
-        print(f"[연속방지] 직전 카테고리: {CATEGORIES.get(last_cat_id,'?')}({last_cat_id}) → 건너뜀")
+    if recent_cats:
+        print(f"[연속방지] 최근 카테고리 {[CATEGORIES.get(c,'?') for c in recent_cats[:3]]} → 건너뜀")
 
     for cat_id in candidates[:8]:
-        if cat_id == last_cat_id:
-            continue  # 직전과 같은 카테고리 스킵
+        if cat_id in recent_cats[:5]:
+            print(f"  [SKIP] {CATEGORIES.get(cat_id,'?')}({cat_id}) — 최근 발행됨")
+            continue  # 최근 5개 카테고리 모두 스킵
         cat_name = CATEGORIES.get(cat_id, "기타")
         products = get_best_products(cat_id, limit=30)
         if len(products) >= 5:

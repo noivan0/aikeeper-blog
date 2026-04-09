@@ -332,8 +332,8 @@ def publish_carousel_from_dir(
         return {"success": False, "error": "이미지 공개 URL 생성 실패"}
 
     # 잠시 대기 (GitHub Pages 반영 시간)
-    print("[instagram] GitHub Pages 반영 대기 (30초)...")
-    time.sleep(30)
+    print("[instagram] GitHub Pages 반영 대기 (180초)...")
+    time.sleep(180)
 
     return upload_carousel(image_urls, caption)
 

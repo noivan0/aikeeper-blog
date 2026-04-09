@@ -642,13 +642,18 @@ def build_full_html(title: str, meta_desc: str, html_body: str, labels: list, fa
     # Blogger 썸네일 인식: 첫 번째 <img>를 HTML 최상단에 배치
     # Blogger는 포스트 HTML에서 첫 번째 <img> src를 목록 미리보기 썸네일로 사용함
     # → 모든 script/meta/CSS 태그보다 앞에 와야 Blogger가 인식
+    # Blogger 썸네일 인식 + 구글 디스커버리 크롤러 인식:
+    # - Blogger: HTML 최상단 첫 번째 <img>를 목록 썸네일로 사용
+    # - 구글: aria-hidden=true, clip:rect(1px) 이미지는 크롤러가 무시할 수 있음
+    # - 개선: div overflow:hidden + max-height:0 → 레이아웃 비파괴, 크롤러 인식 OK
     thumb_tag = ""
     if hero_img:
         _alt = (hero_image_alt or title).replace('"', '&quot;')
         thumb_tag = (
-            f'<img src="{hero_img}" alt="{_alt}" '
-            f'style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;" '
-            f'width="1" height="1" aria-hidden="true">\n'
+            f'<div style="overflow:hidden;max-height:0;max-width:0;line-height:0;font-size:0;">'
+            f'<img src="{hero_img}" alt="{_alt}" width="1200" height="630" '
+            f'style="width:1200px;height:630px;display:block;" loading="eager">'
+            f'</div>\n'
         )
 
     # CSS 압축 (포스트당 반복 삽입되는 인라인 CSS 크기 축소)

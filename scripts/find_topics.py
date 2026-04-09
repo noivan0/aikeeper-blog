@@ -2087,9 +2087,9 @@ AI키퍼 블로그(신생 한국어 AI 전문 블로그)의 다음 포스트 주
             model=ANTHROPIC_MODEL,
             max_tokens=800,
             messages=[{"role": "user", "content": retry_prompt}]
-        ) as _s:
-            for _c in _s.text_stream:
-                text += _c
+        ) as stream:
+            for chunk in stream.text_stream:
+                text += chunk
         result = {
             "topic":         extract(text, "TOPIC"),
             "keywords":      [k.strip() for k in extract(text, "KEYWORDS").split(",") if k.strip()],

@@ -73,9 +73,9 @@ async def solve_captcha(page) -> str | None:
                  "media_type": "image/png", "data": img_b64}},
                 {"type": "text", "text": f"네이버 영수증 CAPTCHA.\n질문: {question}\n숫자만 답하세요."}
             ]}]
-        ) as s:
-            for c in s.text_stream:
-                answer += c
+        ) as stream:
+            for chunk in stream.text_stream:
+                answer += chunk
         return answer.strip().replace(",", "").replace(" ", "")
     except Exception as e:
         print(f"  CAPTCHA 해결 실패: {e}")

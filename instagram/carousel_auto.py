@@ -372,6 +372,12 @@ def make_s6(out, products, total=8):
     prods = products[:4]
     n = len(prods)
 
+    # 상품이 없으면 빈 슬라이드 반환 (ZeroDivisionError 방지)
+    if n == 0:
+        path = out / "s6_compare.png"
+        img.save(path)
+        return path
+
     # 컬럼 레이아웃: 항목명 컬럼 + 상품 n개 컬럼
     TOTAL_W = W - PAD * 2   # 사용 가능한 너비
     LABEL_W = 200           # 항목명 컬럼 너비 (고정)

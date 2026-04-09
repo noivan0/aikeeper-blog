@@ -18,9 +18,11 @@ echo $$ > "$LOCK_FILE"
 trap "rm -f '$LOCK_FILE'" EXIT
 
 # 일일 발행 횟수 제한 (Blogger API 할당량 보호)
-MAX_DAILY=20
+MAX_DAILY=5
 TODAY=$(date '+%Y-%m-%d')
-TODAY_COUNT=$(grep "$TODAY" /var/log/allsweep_cron.log 2>/dev/null | grep -c "✅ 포스팅 완료" || echo 0)
+# 오늘 날짜 기준 완료 횟수 (타임스탬프 있는 완료 라인으로 카운트, tee 중복 감안해 /2)
+TODAY_COUNT_RAW=$(grep "\[$TODAY" /var/log/allsweep_cron.log 2>/dev/null | grep "===== allsweep 완료 =====" | wc -l)
+TODAY_COUNT=$(( TODAY_COUNT_RAW / 2 ))
 if [ "$TODAY_COUNT" -ge "$MAX_DAILY" ]; then
     echo "[SKIP] 오늘 발행 ${TODAY_COUNT}회 달성 (최대 ${MAX_DAILY}회) — 종료"
     exit 0
@@ -122,13 +124,5 @@ TARGET_BLOG_URL="$TARGET_BLOG_URL" \
 TARGET_BLOG_NAME="$TARGET_BLOG_NAME" \
 BLOG_TYPE="$BLOG_TYPE" \
 python3 scripts/post_to_blogger.py "$POST_FILE" 2>&1 | tee -a "$LOG_FILE"
-
-# Step 5: git commit & push (aikeeper-blog 저장소는 공통으로 사용)
-echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] Step 5: git push" | tee -a "$LOG_FILE"
-git config user.name "allsweep-cron"
-git config user.email "allsweep@noreply"
-git add posts-allsweep/ posts/ 2>/dev/null || git add posts/ 2>/dev/null || true
-git diff --staged --quiet || git commit -m "auto: allsweep 포스트 $(date '+%Y-%m-%d %H:%M KST')"
-git push https://${GITHUB_PAT}@github.com/noivan0/aikeeper-blog.git main 2>&1 | tee -a "$LOG_FILE" || true
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] ===== allsweep 완료 =====" | tee -a "$LOG_FILE"

@@ -487,9 +487,11 @@ def select_best_topic(news_items, used_history, target_category=None):
             break
         print(f"  ⚠️  중복 감지 (retry {retry+1}): {result['topic'][:50]}")
         retry_prompt = prompt + f"\n\n[추가 제약] '{result['topic']}'는 중복입니다. 완전히 다른 주제를 선정하세요."
-        resp2 = client.messages.create(model=ANTHROPIC_MODEL, max_tokens=600,
-            messages=[{"role": "user", "content": retry_prompt}])
-        text = resp2.content[0].text
+        text = ""
+        with client.messages.stream(model=ANTHROPIC_MODEL, max_tokens=600,
+            messages=[{"role": "user", "content": retry_prompt}]) as _s:
+            for _c in _s.text_stream:
+                text += _c
         result = {
             "topic":    extract(text, "TOPIC"),
             "category": extract(text, "CATEGORY") or preferred_cat,
