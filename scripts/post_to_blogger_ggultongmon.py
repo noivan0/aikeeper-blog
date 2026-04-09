@@ -263,6 +263,78 @@ def main():
         except Exception as _ce:
             print(f"  ℹ️  카드뉴스 생성 스킵 (비치명적): {_ce}")
 
+    # 4-3. litt.ly 상품 등록 (비치명적)
+    carousel_dir = os.environ.get("CAROUSEL_OUT_DIR", "")
+    if products and carousel_dir:
+        try:
+            sys.path.insert(0, str(BASE_DIR / "instagram"))
+            from upload_littly import LittlyClient
+            from pathlib import Path as _P
+            import random as _r, string as _s
+
+            _littly_prods = []
+            _littly_imgs  = []
+            for i, p in enumerate(products):
+                _littly_prods.append({
+                    "title": p.get("productName", p.get("name", "상품")),
+                    "url":   p.get("shortenUrl", p.get("coupang_url", p.get("url", ""))),
+                    "tags":  [],
+                })
+                img_path = _P(carousel_dir) / f"_prod{i+1}.jpg"
+                _littly_imgs.append(str(img_path) if img_path.exists() else None)
+
+            lc = LittlyClient()
+            lc.login()
+            lc.register_products(_littly_prods, _littly_imgs)
+            print(f"  ✅ litt.ly 상품 등록 완료: {len(_littly_prods)}개")
+        except Exception as _le:
+            print(f"  ℹ️  litt.ly 등록 스킵 (비치명적): {_le}")
+
+    # 4-4. 텔레그램 상품 이미지 전달 (비치명적)
+    if carousel_dir:
+        try:
+            import urllib.request as _ur, urllib.parse as _up
+            _tg_token   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+            _tg_chat_id = os.environ.get("TELEGRAM_CHAT_ID", "420793033")
+            if _tg_token:
+                from pathlib import Path as _P2
+                # 상품 이미지 전송 (상품 수 기준 가변)
+                _prod_count = len(products) if products else 4
+                _sent = 0
+                for i in range(1, _prod_count + 1):
+                    _img = _P2(carousel_dir) / f"_prod{i}.jpg"
+                    if not _img.exists():
+                        continue
+                    _img_data = _img.read_bytes()
+                    import io as _io
+                    _boundary = "----FormBoundary7MA4YWxkTrZu0gW"
+                    _body = (
+                        f"--{_boundary}\r\n"
+                        f'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+                        f"{_tg_chat_id}\r\n"
+                        f"--{_boundary}\r\n"
+                        f'Content-Disposition: form-data; name="photo"; filename="_prod{i}.jpg"\r\n'
+                        f"Content-Type: image/jpeg\r\n\r\n"
+                    ).encode() + _img_data + f"\r\n--{_boundary}--\r\n".encode()
+                    _req = _ur.Request(
+                        f"https://api.telegram.org/bot{_tg_token}/sendPhoto",
+                        data=_body,
+                        headers={"Content-Type": f"multipart/form-data; boundary={_boundary}"},
+                        method="POST"
+                    )
+                    _ur.urlopen(_req, timeout=15)
+                    _sent += 1
+                # 캡션 메시지 전송
+                _caption = f"[꿀통몬] {TOPIC[:60]}\n{post_url}"
+                _data = _up.urlencode({"chat_id": _tg_chat_id, "text": _caption}).encode()
+                _ur.urlopen(_ur.Request(
+                    f"https://api.telegram.org/bot{_tg_token}/sendMessage",
+                    data=_data
+                ), timeout=10)
+                print(f"  ✅ 텔레그램 상품 이미지 전달 완료: {_sent}장")
+        except Exception as _te:
+            print(f"  ℹ️  텔레그램 전송 스킵 (비치명적): {_te}")
+
     # 5. Google Indexing API — 즉시 색인 요청
     if post_url:
         try:
