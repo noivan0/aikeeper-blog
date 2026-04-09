@@ -383,6 +383,22 @@ def main():
         except Exception as _the:
             print(f"  ℹ️  Threads 게시 스킵 (비치명적): {_the}")
 
+    # 4-6. 티스토리 크로스포스팅 (비치명적)
+    if products and post_url:
+        try:
+            sys.path.insert(0, str(BASE_DIR / "scripts"))
+            from post_to_tistory import cross_post as tistory_cross_post
+            _ts_result = tistory_cross_post(
+                topic=TOPIC,
+                products=products,
+                post_url=post_url,
+                labels=LABELS,
+            )
+            if _ts_result.get("success"):
+                print(f"  ✅ 티스토리 크로스포스팅 완료: {_ts_result.get('url','')}")
+        except Exception as _tse:
+            print(f"  ℹ️  티스토리 크로스포스팅 스킵 (비치명적): {_tse}")
+
     # 5. Google Indexing API — 즉시 색인 요청
     if post_url:
         try:
