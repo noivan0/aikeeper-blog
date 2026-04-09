@@ -54,8 +54,16 @@ class LittlyClient:
     def patch_page(self, data):
         return self.sess.patch(f"{LITTLY_BASE}/page/{PAGE_ID}", json={"data": data}).json()
 
+    def upload_image_from_url(self, public_url: str) -> dict:
+        """외부 공개 URL을 image 필드에 직접 사용 (S3 우회, HMG 방화벽 환경)"""
+        print(f"[littly] 외부URL 이미지 등록: {public_url[-50:]}")
+        return {"mediaId": None, "url": public_url}
+
     def upload_image(self, img_path: Path) -> dict:
-        """이미지를 S3에 업로드하고 {mediaId, url} 반환"""
+        """이미지를 S3에 업로드하고 {mediaId, url} 반환
+        HMG 방화벽 환경에서는 S3 직접 업로드가 차단되므로
+        img_path와 함께 public_url을 제공하면 S3 우회.
+        """
         # 1단계: presigned URL 발급
         media = self.sess.post(
             f"{LITTLY_BASE}/media",
@@ -87,10 +95,12 @@ class LittlyClient:
         print(f"[littly] S3 업로드 OK: {media_url}")
         return {"mediaId": media_id, "url": media_url}
 
-    def register_products(self, products: list, image_paths: list):
+    def register_products(self, products: list, image_paths: list, public_urls: list = None):
         """
         products: [{"title": str, "url": str, "tags": [str]}, ...]
-        image_paths: [Path, ...] — products와 순서 동일
+        image_paths: [Path or None, ...] — products와 순서 동일
+        public_urls: [str or None, ...] — GitHub Pages 등 공개 이미지 URL (S3 우회용)
+                     제공 시 S3 업로드 생략하고 URL 직접 사용
         """
         page   = self.get_page()
         blocks = page["data"]["blocks"]
@@ -100,11 +110,18 @@ class LittlyClient:
         new_links = []
         for i, (prod, img_path) in enumerate(zip(products, image_paths)):
             print(f"\n[littly] 상품 {i+1}/{len(products)}: {prod['title']}")
+            image_field = None
             try:
-                img_info = self.upload_image(Path(img_path))
-                image_field = {"url": img_info["url"], "mediaId": img_info["mediaId"]}
+                # 1순위: 공개 URL 직접 사용 (HMG S3 차단 우회)
+                pub_url = (public_urls[i] if public_urls and i < len(public_urls) else None)
+                if pub_url:
+                    img_info = self.upload_image_from_url(pub_url)
+                    image_field = {"url": img_info["url"], "mediaId": img_info["mediaId"]}
+                elif img_path:
+                    img_info = self.upload_image(Path(img_path))
+                    image_field = {"url": img_info["url"], "mediaId": img_info["mediaId"]}
             except Exception as e:
-                print(f"  ⚠️  이미지 업로드 실패 (스킵): {e}")
+                print(f"  ⚠️  이미지 등록 실패 (스킵): {e}")
                 image_field = None
 
             new_links.append({
