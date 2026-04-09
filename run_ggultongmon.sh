@@ -12,17 +12,14 @@ LOG_FILE="/var/log/ggultongmon_cron.log"
 POSTS_DIR="$BASE_DIR/posts-ggultongmon"
 KST=$(date '+%Y-%m-%d %H:%M:%S KST')
 
-# 중복 실행 방지 락
+# 중복 실행 방지 락 (flock 기반 — race condition 완전 차단)
 LOCK_FILE="/tmp/ggultongmon_cron.lock"
-if [ -f "$LOCK_FILE" ]; then
-    PID=$(cat "$LOCK_FILE" 2>/dev/null)
-    if kill -0 "$PID" 2>/dev/null; then
-        echo "[$KST] [SKIP] 이미 실행 중 (PID $PID) — 종료" | tee -a "$LOG_FILE"
-        exit 0
-    fi
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    echo "[$KST] [SKIP] 이미 실행 중 (flock) — 종료" | tee -a "$LOG_FILE"
+    exit 0
 fi
-echo $$ > "$LOCK_FILE"
-trap "rm -f '$LOCK_FILE'" EXIT
+trap "flock -u 9; rm -f '$LOCK_FILE'" EXIT
 
 # 일일 발행 횟수 제한 (Blogger API 할당량 보호)
 MAX_DAILY=5
