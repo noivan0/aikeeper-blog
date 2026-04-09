@@ -72,14 +72,19 @@ def _create_container(text: str, image_url: str = None, reply_to_id: str = None)
 
 def _publish_container(container_id: str) -> str:
     """컨테이너 게시 → post_id 반환"""
-    # 컨테이너 상태 대기 (최대 30초)
-    for _ in range(6):
+    # 컨테이너 상태 대기 (최대 60초)
+    last_status = "UNKNOWN"
+    for _ in range(12):
         time.sleep(5)
         status = _api(container_id, params={"fields": "status,error_message"})
-        if status.get("status") == "FINISHED":
+        last_status = status.get("status", "UNKNOWN")
+        if last_status in ("FINISHED", "PUBLISHED_SOON"):
             break
-        if status.get("status") == "ERROR":
+        if last_status == "ERROR":
             raise RuntimeError(f"컨테이너 오류: {status.get('error_message')}")
+
+    if last_status not in ("FINISHED", "PUBLISHED_SOON"):
+        raise RuntimeError(f"컨테이너 상태 타임아웃: {last_status} (container_id={container_id})")
 
     resp = _api(f"{USER_ID}/threads_publish", post_data={"creation_id": container_id})
     post_id = resp.get("id")

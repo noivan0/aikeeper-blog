@@ -241,11 +241,13 @@ def main():
             try:
                 sys.path.insert(0, str(BASE_DIR / "instagram"))
                 from upload_instagram import publish_carousel_from_dir
+                # 해시태그: 포스트 라벨 기반 (최대 3개) + 고정 태그
+                _ig_label_tags = " ".join(f"#{t.replace(' ','')}" for t in LABELS[:3]) if LABELS else ""
                 caption = (
                     f"{TOPIC}\n\n"
                     f"쿠팡 추천 상품 링크는 프로필 참고\n"
                     f"블로그 상세 리뷰 → 프로필 링크\n\n"
-                    f"#쿠팡추천 #가성비 #꿀통몬 #헬스보충제 #운동영양제"
+                    f"#쿠팡추천 #가성비 #꿀통몬 {_ig_label_tags}"
                 )
                 ig_result = publish_carousel_from_dir(
                     slides_dir=carousel_result["out_dir"],
@@ -280,6 +282,16 @@ def main():
             # GitHub Pages에 올라간 이미지 URL 목록 (slide_03_product ~ slide_0N_product)
             _all_gh_urls = _json.loads(os.environ.get("CAROUSEL_IMAGE_URLS", "[]"))
             _prod_gh_urls = [u for u in _all_gh_urls if u and "product" in (u or "")]
+            # Instagram 업로드 실패로 CAROUSEL_IMAGE_URLS가 없는 경우:
+            # carousel_out 디렉토리의 타임스탬프로 GitHub Pages URL 직접 구성
+            if not _prod_gh_urls and carousel_dir:
+                from pathlib import Path as _PL
+                _dir_name = _PL(carousel_dir).name
+                _gh_base = f"https://noivan0.github.io/aikeeper-blog/carousel/{_dir_name}"
+                _prod_gh_urls = [
+                    f"{_gh_base}/slide_0{i+3}_product.jpg"
+                    for i in range(len(products))
+                ]
 
             _littly_prods = []
             for i, p in enumerate(products):
