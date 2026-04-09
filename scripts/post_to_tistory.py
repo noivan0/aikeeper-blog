@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-ggultongmon → 티스토리 크로스포스팅
-원문 기반으로 다른 앵글의 완결형 포스트 생성 후 banidad.tistory.com 발행
+ggultongmon -> 티스토리 크로스포스팅
+- 카테고리: '쿠팡' (ID 1199098)
+- 이미지: 캐러셀 커버 이미지 (GitHub Pages URL) 포함
+- CTA: 버튼 스타일로 ggultongmon 연결
 """
 import os, sys, json, re, requests
 from pathlib import Path
@@ -19,14 +21,47 @@ if env_file.exists():
         k, v = line.split("=", 1)
         os.environ.setdefault(k.strip(), v.strip())
 
-TSSESSION    = os.environ.get("TISTORY_SESSION", "")
-BLOG_NAME    = "banidad"
-API_BASE     = f"https://{BLOG_NAME}.tistory.com/manage"
-GGULTONGMON  = "https://ggultongmon.allsweep.xyz"
+TSSESSION        = os.environ.get("TISTORY_SESSION", "")
+BLOG_NAME        = "banidad"
+CATEGORY_COUPANG = "1199098"   # '쿠팡' 카테고리 ID
+API_BASE         = f"https://{BLOG_NAME}.tistory.com/manage"
 
 requests.packages.urllib3.disable_warnings()
 
 
+# ── 버튼 스타일 HTML ─────────────────────────────────────────────────────────
+def _btn(post_url: str, text: str, bg: str = "#FF4500") -> str:
+    css = (
+        f"display:inline-block;background:{bg};color:#fff!important;"
+        "font-size:17px;font-weight:bold;padding:16px 32px;border-radius:50px;"
+        "text-decoration:none!important;box-shadow:0 4px 14px rgba(0,0,0,.25);"
+        "letter-spacing:-.3px;margin:6px 0;"
+    )
+    return (
+        f'<div style="text-align:center;margin:28px 0;">'
+        f'<a href="{post_url}" target="_blank" rel="noopener" style="{css}">{text}</a>'
+        f'</div>'
+    )
+
+def _top_cta(post_url: str) -> str:
+    """본문 상단 버튼 (이미지 바로 아래)"""
+    return _btn(post_url, "&#128073; 지금 바로 최저가 확인하기", "#FF4500")
+
+def _bottom_cta(post_url: str) -> str:
+    """본문 하단 버튼"""
+    return _btn(post_url, "&#127873; 전체 비교 + 쿠팡 최저가 구매링크", "#E8000D")
+
+def _cover_img_block(image_url: str, alt: str = "") -> str:
+    """커버 이미지 블록"""
+    return (
+        f'<p style="text-align:center;margin:0 0 4px;">'
+        f'<img src="{image_url}" alt="{alt}" '
+        f'style="max-width:100%;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.15);" />'
+        f'</p>'
+    )
+
+
+# ── requests 세션 ────────────────────────────────────────────────────────────
 def _sess():
     s = requests.Session()
     s.verify = False
@@ -41,8 +76,10 @@ def _sess():
     return s
 
 
-def generate_cross_post(topic: str, products: list, post_url: str, labels: list) -> dict:
-    """Claude로 다른 앵글의 완결형 크로스포스팅 생성"""
+# ── Claude 크로스포스트 생성 ─────────────────────────────────────────────────
+def generate_cross_post(topic: str, products: list, post_url: str,
+                        labels: list, cover_image_url: str = "") -> dict:
+    """Claude로 다른 앵글의 완결형 크로스포스팅 생성 (이미지/버튼 포함)"""
     client = Anthropic(
         api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         base_url=os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
@@ -53,7 +90,14 @@ def generate_cross_post(topic: str, products: list, post_url: str, labels: list)
         for p in products
     )
 
-    prompt = f"""아래 쿠팡 추천 포스트를 기반으로 티스토리 크로스포스팅용 글을 작성해주세요.
+    # 이미지+상단버튼 블록 (Claude가 본문 앞에 삽입하도록 지시)
+    top_block = ""
+    if cover_image_url:
+        top_block = _cover_img_block(cover_image_url, topic) + _top_cta(post_url)
+
+    bottom_block = _bottom_cta(post_url)
+
+    prompt = f"""아래 쿠팡 추천 포스트를 기반으로 티스토리 크로스포스팅용 글을 작성하세요.
 
 원문 주제: {topic}
 원문 URL: {post_url}
@@ -63,15 +107,24 @@ def generate_cross_post(topic: str, products: list, post_url: str, labels: list)
 작성 조건:
 1. 원문과 다른 각도의 제목 (질문형 또는 문제해결형)
 2. 완결된 콘텐츠 1,500~2,000자 (독립적으로 읽을 수 있어야 함)
-3. 구매 포인트 3~5가지 본문에 포함
-4. 마지막에 "→ 전체 비교 + 최저가 구매링크: {post_url}" CTA
-5. HTML 형식으로 작성 (<h2>, <p>, <strong>, <a> 태그 사용)
+3. <h2> 소제목 3~5개, <strong>으로 핵심 강조
+4. 구매 포인트/선택 기준 구체적으로 포함
+5. content 는 다음 구조를 반드시 따를 것 (블록 수정 금지):
+
+[상단 블록 — 그대로 삽입]
+{top_block}
+
+[본문 내용 — 여기에 작성]
+
+[하단 버튼 블록 — 그대로 삽입]
+{bottom_block}
+
 6. 태그: 쉼표 구분 5~8개
 
-아래 JSON 형식으로만 응답:
+아래 JSON 형식으로만 응답 (content 는 완성된 HTML 전체):
 {{
   "title": "제목",
-  "content": "HTML 본문",
+  "content": "HTML 본문 전체 (상단블록+본문+하단버튼 포함)",
   "tag": "태그1,태그2,태그3"
 }}"""
 
@@ -81,28 +134,29 @@ def generate_cross_post(topic: str, products: list, post_url: str, labels: list)
         messages=[{"role": "user", "content": prompt}],
     )
     text = msg.content[0].text.strip()
-    # JSON 추출
     match = re.search(r'\{.*\}', text, re.DOTALL)
     if match:
         return json.loads(match.group())
     raise ValueError(f"JSON 파싱 실패: {text[:200]}")
 
 
-def publish_to_tistory(title: str, content: str, tag: str = "", category: str = "0") -> dict:
-    """티스토리 API로 글 발행"""
+# ── 티스토리 발행 ────────────────────────────────────────────────────────────
+def publish_to_tistory(title: str, content: str, tag: str = "",
+                       category: str = CATEGORY_COUPANG) -> dict:
+    """티스토리 /manage/post.json API로 글 발행"""
     if not TSSESSION:
         raise RuntimeError("TISTORY_SESSION 환경변수 없음")
 
     s = _sess()
     payload = {
-        "title":          title,
-        "content":        content,
-        "visibility":     "20",   # 공개
-        "category":       category,
-        "tag":            tag,
-        "acceptComment":  "1",
-        "acceptTrackback":"0",
-        "published":      "1",
+        "title":           title,
+        "content":         content,
+        "visibility":      "20",       # 공개
+        "category":        category,   # 쿠팡 카테고리
+        "tag":             tag,
+        "acceptComment":   "1",
+        "acceptTrackback": "0",
+        "published":       "1",
     }
     r = s.post(f"{API_BASE}/post.json", json=payload, timeout=30)
     if r.status_code != 200:
@@ -110,21 +164,32 @@ def publish_to_tistory(title: str, content: str, tag: str = "", category: str = 
 
     result = r.json()
     entry_url = result.get("entryUrl", "")
-    print(f"  ✅ 티스토리 발행 완료: {entry_url}")
+    print(f"  [tistory] 발행 완료: {entry_url}")
     return {"success": True, "url": entry_url}
 
 
-def cross_post(topic: str, products: list, post_url: str, labels: list = None) -> dict:
+# ── 메인 플로우 ──────────────────────────────────────────────────────────────
+def cross_post(topic: str, products: list, post_url: str,
+               labels: list = None, cover_image_url: str = "") -> dict:
     """전체 크로스포스팅 플로우"""
     labels = labels or []
     print(f"[tistory] 크로스포스팅 시작: {topic[:40]}...")
 
-    # Claude로 크로스포스트 생성
+    # 커버 이미지 자동 추출 — CAROUSEL_IMAGE_URLS 에서 slide_01_cover 우선
+    if not cover_image_url:
+        carousel_urls = os.environ.get("CAROUSEL_IMAGE_URLS", "")
+        if carousel_urls:
+            urls = [u.strip() for u in carousel_urls.split(",") if u.strip().startswith("http")]
+            # slide_01_cover 를 가장 먼저
+            cover_candidates = [u for u in urls if "slide_01" in u or "cover" in u]
+            cover_image_url = (cover_candidates or urls)[0] if (cover_candidates or urls) else ""
+            if cover_image_url:
+                print(f"[tistory] 커버 이미지: {cover_image_url[:80]}...")
+
     print("[tistory] Claude 크로스포스트 생성 중...")
-    data = generate_cross_post(topic, products, post_url, labels)
+    data = generate_cross_post(topic, products, post_url, labels, cover_image_url)
     print(f"[tistory] 제목: {data['title']}")
 
-    # 발행
     result = publish_to_tistory(
         title=data["title"],
         content=data["content"],
@@ -133,14 +198,17 @@ def cross_post(topic: str, products: list, post_url: str, labels: list = None) -
     return result
 
 
+# ── CLI ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--topic",    required=True)
-    parser.add_argument("--post-url", required=True)
-    parser.add_argument("--products", default="[]")
+    parser.add_argument("--topic",     required=True)
+    parser.add_argument("--post-url",  required=True)
+    parser.add_argument("--products",  default="[]")
+    parser.add_argument("--cover-img", default="")
     args = parser.parse_args()
 
     products = json.loads(args.products)
-    result = cross_post(args.topic, products, args.post_url)
+    result = cross_post(args.topic, products, args.post_url,
+                        cover_image_url=args.cover_img)
     print(json.dumps(result, ensure_ascii=False, indent=2))
