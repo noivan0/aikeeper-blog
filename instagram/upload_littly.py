@@ -127,6 +127,7 @@ class LittlyClient:
             new_links.append({
                 "key":      rand_key(),
                 "url":      prod["url"],
+                "use":      True,          # ON 상태 (기본값이 OFF인 경우 방지)
                 "tags":     prod.get("tags", []),
                 "image":    image_field,
                 "title":    prod["title"],
