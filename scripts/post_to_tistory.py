@@ -90,11 +90,9 @@ def generate_cross_post(topic: str, products: list, post_url: str,
         for p in products
     )
 
-    # 이미지+상단버튼 블록 (Claude가 본문 앞에 삽입하도록 지시)
-    top_block = ""
-    if cover_image_url:
-        top_block = _cover_img_block(cover_image_url, topic) + _top_cta(post_url)
-
+    # 커버 이미지 블록 (버튼과 분리 — 도입부 텍스트 사이에 삽입)
+    img_block = _cover_img_block(cover_image_url, topic) if cover_image_url else ""
+    top_btn_block = _top_cta(post_url)
     bottom_block = _bottom_cta(post_url)
 
     prompt = f"""아래 쿠팡 추천 포스트를 기반으로 티스토리 크로스포스팅용 글을 작성하세요.
@@ -109,32 +107,35 @@ def generate_cross_post(topic: str, products: list, post_url: str,
 [제목]
 - 원문과 다른 각도 (질문형 또는 문제해결형)
 
-[본문 구조 — 가독성 최우선]
-- <h2> 소제목: 3~5개, 각 섹션 명확히 구분
-- 각 <h2> 아래 <p>는 2~3문장씩 끊어서 작성 (한 <p>에 5줄 이상 금지)
-- 문단 사이 여백: <p style="margin-bottom:16px;"> 사용
-- 핵심 키워드: <strong>으로 강조
-- 항목 나열 시: <ul><li> 사용 (줄글로 나열 금지)
-- 각 <h2> 앞에는 반드시 빈 <p>&nbsp;</p> 1개 삽입 (단락 구분)
-- 전체 1,500~2,000자 분량
+[HTML 구조 — 아래 순서 그대로, 수정 금지]
 
-[구조 순서 — 수정 금지]
-{top_block}
-[↑ 상단 블록: 이미지+버튼 고정]
+① 커버 이미지 (고정):
+{img_block}
 
-[본문 내용 여기에 작성 — 위 HTML 블록을 content 맨 앞에 붙일 것]
+② 도입 문단 (2~3문장, <p> 태그, margin-bottom:20px):
+   - 독자의 공감/문제제기로 시작
+   - 이 글에서 무엇을 얻을 수 있는지 명시
 
+③ 상단 버튼 (고정):
+{top_btn_block}
+
+④ 본문 (<h2> 소제목 3~5개):
+   - <h2> 앞마다 <p style="margin:24px 0 0;">&nbsp;</p> 삽입 (섹션 여백)
+   - 각 <h2> 아래 <p>는 2~3문장씩 분리 (한 문단에 5줄 이상 금지)
+   - 항목 나열: 줄글 대신 <ul><li> 사용
+   - 핵심 키워드: <strong>으로 강조
+   - 전체 1,500~2,000자
+
+⑤ 하단 버튼 (고정):
 {bottom_block}
-[↑ 하단 버튼 고정, content 맨 끝에 붙일 것]
 
 [태그]
 - 쉼표 구분 5~8개
 
-=== 응답 형식 ===
-아래 JSON만 출력 (content = 상단블록+본문+하단버튼 완성 HTML):
+=== 응답 형식 (JSON만 출력) ===
 {{
   "title": "제목",
-  "content": "완성된 HTML 전체",
+  "content": "①~⑤ 순서대로 합친 완성 HTML",
   "tag": "태그1,태그2,태그3"
 }}"""
 
