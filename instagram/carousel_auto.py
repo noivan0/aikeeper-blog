@@ -669,6 +669,66 @@ def _get_rank_config(i: int) -> dict:
 RANK_CONFIGS = _RANK_BASE  # 하위 호환
 
 
+def _generate_cover_sub(topic: str, n_prods: int) -> str:
+    """
+    커버 슬라이드 서브텍스트를 주제에 맞는 광고 카피로 동적 생성.
+    Claude API 실패 시 다양한 폴백 풀에서 랜덤 선택.
+    """
+    import random as _random
+    fallback_pool = [
+        f"직접 써봤습니다  |  {n_prods}종 솔직 비교",
+        f"사기 전에 꼭 읽으세요  |  {n_prods}종 분석",
+        f"후기 수백개 정리했습니다  |  {n_prods}종 비교",
+        f"가격 말고 이걸 보세요  |  {n_prods}종 차이점",
+        f"전문가도 고민하는 이유  |  {n_prods}종 완전분석",
+        f"이 차이 모르면 손해  |  {n_prods}종 비교",
+        f"살까 말까 고민된다면  |  {n_prods}종 정리",
+    ]
+    try:
+        import urllib.request as _req, json as _json, os as _os
+        api_key  = _os.environ.get("ANTHROPIC_API_KEY", "")
+        api_base = _os.environ.get("ANTHROPIC_BASE_URL",
+                                   "https://internal-apigw-kr.hmg-corp.io/hchat-in/api/v3/claude")
+        model    = _os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+        prompt = (
+            f"인스타그램 카드뉴스 커버 서브텍스트를 만들어주세요.\n"
+            f"주제: {topic}\n"
+            f"상품 수: {n_prods}종\n\n"
+            f"조건:\n"
+            f"- 15자 이내 광고 카피 스타일 (궁금증/감정 자극)\n"
+            f"- '|' 구분자로 두 파트: [훅 문구]  |  [{n_prods}종 + 동사]\n"
+            f"- 예시: '직접 써봤습니다  |  {n_prods}종 솔직 비교'\n"
+            f"- 예시: '이 차이 모르면 손해  |  {n_prods}종 비교'\n"
+            f"- 예시: '살까 말까 고민된다면  |  {n_prods}종 정리'\n"
+            f"- TOP3/완전정리/후회없는 금지\n"
+            f"- JSON으로만 응답: {{\"sub\": \"...\"}}"
+        )
+        payload = _json.dumps({
+            "model": model, "max_tokens": 80,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode()
+        req = _req.Request(
+            f"{api_base}/messages", data=payload,
+            headers={"x-api-key": api_key,
+                     "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"}
+        )
+        resp = _json.loads(_req.urlopen(req, timeout=8).read())
+        text = resp["content"][0]["text"].strip()
+        import re as _re
+        m = _re.search(r'\{.*?\}', text, _re.DOTALL)
+        if m:
+            sub = _json.loads(m.group()).get("sub", "").strip()
+            if sub and len(sub) <= 40:
+                print(f"[cover_sub] Claude: {sub}")
+                return sub
+    except Exception as e:
+        print(f"[cover_sub] Claude 실패, 폴백: {e}")
+    result = _random.choice(fallback_pool)
+    print(f"[cover_sub] 폴백: {result}")
+    return result
+
+
 def split_title(topic: str, max_w: int = W - 100) -> tuple:
     """
     주제 문자열을 커버 2줄로 분리.
@@ -790,7 +850,7 @@ def generate_carousel(
 
     # 주제 → 커버 2줄
     tl1, tl2 = split_title(topic)
-    sub = f"2026 최신  |  {n_prods}종 직접 비교"
+    sub = _generate_cover_sub(topic, n_prods)
 
     print("[carousel] 슬라이드 생성...")
     slides = []
