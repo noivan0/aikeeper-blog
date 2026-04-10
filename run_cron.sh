@@ -18,7 +18,7 @@ echo $$ > "$LOCK_FILE"
 trap "rm -f '$LOCK_FILE'" EXIT
 
 # 일일 발행 횟수 제한 (Blogger API 할당량 보호 — 3개 블로그 균등 분배)
-MAX_DAILY=5
+MAX_DAILY=3
 TODAY=$(date '+%Y-%m-%d')
 # 오늘 날짜 기준 실제 발행 성공 횟수 (blog: aikeeper 완료 패턴만, tee 중복 감안해 /2)
 TODAY_COUNT_RAW=$(grep "\[$TODAY" /var/log/aikeeper_cron.log 2>/dev/null | grep "===== 완료 \[blog: aikeeper\] =====" | wc -l)

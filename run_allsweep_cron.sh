@@ -18,7 +18,7 @@ echo $$ > "$LOCK_FILE"
 trap "rm -f '$LOCK_FILE'" EXIT
 
 # 일일 발행 횟수 제한 (Blogger API 할당량 보호)
-MAX_DAILY=5
+MAX_DAILY=3
 TODAY=$(date '+%Y-%m-%d')
 # 오늘 날짜 기준 완료 횟수 (타임스탬프 있는 완료 라인으로 카운트, tee 중복 감안해 /2)
 TODAY_COUNT_RAW=$(grep "\[$TODAY" /var/log/allsweep_cron.log 2>/dev/null | grep "===== allsweep 완료 =====" | wc -l)
