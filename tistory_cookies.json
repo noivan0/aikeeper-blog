@@ -1,0 +1,102 @@
+[
+  {
+    "name": "TSSESSION",
+    "value": "af6601ee93bec72bd33906649742b5097e0c7622",
+    "domain": ".tistory.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": true,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "__T_",
+    "value": "1",
+    "domain": ".banidad.tistory.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "__T_SECURE",
+    "value": "1",
+    "domain": ".banidad.tistory.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "TOP-XSRF-TOKEN",
+    "value": "6b1e036e-caa7-4dc5-998d-e82dcfbe3184",
+    "domain": "www.tistory.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": true,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "TUID",
+    "value": "w-bPPNHwEoiyKM_260409222052431",
+    "domain": ".tiara.tistory.com",
+    "path": "/",
+    "expires": 1810300852.713714,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "TSID",
+    "value": "w-bPPNHwEoiyKM_260409222052431",
+    "domain": ".tiara.tistory.com",
+    "path": "/",
+    "expires": 1775742652.713782,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "UUID",
+    "value": "oZdTTHqmYW_7ZIIXaBVutIqX92HbSrZEnSRZrZYQ.2Mmo8xxdwJYcw00",
+    "domain": ".tiara.tistory.com",
+    "path": "/",
+    "expires": 1810300852.713806,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "_SUID",
+    "value": "w-ejcTSXpW8Z8L_260409627060491",
+    "domain": ".tiara.tistory.com",
+    "path": "/",
+    "expires": 1775742652.713828,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "_ISUID",
+    "value": "w-s39BwcpN1C0d_260409816990028",
+    "domain": ".tiara.tistory.com",
+    "path": "/",
+    "expires": 1775742652.713849,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "_T_ANO",
+    "value": "XKUAr6KsNO4i6z5gcXmKs0wei9AEyWI6/esHe895tQJu5PFmNpEFPbi7CSre205V20XxzHVaaNrpIwgHiMY8NgWDgZNEzWC0HRmCrhdFnTWfh2o6laLWk75nbyuLnZONG6XHUb5zupBJleaj4o2mqUv0A68c/iU2Q5pmnqBqBSRR/8mSH3hWe3mZ6sdZwW6z0VzK5+6uIRXW1JjdjhWiyX3kMvj0fGSmntmvMEkgfXLBNeVmSqtEt97xmUA/8ofYOMmTuCUi3PRszfvoap9E61TCh/cdlnd/0z0EbVlmoLRc0T+lACpYmI7HaKeTQ68Fkv+VEG5mVcDsX6Ja5JlseQ==",
+    "domain": ".tistory.com",
+    "path": "/",
+    "expires": 1810300852.713871,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  }
+]

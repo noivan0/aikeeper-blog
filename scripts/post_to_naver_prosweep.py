@@ -14,6 +14,10 @@
 import os, sys, asyncio, json, time, re
 from pathlib import Path
 
+# Xvfb DISPLAY 강제 설정 — headless Chromium이 JS 렌더링하려면 필요
+if not os.environ.get("DISPLAY"):
+    os.environ["DISPLAY"] = ":99"
+
 NAVER_ID        = os.environ.get("NAVER_ID", "")
 NAVER_PW        = os.environ.get("NAVER_PW", "")
 BLOG_ID         = os.environ.get("NAVER_BLOG_ID", "prosweep")
@@ -387,28 +391,28 @@ def extract_coupang_data_from_blogger(post_url: str) -> tuple[list, list, list]:
 
 # ── 로그인 & 세션 ─────────────────────────────────────────────────
 async def check_login_by_url(page) -> bool:
-    """URL 기반 로그인 상태 확인 (HttpOnly 쿠키 우회)"""
-    await page.goto("https://blog.naver.com/kjjhad", timeout=20000)
-    await page.wait_for_timeout(2000)
+    """URL 기반 로그인 상태 확인 (HttpOnly 쿠키 우회)
+    - 에디터 URL로 직접 접근해서 확인 (별도 페이지 이동 없이)
+    """
+    await page.goto("https://blog.naver.com/prosweep/postwrite", timeout=30000)
+    await page.wait_for_timeout(4000)
     url = page.url
-    # 로그인 페이지로 리다이렉트 안 됐으면 세션 유효
+    # 로그인 페이지로 리다이렉트 됐으면 만료
     if "nidlogin" in url or "login" in url.lower():
         return False
-    # 글쓰기 버튼 존재 여부로 이중 확인
-    write_btn = await page.query_selector("a[href*='PostWrite'], .blog_btn_write, a.btn_write")
-    if write_btn:
-        print("  세션 유효 ✅ (글쓰기 버튼 확인)")
+    # 에디터 컴포넌트 존재 확인
+    editor = await page.query_selector(".se-main-container, #SE-titleInput, .se-editor")
+    if editor:
+        print("  세션 유효 ✅ (에디터 로드 확인)")
         return True
-    # 블로그 홈 도달 = 로그인 상태
-    if "blog.naver.com" in url:
-        print("  세션 유효 ✅ (블로그 홈 접근 성공)")
+    if "blog.naver.com" in url and "postwrite" in url:
+        print("  세션 유효 ✅ (에디터 URL 유지)")
         return True
     return False
 
 async def ensure_session(context, page) -> bool:
     """세션 파일 우선 사용 → 만료 시에만 로그인 시도"""
     if Path(SESSION_FILE).exists():
-        # 세션 파일이 있으면 URL 기반으로 유효성 확인
         ok = await check_login_by_url(page)
         if ok:
             return True
@@ -609,17 +613,36 @@ async def do_login(page, context) -> bool:
 
 # ── 팝업 처리 ─────────────────────────────────────────────────────
 async def handle_popups(page):
+    """SE 에디터 팝업 전체 처리 — 에디터 진입 시 및 본문 입력 중간 호출 가능"""
     await page.evaluate("""
         () => {
+            // 기존 팝업 닫기
             const p = document.querySelector('.__se-pop-layer');
             if (p) {
                 for (const b of p.querySelectorAll('button')) {
                     if (b.innerText.trim() === '취소') { b.click(); break; }
                 }
             }
+            // se-popup-alert (확인/닫기 버튼 클릭)
+            const alert = document.querySelector('.se-popup-alert');
+            if (alert) {
+                for (const b of alert.querySelectorAll('button')) {
+                    const t = b.innerText.trim();
+                    if (t === '확인' || t === '닫기' || t === 'OK') { b.click(); break; }
+                }
+            }
+            // se-popup-dim (팝업 딤 레이어 직접 숨김)
+            document.querySelectorAll('.se-popup-dim').forEach(el => {
+                el.style.display = 'none';
+                el.style.pointerEvents = 'none';
+            });
+            document.querySelectorAll('.se-popup.se-popup-alert').forEach(el => {
+                el.style.display = 'none';
+                el.style.pointerEvents = 'none';
+            });
         }
     """)
-    await page.wait_for_timeout(1200)
+    await page.wait_for_timeout(800)
     hb = await page.query_selector(".se-help-panel-close-button")
     if hb: await hb.click(); await page.wait_for_timeout(400)
     await page.evaluate("() => document.querySelectorAll('.layer_popup__i0QOY').forEach(el=>el.style.display='none')")
@@ -648,8 +671,15 @@ async def insert_text_link(page, text: str, url: str):
     await page.wait_for_timeout(100)
     await page.keyboard.press("Shift+End")
     await page.wait_for_timeout(200)
+    # 링크 버튼 클릭 전 팝업 제거
     await page.evaluate("""
         () => {
+            document.querySelectorAll('.se-popup-dim').forEach(el => {
+                el.style.display = 'none'; el.style.pointerEvents = 'none';
+            });
+            document.querySelectorAll('.se-popup.se-popup-alert').forEach(el => {
+                el.style.display = 'none'; el.style.pointerEvents = 'none';
+            });
             const btn = document.querySelector('.se-link-toolbar-button');
             if (!btn) return;
             btn.addEventListener('mousedown', (e) => e.preventDefault(), {once: true});
@@ -659,7 +689,15 @@ async def insert_text_link(page, text: str, url: str):
     await page.wait_for_timeout(1500)
     url_input = await page.query_selector(".se-custom-layer-link-input")
     if url_input:
-        await url_input.click()
+        # 클릭 전에도 딤 레이어 한 번 더 제거
+        await page.evaluate("""
+            () => {
+                document.querySelectorAll('.se-popup-dim').forEach(el => {
+                    el.style.display = 'none'; el.style.pointerEvents = 'none';
+                });
+            }
+        """)
+        await url_input.click(timeout=10000)
         await page.keyboard.type(url, delay=10)
         await page.wait_for_timeout(300)
         await page.keyboard.press("Enter")
@@ -898,7 +936,7 @@ async def insert_og_card(page, url: str):
     await page.keyboard.press("Enter")
     await page.wait_for_timeout(7000)  # 카드 생성 대기
 
-    # URL 텍스트 단락 삭제
+    # URL 텍스트 단락 삭제 (OG카드 h>=100 제외, 순수 URL 텍스트 단락만)
     for attempt in range(5):
         info = await page.evaluate("""
             () => {
@@ -908,6 +946,8 @@ async def insert_og_card(page, url: str):
                     if (txt.trim().match(/^https?:\\/\\//) && txt.trim().length > 5) {
                         const r = para.getBoundingClientRect();
                         if (r.width < 10) continue;
+                        // OG카드 블록(h>=80)은 건드리지 않음 — 순수 URL 텍스트만 삭제
+                        if (r.height >= 80) continue;
                         return {
                             x: Math.round(r.x + 60),
                             y: Math.round(r.y + r.height / 2),
@@ -986,6 +1026,22 @@ async def type_body(page, content: str, image_urls: list = None):
                 await insert_image_by_url(page, image_urls[idx])
             else:
                 print(f"    [이미지 스킵] 인덱스 {idx} (총 {len(image_urls)}개)")
+            # 이미지 삽입 후 에디터 포커스 복구 — 포커스가 에디터 밖으로 나가는 것 방지
+            await page.wait_for_timeout(500)
+            await page.evaluate("""
+                () => {
+                    // 마지막 빈 텍스트 단락으로 커서 이동
+                    const paras = Array.from(document.querySelectorAll('.se-text-paragraph'));
+                    for (let i = paras.length - 1; i >= 0; i--) {
+                        const r = paras[i].getBoundingClientRect();
+                        if (r.width > 0 && r.y > 100) {
+                            paras[i].click();
+                            return;
+                        }
+                    }
+                }
+            """)
+            await page.wait_for_timeout(300)
             continue
 
         # TABLE_HERE:{json} 마커
@@ -1037,15 +1093,70 @@ async def publish(page, reserve_dt: str = None) -> str | None:
     reserve_dt: None → 즉시 발행
                 "YYYY-MM-DD HH:MM" → 예약 발행
     """
+    # 발행 전 에디터 본문 글자수 확인 (.se-text-paragraph 합산 방식)
+    body_chars = await page.evaluate("""
+        () => {
+            const paras = document.querySelectorAll('.se-text-paragraph');
+            let total = 0;
+            for(const p of paras) total += (p.innerText||'').replace(/\\s/g,'').length;
+            if(total === 0) {
+                // fallback: se-main-container
+                const el = document.querySelector('.se-main-container');
+                if(el) total = (el.innerText||'').replace(/\\s/g,'').length;
+            }
+            return total;
+        }
+    """)
+    print(f"  발행 전 에디터 글자수: {body_chars}자")
+    await page.screenshot(path="/tmp/naver_pre_publish_check.png")
+
+    # 이미지 "전송중..." 완료 대기 (최대 60초)
+    print("  이미지 전송 완료 대기...")
+    for _up_wait in range(60):
+        is_uploading = await page.evaluate("""
+            () => {
+                // "전송중..." 텍스트 요소 확인
+                const allEls = document.querySelectorAll('.se-component-content, .se-image, [class*="upload"], [class*="loading"]');
+                for(const el of allEls) {
+                    if((el.innerText||'').includes('전송중')) return true;
+                }
+                // 업로드 스피너 확인
+                if(document.querySelector('.se-image-uploading, [class*="uploading"]')) return true;
+                return false;
+            }
+        """)
+        if not is_uploading:
+            print(f"  이미지 전송 완료 ({_up_wait}초 대기)")
+            break
+        if _up_wait % 10 == 9:
+            print(f"  이미지 전송 대기 중... ({_up_wait+1}초)")
+        await page.wait_for_timeout(1000)
+    await page.wait_for_timeout(1000)
+
+    # 발행 전 플로팅 레이어 + 글감 패널 완전 숨김
     await page.evaluate("""
         () => {
+            // 모든 팝업/플로팅 숨김
             document.querySelectorAll('.layer_popup__i0QOY').forEach(el=>el.style.display='none');
             const hp = document.querySelector('.container__HW_tc, .se-help-panel');
             if (hp) hp.style.display = 'none';
+            document.querySelectorAll(
+                '.se-floating-layer, .se-search-panel, .se-moment-panel, .se-library-panel, .se-template-panel'
+            ).forEach(el => { el.style.display = 'none'; });
+            // 글감 패널 (하단 슬라이드) 강제 숨김
+            document.querySelectorAll('[class*="floating"], [class*="glgam"], .se-floating-category-panel').forEach(el => {
+                el.style.display = 'none';
+                el.style.visibility = 'hidden';
+            });
+            // 팝업 딤 레이어
+            document.querySelectorAll('.se-popup-dim, .se-popup.se-popup-alert').forEach(el => {
+                el.style.display = 'none';
+            });
         }
     """)
-    await page.wait_for_timeout(600)
+    await page.wait_for_timeout(800)
 
+    # 발행 버튼을 마우스 좌표로 직접 클릭
     publish_btn = await page.query_selector(".publish_btn__m9KHH")
     if not publish_btn:
         publish_btn = await page.query_selector("button[class*='publish_btn']")
@@ -1054,8 +1165,39 @@ async def publish(page, reserve_dt: str = None) -> str | None:
         await page.screenshot(path="/tmp/naver_publish_fail.png")
         return None
 
-    await page.evaluate("btn => btn.click()", publish_btn)
-    await page.wait_for_timeout(2500)
+    pub_box = await publish_btn.bounding_box()
+    await page.mouse.click(pub_box['x'] + pub_box['width']/2, pub_box['y'] + pub_box['height']/2)
+    print(f"  발행 버튼 마우스 클릭 @ ({pub_box['x']:.0f}, {pub_box['y']:.0f})")
+    await page.wait_for_timeout(5000)
+    await page.screenshot(path="/tmp/naver_panel_state.png")
+
+    # confirm 버튼 위치 확인
+    async def _get_confirm_pos():
+        return await page.evaluate("""
+            () => {
+                const btn = document.querySelector('.confirm_btn__WEaBq')
+                         || document.querySelector('button[class*="confirm_btn"]');
+                if (!btn) return null;
+                const r = btn.getBoundingClientRect();
+                if (r.width === 0) return null;
+                return {x: r.x + r.width/2, y: r.y + r.height/2};
+            }
+        """)
+
+    confirm_pos = await _get_confirm_pos()
+    print(f"  confirm 버튼 위치: {confirm_pos}")
+
+    if not confirm_pos:
+        # 패널 미열림 — 발행 버튼 재클릭
+        print("  발행 패널 미열림 — 재클릭")
+        await page.mouse.click(pub_box['x'] + pub_box['width']/2, pub_box['y'] + pub_box['height']/2)
+        await page.wait_for_timeout(5000)
+        confirm_pos = await _get_confirm_pos()
+
+    if not confirm_pos:
+        print("  ❌ confirm 버튼 없음 — 발행 실패")
+        await page.screenshot(path="/tmp/naver_publish_fail.png")
+        return None
 
     # ── 예약 발행 처리 ────────────────────────────────────────────
     if reserve_dt:
@@ -1122,23 +1264,45 @@ async def publish(page, reserve_dt: str = None) -> str | None:
             await page.wait_for_timeout(1000)
             await page.screenshot(path="/tmp/naver_reserve_set.png")
 
-    # ── 발행/예약 확인 버튼 ──────────────────────────────────────
-    confirm_btn = await page.query_selector(".confirm_btn__WEaBq")
-    if not confirm_btn:
-        confirm_btn = await page.query_selector("button[class*='confirm_btn']")
-    if not confirm_btn:
-        print("  ❌ 확인 버튼 없음")
-        return None
-    await page.evaluate("btn => btn.click()", confirm_btn)
-    await page.wait_for_timeout(6000)
+    # ── 발행/예약 확인 버튼 — 마우스 좌표 클릭 ──────────────────
+    await page.mouse.click(confirm_pos['x'], confirm_pos['y'])
+    print(f"  발행 확인 버튼 마우스 클릭 @ ({confirm_pos['x']:.0f}, {confirm_pos['y']:.0f})")
 
-    url = page.url
-    if reserve_dt:
+    # 발행 후 PostView로 리다이렉트 대기 (최대 15초)
+    result_url = None
+    for _wait in range(15):
+        await page.wait_for_timeout(1000)
+        cur_url = page.url
+        if "PostView" in cur_url or ("logNo" in cur_url and "postwrite" not in cur_url):
+            result_url = cur_url
+            break
+        if _wait == 4:
+            # 5초 경과 후에도 안 바뀌면 한 번 더 확인 버튼 클릭 시도
+            again = await page.evaluate("""
+                () => {
+                    const btn = document.querySelector('.confirm_btn__WEaBq')
+                             || document.querySelector('button[class*="confirm_btn"]');
+                    if (btn && btn.getBoundingClientRect().width > 0) { btn.click(); return true; }
+                    return false;
+                }
+            """)
+            if again:
+                print("  발행 확인 버튼 재클릭")
+
+    if not result_url:
+        # URL 미변경이어도 logNo 있으면 성공으로 처리
+        cur_url = page.url
         log_no = await page.evaluate("() => { const m = location.href.match(/logNo=(\d+)/); return m ? m[1] : ''; }")
-        if not log_no:
-            return f"[예약발행 완료] {reserve_dt}"
-        return url
-    return url if ("PostView" in url or "logNo" in url) else None
+        if log_no:
+            result_url = cur_url
+            print(f"  logNo={log_no} 확인 — 발행 성공")
+        else:
+            await page.screenshot(path="/tmp/naver_publish_fail.png")
+            print(f"  현재 URL: {cur_url}")
+
+    if reserve_dt and result_url:
+        return result_url or f"[예약발행 완료] {reserve_dt}"
+    return result_url
 
 
 # ── 메인 ─────────────────────────────────────────────────────────
@@ -1214,13 +1378,35 @@ async def main():
             await browser.close(); sys.exit(1)
 
         print(f"\n[에디터 로드] {WRITE_URL}")
-        await page.goto(WRITE_URL, timeout=30000)
-        await page.wait_for_selector(".se-oglink-toolbar-button", timeout=20000)
-        await page.wait_for_timeout(3000)
+        # 에디터 로드 재시도 로직 (세션 갱신 직후 리다이렉트 대비)
+        for _load_attempt in range(3):
+            await page.goto(WRITE_URL, timeout=40000)
+            # 네트워크 안정화 대기
+            try:
+                await page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
+            await page.wait_for_timeout(3000)
 
-        if "nidlogin" in page.url or "login" in page.url.lower():
-            if not await do_login(page, context):
-                await browser.close(); sys.exit(1)
+            # 로그인 페이지로 빠진 경우 재로그인
+            if "nidlogin" in page.url or "login" in page.url.lower():
+                print(f"  [에디터 로드 {_load_attempt+1}/3] 로그인 페이지 감지 — 재로그인")
+                if not await do_login(page, context):
+                    await browser.close(); sys.exit(1)
+                continue
+
+            # 버튼 가시성 확인 (최대 40초 대기)
+            try:
+                await page.wait_for_selector(".se-oglink-toolbar-button", timeout=40000)
+                print(f"  [에디터 로드 {_load_attempt+1}/3] 에디터 준비 완료")
+                break
+            except Exception:
+                print(f"  [에디터 로드 {_load_attempt+1}/3] 타임아웃 — 재시도")
+                if _load_attempt == 2:
+                    await page.screenshot(path="/tmp/naver_editor_fail.png")
+                    print("  ❌ 에디터 로드 3회 실패 — 중단")
+                    await browser.close(); sys.exit(1)
+                await page.wait_for_timeout(5000)
 
         await handle_popups(page)
 
@@ -1229,6 +1415,29 @@ async def main():
 
         print("[본문 입력 중...]")
         await type_body(page, content, body_images)
+
+        # 에디터 본문 확인 및 이미지 전송 완료 대기 (최대 30초)
+        print("[본문 확인 및 전송 대기...]")
+        for _img_wait in range(30):
+            chars = await page.evaluate("""
+                () => {
+                    const paras = document.querySelectorAll('.se-text-paragraph');
+                    let total = 0;
+                    for(const p of paras) total += (p.innerText||'').replace(/\\s/g,'').length;
+                    if(total === 0) {
+                        const el = document.querySelector('.se-main-container');
+                        if(el) total = (el.innerText||'').replace(/\\s/g,'').length;
+                    }
+                    return total;
+                }
+            """)
+            if chars > 100:
+                print(f"  에디터 본문 확인: {chars}자 ✅")
+                break
+            await page.wait_for_timeout(1000)
+            if _img_wait % 5 == 4:
+                print(f"  대기 중... ({_img_wait+1}초, 현재 {chars}자)")
+        await page.wait_for_timeout(2000)
 
         await page.screenshot(path="/tmp/naver_before_publish.png")
         print("[발행 중...]")
