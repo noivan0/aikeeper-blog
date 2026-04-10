@@ -613,39 +613,67 @@ async def do_login(page, context) -> bool:
 
 # ── 팝업 처리 ─────────────────────────────────────────────────────
 async def handle_popups(page):
-    """SE 에디터 팝업 전체 처리 — 에디터 진입 시 및 본문 입력 중간 호출 가능"""
+    """SE 에디터 팝업 전체 처리.
+
+    핵심 원칙:
+    - '작성 중인 글이 있습니다' → '취소' 클릭 (새 글 작성)
+    - SE 에디터 내부 alert → '확인' 클릭
+    - 도움말 패널 → 닫기
+    - 팝업 dim 레이어 → display:none (단, 실제 팝업 버튼 먼저 처리 후)
+    """
+    await page.wait_for_timeout(600)
+
+    # 1. '작성 중인 글이 있습니다' 팝업 — 반드시 '취소' 클릭해서 새 글 시작
+    #    (확인을 누르면 이전 임시저장 글을 이어서 작성하게 됨 → 내용이 섞임)
+    draft_popup = await page.query_selector(".layer_popup__i0QOY")
+    if draft_popup:
+        visible = await draft_popup.is_visible()
+        if visible:
+            # 버튼 텍스트로 '취소' 찾아서 클릭
+            btns = await draft_popup.query_selector_all("button")
+            for btn in btns:
+                txt = (await btn.inner_text()).strip()
+                if txt == "취소":
+                    await btn.click()
+                    print("  [팝업] '작성 중인 글' → 취소 클릭 (새 글 작성)")
+                    await page.wait_for_timeout(1000)
+                    break
+
+    # 2. SE 에디터 내부 alert (se-popup-alert) → '확인' 클릭
+    se_alert = await page.query_selector(".se-popup-alert")
+    if se_alert:
+        visible = await se_alert.is_visible()
+        if visible:
+            btns = await se_alert.query_selector_all("button")
+            for btn in btns:
+                txt = (await btn.inner_text()).strip()
+                if txt in ("확인", "닫기", "OK"):
+                    await btn.click()
+                    print(f"  [팝업] SE alert → {txt} 클릭")
+                    await page.wait_for_timeout(500)
+                    break
+
+    # 3. 도움말 패널 닫기
+    hb = await page.query_selector(".se-help-panel-close-button")
+    if hb:
+        try:
+            await hb.click()
+            await page.wait_for_timeout(400)
+        except Exception:
+            pass
+
+    # 4. 나머지 플로팅 레이어 CSS로 숨김 (팝업 처리 완료 후)
     await page.evaluate("""
         () => {
-            // 기존 팝업 닫기
-            const p = document.querySelector('.__se-pop-layer');
-            if (p) {
-                for (const b of p.querySelectorAll('button')) {
-                    if (b.innerText.trim() === '취소') { b.click(); break; }
-                }
-            }
-            // se-popup-alert (확인/닫기 버튼 클릭)
-            const alert = document.querySelector('.se-popup-alert');
-            if (alert) {
-                for (const b of alert.querySelectorAll('button')) {
-                    const t = b.innerText.trim();
-                    if (t === '확인' || t === '닫기' || t === 'OK') { b.click(); break; }
-                }
-            }
-            // se-popup-dim (팝업 딤 레이어 직접 숨김)
             document.querySelectorAll('.se-popup-dim').forEach(el => {
                 el.style.display = 'none';
                 el.style.pointerEvents = 'none';
             });
             document.querySelectorAll('.se-popup.se-popup-alert').forEach(el => {
                 el.style.display = 'none';
-                el.style.pointerEvents = 'none';
             });
         }
     """)
-    await page.wait_for_timeout(800)
-    hb = await page.query_selector(".se-help-panel-close-button")
-    if hb: await hb.click(); await page.wait_for_timeout(400)
-    await page.evaluate("() => document.querySelectorAll('.layer_popup__i0QOY').forEach(el=>el.style.display='none')")
     await page.wait_for_timeout(300)
 
 
@@ -735,17 +763,63 @@ async def _insert_image_file(page, img_url: str) -> bool:
         tmp_path = tmp.name
         tmp.close()
 
-        req = _urllib_req.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
-        with _urllib_req.urlopen(req, timeout=10) as resp:
-            with open(tmp_path, "wb") as f:
-                f.write(resp.read())
+        # 이미지 다운로드 — Playwright fetch 우선 (쿠팡 CDN 403 우회)
+        # urllib 직접 다운로드는 쿠팡/쿠팡파트너스 CDN에서 403 차단됨
+        img_data = None
+        try:
+            response = await page.context.request.get(
+                img_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Referer": "https://www.coupang.com/",
+                    "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+                },
+                timeout=15000,
+            )
+            if response.ok:
+                img_data = await response.body()
+                print(f"    [Playwright fetch] {len(img_data)}B")
+        except Exception as e_fetch:
+            print(f"    [Playwright fetch 실패] {e_fetch}")
+
+        # fallback: urllib
+        if not img_data or len(img_data) < 500:
+            try:
+                req = _urllib_req.Request(img_url, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    "Referer": POST_URL or "https://www.coupang.com/",
+                })
+                with _urllib_req.urlopen(req, timeout=10) as resp:
+                    img_data = resp.read()
+                print(f"    [urllib fallback] {len(img_data)}B")
+            except Exception as e_url:
+                print(f"    [urllib fallback 실패] {e_url}")
+
+        if not img_data or len(img_data) < 500:
+            print(f"    [warn] 이미지 다운로드 실패 — 스킵")
+            return False
+
+        with open(tmp_path, "wb") as f:
+            f.write(img_data)
 
         file_size = _os.path.getsize(tmp_path)
         if file_size < 500:
             print(f"    [warn] 이미지 크기 너무 작음({file_size}B) — 스킵")
             return False
 
-        # 2. 이미지 버튼 클릭
+        # 2. 이미지 삽입 전 — 기존에 열린 다이얼로그/팝업 완전 닫기
+        # (이전 이미지 업로드에서 열린 창이 남아있으면 file_input 못 찾음)
+        await page.keyboard.press("Escape")
+        await page.wait_for_timeout(300)
+        # 에디터 본문 영역 클릭으로 포커스 복구
+        editor_area = await page.query_selector(".se-main-container")
+        if editor_area:
+            box = await editor_area.bounding_box()
+            if box:
+                await page.mouse.click(box['x'] + box['width']/2, box['y'] + 100)
+                await page.wait_for_timeout(400)
+
+        # 3. 이미지 버튼 클릭
         img_btn = await page.query_selector(".se-image-toolbar-button")
         if not img_btn:
             img_btn = await page.query_selector(
@@ -756,30 +830,105 @@ async def _insert_image_file(page, img_url: str) -> bool:
             return False
 
         await img_btn.click()
-        await page.wait_for_timeout(1500)
+        await page.wait_for_timeout(2000)
 
-        # 3. input[type=file] 에 파일 경로 전달
+        # 4. input[type=file] 에 파일 경로 전달
+        # evaluate_handle은 JSHandle 반환 → set_input_files 불가
+        # 반드시 page.query_selector (ElementHandle) 사용
         file_input = await page.query_selector("input[type='file']")
         if not file_input:
-            # 숨겨진 파일 인풋 시도
-            file_input = await page.evaluate_handle("""
-                () => {
-                    const inputs = document.querySelectorAll('input[type="file"]');
-                    return inputs.length > 0 ? inputs[0] : null;
-                }
-            """)
+            all_inputs = await page.query_selector_all("input[type='file']")
+            if all_inputs:
+                file_input = all_inputs[0]
 
         if file_input:
             await file_input.set_input_files(tmp_path)
-            await page.wait_for_timeout(3000)   # 업로드 완료 대기
+            await page.wait_for_timeout(3000)
+
+            # 파일 전송 오류 팝업 감지 + 처리
+            # 네이버가 일시적 업로드 차단 시 "파일 전송 오류" 팝업 표시
+            upload_error = await page.evaluate("""
+                () => {
+                    const modals = document.querySelectorAll('.se-popup-alert, [class*="dialog"], [class*="modal"]');
+                    for (const m of modals) {
+                        const txt = m.innerText || '';
+                        if (txt.includes('전송 오류') || txt.includes('파일전송을 사용할 수 없') || txt.includes('일시적')) {
+                            // 확인 버튼 클릭
+                            const okBtn = m.querySelector('button');
+                            if (okBtn) okBtn.click();
+                            return txt.substring(0, 80);
+                        }
+                    }
+                    return null;
+                }
+            """)
+            if upload_error:
+                print(f"    [warn] 파일 전송 오류 팝업: {upload_error}")
+                await page.wait_for_timeout(500)
+                await page.keyboard.press("Escape")
+                await page.wait_for_timeout(300)
+                return False
+
+            # 업로드 완료 대기 (최대 30초, 오류 감지 포함)
+            upload_ok = False
+            for _w in range(30):
+                await page.wait_for_timeout(1000)
+
+                # 오류 팝업 재확인
+                err = await page.evaluate("""
+                    () => {
+                        const els = document.querySelectorAll('[class*="dialog"], [class*="modal"], .se-popup-alert');
+                        for (const el of els) {
+                            if ((el.innerText||'').includes('전송 오류') || (el.innerText||'').includes('파일전송을 사용할 수 없')) {
+                                const btn = el.querySelector('button');
+                                if (btn) btn.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
+                """)
+                if err:
+                    print(f"    [warn] 업로드 중 오류 팝업 감지")
+                    return False
+
+                # 전송중 상태 확인
+                uploading = await page.evaluate("""
+                    () => {
+                        const imgs = document.querySelectorAll('.se-image');
+                        for (const el of imgs) {
+                            if ((el.innerText||'').includes('전송중')) return true;
+                        }
+                        return !!document.querySelector('.se-image-uploading');
+                    }
+                """)
+                if not uploading:
+                    upload_ok = True
+                    break
+
+            if not upload_ok:
+                print(f"    [warn] 업로드 30초 타임아웃 — 강제 진행 (이미지 stuck)")
+                # 오류 상태이므로 escape로 초기화
+                await page.keyboard.press("Escape")
+                await page.wait_for_timeout(500)
+                return False
+
             print(f"    [이미지 업로드 완료] {_os.path.basename(tmp_path)} ({file_size}B)")
             await page.keyboard.press("Enter")
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(800)
             return True
         else:
-            print("    [warn] input[type=file] 없음 — Escape 후 스킵")
+            # file input 없음 = 이미지 버튼 클릭 후 다이얼로그가 안 열림
+            # Escape + 에디터 클릭으로 상태 초기화
+            print("    [warn] input[type=file] 없음 — 다이얼로그 초기화 후 스킵")
             await page.keyboard.press("Escape")
             await page.wait_for_timeout(500)
+            editor_area2 = await page.query_selector(".se-main-container")
+            if editor_area2:
+                box2 = await editor_area2.bounding_box()
+                if box2:
+                    await page.mouse.click(box2['x'] + box2['width']/2, box2['y'] + 100)
+                    await page.wait_for_timeout(300)
             return False
 
     except Exception as e:
@@ -1092,15 +1241,20 @@ async def publish(page, reserve_dt: str = None) -> str | None:
     """
     reserve_dt: None → 즉시 발행
                 "YYYY-MM-DD HH:MM" → 예약 발행
+
+    재설계 원칙:
+    - 발행 버튼: ElementHandle.click() 사용 (좌표 클릭 폐기)
+    - confirm 버튼: 발행 패널 내 ElementHandle 직접 클릭
+    - 팝업 간섭 완전 차단 후 클릭
+    - URL 변화로 성공 판정
     """
-    # 발행 전 에디터 본문 글자수 확인 (.se-text-paragraph 합산 방식)
+    # 발행 전 에디터 본문 글자수 확인
     body_chars = await page.evaluate("""
         () => {
             const paras = document.querySelectorAll('.se-text-paragraph');
             let total = 0;
             for(const p of paras) total += (p.innerText||'').replace(/\\s/g,'').length;
             if(total === 0) {
-                // fallback: se-main-container
                 const el = document.querySelector('.se-main-container');
                 if(el) total = (el.innerText||'').replace(/\\s/g,'').length;
             }
@@ -1111,17 +1265,17 @@ async def publish(page, reserve_dt: str = None) -> str | None:
     await page.screenshot(path="/tmp/naver_pre_publish_check.png")
 
     # 이미지 "전송중..." 완료 대기 (최대 60초)
+    # ── 이미지 전송 완료 대기 (최대 60초, 타임아웃 시 강제 진행) ──
     print("  이미지 전송 완료 대기...")
     for _up_wait in range(60):
         is_uploading = await page.evaluate("""
             () => {
-                // "전송중..." 텍스트 요소 확인
-                const allEls = document.querySelectorAll('.se-component-content, .se-image, [class*="upload"], [class*="loading"]');
+                // '전송중' 텍스트 — 네이버 SE 에디터 이미지 업로드 중 표시
+                const allEls = document.querySelectorAll('.se-component-content, .se-image');
                 for(const el of allEls) {
                     if((el.innerText||'').includes('전송중')) return true;
                 }
-                // 업로드 스피너 확인
-                if(document.querySelector('.se-image-uploading, [class*="uploading"]')) return true;
+                if(document.querySelector('.se-image-uploading')) return true;
                 return false;
             }
         """)
@@ -1131,32 +1285,32 @@ async def publish(page, reserve_dt: str = None) -> str | None:
         if _up_wait % 10 == 9:
             print(f"  이미지 전송 대기 중... ({_up_wait+1}초)")
         await page.wait_for_timeout(1000)
-    await page.wait_for_timeout(1000)
+    else:
+        print("  이미지 전송 60초 타임아웃 — 강제 진행")
+    await page.wait_for_timeout(2000)
 
-    # 발행 전 플로팅 레이어 + 글감 패널 완전 숨김
+    # ── 발행 전 모든 방해 요소 제거 ─────────────────────────────
     await page.evaluate("""
         () => {
-            // 모든 팝업/플로팅 숨김
-            document.querySelectorAll('.layer_popup__i0QOY').forEach(el=>el.style.display='none');
-            const hp = document.querySelector('.container__HW_tc, .se-help-panel');
-            if (hp) hp.style.display = 'none';
-            document.querySelectorAll(
-                '.se-floating-layer, .se-search-panel, .se-moment-panel, .se-library-panel, .se-template-panel'
-            ).forEach(el => { el.style.display = 'none'; });
-            // 글감 패널 (하단 슬라이드) 강제 숨김
-            document.querySelectorAll('[class*="floating"], [class*="glgam"], .se-floating-category-panel').forEach(el => {
-                el.style.display = 'none';
-                el.style.visibility = 'hidden';
+            // 플로팅/글감 패널 숨김
+            ['.se-floating-layer','.se-search-panel','.se-moment-panel',
+             '.se-library-panel','.se-template-panel','.se-help-panel',
+             '.container__HW_tc','[class*="floating"]','[class*="glgam"]',
+             '.se-floating-category-panel'].forEach(sel => {
+                document.querySelectorAll(sel).forEach(el => {
+                    el.style.display = 'none';
+                    el.style.visibility = 'hidden';
+                });
             });
-            // 팝업 딤 레이어
-            document.querySelectorAll('.se-popup-dim, .se-popup.se-popup-alert').forEach(el => {
+            // dim 레이어
+            document.querySelectorAll('.se-popup-dim,.se-popup.se-popup-alert').forEach(el => {
                 el.style.display = 'none';
             });
         }
     """)
-    await page.wait_for_timeout(800)
+    await page.wait_for_timeout(600)
 
-    # 발행 버튼을 마우스 좌표로 직접 클릭
+    # ── [1단계] 발행 버튼 클릭 — ElementHandle.click() 사용 ─────
     publish_btn = await page.query_selector(".publish_btn__m9KHH")
     if not publish_btn:
         publish_btn = await page.query_selector("button[class*='publish_btn']")
@@ -1165,134 +1319,73 @@ async def publish(page, reserve_dt: str = None) -> str | None:
         await page.screenshot(path="/tmp/naver_publish_fail.png")
         return None
 
-    pub_box = await publish_btn.bounding_box()
-    await page.mouse.click(pub_box['x'] + pub_box['width']/2, pub_box['y'] + pub_box['height']/2)
-    print(f"  발행 버튼 마우스 클릭 @ ({pub_box['x']:.0f}, {pub_box['y']:.0f})")
-    await page.wait_for_timeout(5000)
+    await publish_btn.click()
+    print("  발행 버튼 클릭 ✅")
+    await page.wait_for_timeout(3000)
     await page.screenshot(path="/tmp/naver_panel_state.png")
 
-    # confirm 버튼 위치 확인
-    async def _get_confirm_pos():
-        return await page.evaluate("""
-            () => {
-                const btn = document.querySelector('.confirm_btn__WEaBq')
-                         || document.querySelector('button[class*="confirm_btn"]');
-                if (!btn) return null;
-                const r = btn.getBoundingClientRect();
-                if (r.width === 0) return null;
-                return {x: r.x + r.width/2, y: r.y + r.height/2};
-            }
-        """)
+    # ── [2단계] 발행 패널 내 confirm 버튼 — ElementHandle 직접 클릭 ──
+    async def _find_confirm_btn():
+        """발행 패널의 '✅ 발행' 버튼을 ElementHandle로 반환"""
+        # 방법1: class 직접
+        btn = await page.query_selector(".confirm_btn__WEaBq")
+        if btn and await btn.is_visible():
+            return btn
+        # 방법2: class 패턴
+        btn = await page.query_selector("button[class*='confirm_btn']")
+        if btn and await btn.is_visible():
+            return btn
+        # 방법3: 발행 패널 내 '발행' 텍스트 버튼
+        btns = await page.query_selector_all("button")
+        for b in btns:
+            try:
+                txt = (await b.inner_text()).strip()
+                if txt in ("발행", "✅ 발행", "등록") and await b.is_visible():
+                    box = await b.bounding_box()
+                    if box and box['y'] > 300:  # 상단 발행 버튼 제외
+                        return b
+            except Exception:
+                continue
+        return None
 
-    confirm_pos = await _get_confirm_pos()
-    print(f"  confirm 버튼 위치: {confirm_pos}")
-
-    if not confirm_pos:
-        # 패널 미열림 — 발행 버튼 재클릭
+    confirm_btn = await _find_confirm_btn()
+    if not confirm_btn:
+        # 패널이 안 열렸으면 재클릭
         print("  발행 패널 미열림 — 재클릭")
-        await page.mouse.click(pub_box['x'] + pub_box['width']/2, pub_box['y'] + pub_box['height']/2)
-        await page.wait_for_timeout(5000)
-        confirm_pos = await _get_confirm_pos()
+        await publish_btn.click()
+        await page.wait_for_timeout(3000)
+        confirm_btn = await _find_confirm_btn()
 
-    if not confirm_pos:
+    if not confirm_btn:
         print("  ❌ confirm 버튼 없음 — 발행 실패")
         await page.screenshot(path="/tmp/naver_publish_fail.png")
         return None
 
-    # ── 예약 발행 처리 ────────────────────────────────────────────
-    if reserve_dt:
-        import datetime as _dt
-        await page.evaluate("""
-            () => {
-                const r = document.querySelector('#radio_time2');
-                if (r) r.click();
-            }
-        """)
-        await page.wait_for_timeout(1500)
+    box = await confirm_btn.bounding_box()
+    print(f"  confirm 버튼 발견: {box}")
 
-        dt_inputs = await page.evaluate("""
-            () => {
-                const res = [];
-                document.querySelectorAll('input[type="text"],input[type="number"],select').forEach(el => {
-                    const r = el.getBoundingClientRect();
-                    if (r.width > 0 && r.y > 200 && r.y < 700) {
-                        res.push({cls: el.className?.substring(0,50), ph: el.placeholder||'', val: el.value, id: el.id, tag: el.tagName, x: Math.round(r.x), y: Math.round(r.y)});
-                    }
-                });
-                return res;
-            }
-        """)
-        print(f"  예약 입력 요소들: {dt_inputs}")
-        await page.screenshot(path="/tmp/naver_reserve_ui.png")
+    # ── [3단계] 확인 버튼 클릭 — ElementHandle.click() ──────────
+    await confirm_btn.click()
+    print("  발행 확인 버튼 클릭 ✅")
 
-        try:
-            rdt = _dt.datetime.strptime(reserve_dt, "%Y-%m-%d %H:%M")
-        except:
-            print(f"  ❌ 예약 시간 파싱 실패: {reserve_dt}")
-            reserve_dt = None
-
-        if reserve_dt and rdt:
-            set_ok = await page.evaluate(f"""
-                () => {{
-                    const inputs = Array.from(document.querySelectorAll('input'));
-                    const selects = Array.from(document.querySelectorAll('select'));
-                    let set = 0;
-
-                    const yearEl = inputs.find(el => el.placeholder?.includes('연도') || el.className?.includes('year') || el.id?.includes('year'));
-                    if (yearEl) {{ yearEl.value = '{rdt.year}'; yearEl.dispatchEvent(new Event('input',{{bubbles:true}})); yearEl.dispatchEvent(new Event('change',{{bubbles:true}})); set++; }}
-
-                    const monthEl = selects.find(el => el.className?.includes('month') || el.id?.includes('month')) ||
-                                   inputs.find(el => el.placeholder?.includes('월') || el.className?.includes('month'));
-                    if (monthEl) {{ monthEl.value = '{rdt.month}'; monthEl.dispatchEvent(new Event('change',{{bubbles:true}})); set++; }}
-
-                    const dayEl = selects.find(el => el.className?.includes('day') || el.id?.includes('day')) ||
-                                 inputs.find(el => el.placeholder?.includes('일') || el.className?.includes('day'));
-                    if (dayEl) {{ dayEl.value = '{rdt.day}'; dayEl.dispatchEvent(new Event('change',{{bubbles:true}})); set++; }}
-
-                    const hourEl = selects.find(el => el.className?.includes('hour') || el.id?.includes('hour')) ||
-                                  inputs.find(el => el.placeholder?.includes('시') || el.className?.includes('hour'));
-                    if (hourEl) {{ hourEl.value = '{rdt.hour}'; hourEl.dispatchEvent(new Event('change',{{bubbles:true}})); set++; }}
-
-                    const minEl = selects.find(el => el.className?.includes('min') || el.id?.includes('min')) ||
-                                 inputs.find(el => el.placeholder?.includes('분') || el.className?.includes('min'));
-                    if (minEl) {{ minEl.value = '{rdt.minute}'; minEl.dispatchEvent(new Event('change',{{bubbles:true}})); set++; }}
-
-                    return set;
-                }}
-            """)
-            print(f"  예약 시간 설정: {reserve_dt} (설정된 필드: {set_ok}개)")
-            await page.wait_for_timeout(1000)
-            await page.screenshot(path="/tmp/naver_reserve_set.png")
-
-    # ── 발행/예약 확인 버튼 — 마우스 좌표 클릭 ──────────────────
-    await page.mouse.click(confirm_pos['x'], confirm_pos['y'])
-    print(f"  발행 확인 버튼 마우스 클릭 @ ({confirm_pos['x']:.0f}, {confirm_pos['y']:.0f})")
-
-    # 발행 후 PostView로 리다이렉트 대기 (최대 15초)
+    # ── [4단계] 발행 완료 대기 ───────────────────────────────────
     result_url = None
-    for _wait in range(15):
+    for _wait in range(20):
         await page.wait_for_timeout(1000)
         cur_url = page.url
         if "PostView" in cur_url or ("logNo" in cur_url and "postwrite" not in cur_url):
             result_url = cur_url
             break
+        # 5초 후에도 안 되면 재클릭 1회
         if _wait == 4:
-            # 5초 경과 후에도 안 바뀌면 한 번 더 확인 버튼 클릭 시도
-            again = await page.evaluate("""
-                () => {
-                    const btn = document.querySelector('.confirm_btn__WEaBq')
-                             || document.querySelector('button[class*="confirm_btn"]');
-                    if (btn && btn.getBoundingClientRect().width > 0) { btn.click(); return true; }
-                    return false;
-                }
-            """)
-            if again:
+            c2 = await _find_confirm_btn()
+            if c2:
+                await c2.click()
                 print("  발행 확인 버튼 재클릭")
 
     if not result_url:
-        # URL 미변경이어도 logNo 있으면 성공으로 처리
         cur_url = page.url
-        log_no = await page.evaluate("() => { const m = location.href.match(/logNo=(\d+)/); return m ? m[1] : ''; }")
+        log_no = await page.evaluate("() => { const m = location.href.match(/logNo=(\\d+)/); return m ? m[1] : ''; }")
         if log_no:
             result_url = cur_url
             print(f"  logNo={log_no} 확인 — 발행 성공")
@@ -1300,8 +1393,6 @@ async def publish(page, reserve_dt: str = None) -> str | None:
             await page.screenshot(path="/tmp/naver_publish_fail.png")
             print(f"  현재 URL: {cur_url}")
 
-    if reserve_dt and result_url:
-        return result_url or f"[예약발행 완료] {reserve_dt}"
     return result_url
 
 
