@@ -38,6 +38,11 @@ while IFS= read -r line; do
 done < .env
 set -e
 
+# allsweep 전용 OAuth 키 오버라이드
+export BLOGGER_CLIENT_ID="$ALLSWEEP_CLIENT_ID"
+export BLOGGER_CLIENT_SECRET="$ALLSWEEP_CLIENT_SECRET"
+export BLOGGER_REFRESH_TOKEN="$ALLSWEEP_REFRESH_TOKEN"
+
 # allsweep 전용 환경변수 오버라이드
 export TARGET_BLOG_ID="8772490249452917821"
 export TARGET_BLOG_URL="https://www.allsweep.xyz"

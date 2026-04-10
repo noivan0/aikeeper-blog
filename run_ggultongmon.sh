@@ -42,6 +42,11 @@ if [ -f "$BASE_DIR/.env" ]; then
     set +a
 fi
 
+# ggultongmon 전용 OAuth 키 오버라이드
+export BLOGGER_CLIENT_ID="$GGULTONGMON_CLIENT_ID"
+export BLOGGER_CLIENT_SECRET="$GGULTONGMON_CLIENT_SECRET"
+export BLOGGER_REFRESH_TOKEN="$GGULTONGMON_REFRESH_TOKEN"
+
 # blogs.json에서 Blog ID/URL 읽기 (하드코딩 제거)
 TARGET_BLOG_ID=$(python3 -c "
 import json

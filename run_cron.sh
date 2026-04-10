@@ -38,6 +38,11 @@ while IFS= read -r line; do
 done < .env
 set -e
 
+# aikeeper 전용 OAuth 키 오버라이드
+export BLOGGER_CLIENT_ID="$AIKEEPER_CLIENT_ID"
+export BLOGGER_CLIENT_SECRET="$AIKEEPER_CLIENT_SECRET"
+export BLOGGER_REFRESH_TOKEN="$AIKEEPER_REFRESH_TOKEN"
+
 # GITHUB_OUTPUT 임시 파일 (Step 1용)
 GH_OUTPUT_TOPIC=/tmp/aikeeper_gh_topic_$$.txt
 export GITHUB_OUTPUT="$GH_OUTPUT_TOPIC"
