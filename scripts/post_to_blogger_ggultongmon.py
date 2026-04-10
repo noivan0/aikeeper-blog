@@ -28,10 +28,10 @@ from coupang_api import get_products_with_shorten
 from generate_post_ggultongmon import generate_post, build_full_html
 
 # ── 환경변수 ──────────────────────────────────────────────────────
-TOPIC           = os.environ.get("TOPIC", "에어프라이어 가성비 추천 TOP5")
-SEARCH_KW       = os.environ.get("SEARCH_KW") or os.environ.get("search_keyword", "에어프라이어")
+TOPIC           = os.environ.get("TOPIC", "")
+SEARCH_KW       = os.environ.get("SEARCH_KW") or os.environ.get("search_keyword", "")
 ANGLE           = os.environ.get("ANGLE", "")
-LABELS_STR      = os.environ.get("LABELS") or os.environ.get("labels", "에어프라이어 추천,에어프라이어 가성비")
+LABELS_STR      = os.environ.get("LABELS") or os.environ.get("labels", "")
 META_DESC       = os.environ.get("META_DESC") or os.environ.get("meta_desc", "")
 CATEGORY        = os.environ.get("CATEGORY") or os.environ.get("category", "")
 BLOG_ID         = os.environ.get("TARGET_BLOG_ID", "4422596386410826373")
