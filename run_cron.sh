@@ -20,8 +20,8 @@ trap "rm -f '$LOCK_FILE'" EXIT
 # 일일 발행 횟수 제한 (Blogger API 할당량 보호 — 3개 블로그 균등 분배)
 MAX_DAILY=5
 TODAY=$(date '+%Y-%m-%d')
-# 오늘 날짜 기준 완료 횟수 (타임스탬프 있는 완료 라인으로 카운트, tee 중복 감안해 /2)
-TODAY_COUNT_RAW=$(grep "\[$TODAY" /var/log/aikeeper_cron.log 2>/dev/null | grep "===== 완료 =====" | wc -l)
+# 오늘 날짜 기준 실제 발행 성공 횟수 (blog: aikeeper 완료 패턴만, tee 중복 감안해 /2)
+TODAY_COUNT_RAW=$(grep "\[$TODAY" /var/log/aikeeper_cron.log 2>/dev/null | grep "===== 완료 \[blog: aikeeper\] =====" | wc -l)
 TODAY_COUNT=$(( TODAY_COUNT_RAW / 2 ))
 if [ "$TODAY_COUNT" -ge "$MAX_DAILY" ]; then
     echo "[SKIP] 오늘 발행 ${TODAY_COUNT}회 달성 (최대 ${MAX_DAILY}회) — 종료"
@@ -105,7 +105,17 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] Step 3: 이미지 추가" | tee -a "$LO
 python3 scripts/add_images.py "$POST_FILE" 2>&1 | tee -a "$LOG_FILE" || true
 
 # Step 4: Blogger 발행
-echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] Step 4: Blogger 발행" | tee -a "$LOG_FILE"
+echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] Step 4: Blogger 발행 → AI키퍼" | tee -a "$LOG_FILE"
+TARGET_BLOG_ID="3598676904202320050" \
+TARGET_BLOG_URL="https://aikeeper.allsweep.xyz" \
+TARGET_BLOG_NAME="AI키퍼" \
+BLOG_TYPE="AI" \
 python3 scripts/post_to_blogger.py "$POST_FILE" 2>&1 | tee -a "$LOG_FILE"
+_BLOG_EXIT=${PIPESTATUS[0]}
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] ===== 완료 =====" | tee -a "$LOG_FILE"
+if [ "$_BLOG_EXIT" -eq 0 ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] ===== 완료 [blog: aikeeper] =====" | tee -a "$LOG_FILE"
+else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] ===== aikeeper 발행 실패 (exit $_BLOG_EXIT) =====" | tee -a "$LOG_FILE"
+    exit 1
+fi

@@ -129,5 +129,11 @@ TARGET_BLOG_URL="$TARGET_BLOG_URL" \
 TARGET_BLOG_NAME="$TARGET_BLOG_NAME" \
 BLOG_TYPE="$BLOG_TYPE" \
 python3 scripts/post_to_blogger.py "$POST_FILE" 2>&1 | tee -a "$LOG_FILE"
+_BLOG_EXIT=${PIPESTATUS[0]}
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] ===== allsweep 완료 =====" | tee -a "$LOG_FILE"
+if [ "$_BLOG_EXIT" -eq 0 ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] ===== allsweep 완료 =====" | tee -a "$LOG_FILE"
+else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S KST')] ===== allsweep 발행 실패 (exit $_BLOG_EXIT) =====" | tee -a "$LOG_FILE"
+    exit 1
+fi
