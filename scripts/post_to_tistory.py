@@ -63,16 +63,19 @@ def _cover_img_block(image_url: str, alt: str = "") -> str:
 
 # ── requests 세션 ────────────────────────────────────────────────────────────
 def _sess():
+    # 항상 최신 환경변수에서 읽기 (재갱신 후에도 반영)
+    session = os.environ.get("TISTORY_SESSION", TSSESSION)
     s = requests.Session()
     s.verify = False
     s.headers.update({
-        "Cookie":           f"TSSESSION={TSSESSION}",
+        "Cookie":           f"TSSESSION={session}",
         "User-Agent":       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36",
         "Origin":           f"https://{BLOG_NAME}.tistory.com",
         "Referer":          f"{API_BASE}/newpost/",
         "Content-Type":     "application/json",
         "X-Requested-With": "XMLHttpRequest",
     })
+    s.cookies.set("TSSESSION", session, domain=f"{BLOG_NAME}.tistory.com")
     return s
 
 
@@ -169,10 +172,32 @@ def generate_cross_post(topic: str, products: list, post_url: str,
 
 
 # ── 티스토리 발행 ────────────────────────────────────────────────────────────
+def _refresh_session_if_needed() -> str:
+    """세션이 만료된 경우 자동 재갱신 후 새 세션값 반환"""
+    import subprocess, re as _re
+    script = Path(__file__).parent / "refresh_tistory_session.py"
+    print("  [tistory] 세션 만료 감지 → 자동 재갱신 시도...")
+    env2 = {**os.environ, "DISPLAY": ":99"}
+    r = subprocess.run([sys.executable, str(script)], env=env2,
+                       capture_output=True, text=True, timeout=90)
+    print(r.stdout[-300:] if r.stdout else "")
+    if r.returncode != 0:
+        raise RuntimeError(f"세션 재갱신 실패: {r.stderr[-200:]}")
+
+    # .env에서 새 세션값 읽기
+    env_file = Path(__file__).parent.parent / ".env"
+    for line in env_file.read_text().splitlines():
+        if line.startswith("TISTORY_SESSION="):
+            new_session = line.split("=", 1)[1].strip()
+            os.environ["TISTORY_SESSION"] = new_session
+            return new_session
+    raise RuntimeError("새 TISTORY_SESSION 값을 .env에서 찾을 수 없음")
+
+
 def publish_to_tistory(title: str, content: str, tag: str = "",
                        category: str = CATEGORY_COUPANG) -> dict:
-    """티스토리 /manage/post.json API로 글 발행"""
-    if not TSSESSION:
+    """티스토리 /manage/post.json API로 글 발행 (세션 만료 시 자동 재갱신)"""
+    if not TSSESSION and not os.environ.get("TISTORY_SESSION"):
         raise RuntimeError("TISTORY_SESSION 환경변수 없음")
 
     s = _sess()
@@ -190,7 +215,22 @@ def publish_to_tistory(title: str, content: str, tag: str = "",
     if r.status_code != 200:
         raise RuntimeError(f"발행 실패 {r.status_code}: {r.text[:200]}")
 
-    result = r.json()
+    # 세션 만료 감지: 응답이 HTML(로그인 페이지)인 경우
+    content_type = r.headers.get("content-type", "")
+    if "html" in content_type or r.text.strip().startswith("<!"):
+        print("  [tistory] 세션 만료 감지 (HTML 응답) → 재갱신 후 재시도")
+        new_sess = _refresh_session_if_needed()
+        s2 = _sess()  # 새 세션으로 재생성
+        r = s2.post(f"{API_BASE}/post.json", json=payload, timeout=30)
+        if r.status_code != 200:
+            raise RuntimeError(f"재시도 발행 실패 {r.status_code}: {r.text[:200]}")
+
+    try:
+        result = r.json()
+    except Exception:
+        # 여전히 HTML이면 세션 문제
+        raise RuntimeError(f"응답 JSON 파싱 실패 (세션 문제 가능성): {r.text[:200]}")
+
     entry_url = result.get("entryUrl", "")
     print(f"  [tistory] 발행 완료: {entry_url}")
     return {"success": True, "url": entry_url}
