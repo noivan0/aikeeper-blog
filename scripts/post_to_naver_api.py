@@ -56,11 +56,15 @@ AUTOSAVE_URL     = "https://blog.naver.com/RabbitAutoSaveWrite.naver"
 RABBIT_WRITE_URL = "https://blog.naver.com/RabbitWrite.naver"
 OGLINK_API       = "https://platform.editor.naver.com/api/blogpc001/v1/oglink"
 
-# 실제 네이버 SE 모바일 렌더링 역공학 (2026-04-12)
-# se-fs-fs15 → 16px(본문), se-fs-fs19 → 20px(소제목), se-fs-fs28 → 23px(큰제목)
-# se-fs-(빈값) → 20px (default, 상위노출 블로그 소제목에서 가장 많이 사용)
-# se-fs-fs20 → 11px (완전히 잘못된 값 — 절대 사용 금지)
-FS = {"tiny": "fs11", "normal": "fs15", "heading": "fs19", "large": "fs28"}
+# 실제 네이버 SE 모바일 렌더링 역공학 (2026-04-12, 100개 포스팅 분석)
+# 상위 노출 포스팅 실제 폰트:
+#   se-fs-fs11 → 13px (파트너스고지/해시태그)
+#   se-fs-fs13 → 15px (본문 — 상위노출 포스팅 실제 값)
+#   se-fs-fs19 → 20px (소제목 heading)
+#   se-fs-(빈값) → 20px (소제목, se-fs-fs19와 동일 크기)
+#   se-fs-fs28 → 23px (대제목)
+# se-fs-fs20 → 11px (절대 사용 금지)
+FS = {"tiny": "fs11", "normal": "fs13", "heading": "fs19", "large": "fs28"}
 
 
 def _uid():
@@ -89,7 +93,7 @@ def para_link(text: str, url: str) -> dict:
         "id": _uid(),
         "nodes": [{
             "id": _uid(), "value": text,
-            "style": {"fontSizeCode": "fs15", "@ctype": "nodeStyle"},
+            "style": {"fontSizeCode": "fs13", "@ctype": "nodeStyle"},
             "link": {"url": url, "@ctype": "urlLink"},
             "@ctype": "textNode"
         }],
