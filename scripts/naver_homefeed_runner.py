@@ -159,7 +159,7 @@ def run_post(post: dict) -> bool:
         "DISPLAY":         ":99",
     }
     r2 = subprocess.run(
-        [sys.executable, str(Path(__file__).parent / "post_to_naver_simple.py")],
+        [sys.executable, str(Path(__file__).parent / "post_to_naver_api.py")],
         env=env2, capture_output=False, timeout=300
     )
 

@@ -83,6 +83,31 @@ async def do_login(page, context) -> bool:
     return False
 
 
+async def dismiss_draft_popup(page):
+    """'작성 중인 글이 있습니다' 팝업 — 취소 클릭 (새 글 작성)"""
+    for _ in range(10):
+        pos = await page.evaluate("""
+        () => {
+            const btns = document.querySelectorAll('button');
+            for (const btn of btns) {
+                const txt = (btn.innerText || btn.textContent || '').trim();
+                if (txt === '취소') {
+                    const r = btn.getBoundingClientRect();
+                    if (r.width > 0) return {x: r.x + r.width/2, y: r.y + r.height/2};
+                }
+            }
+            return null;
+        }
+        """)
+        if pos:
+            await page.mouse.click(pos['x'], pos['y'])
+            print("  [팝업] '작성 중인 글' → 취소 클릭 (새 글 작성)")
+            await page.wait_for_timeout(1500)
+            return True
+        await page.wait_for_timeout(300)
+    return False
+
+
 async def load_editor(page) -> bool:
     """에디터 로드 — 최대 3회 재시도"""
     for attempt in range(3):
@@ -96,6 +121,9 @@ async def load_editor(page) -> bool:
         if "nidlogin" in page.url or "login" in page.url.lower():
             print(f"  [에디터 {attempt+1}/3] 로그인 페이지 — 재로그인 필요")
             return False
+
+        # '작성 중인 글' 팝업 처리 (반드시 취소 선택 — 확인 시 이전 글 로드)
+        await dismiss_draft_popup(page)
 
         # .se-component.se-text 또는 .se-documentTitle 로 에디터 판단
         try:
@@ -185,132 +213,132 @@ async def insert_cover_image(page, img_url: str) -> bool:
 
 
 async def type_body(page, body: str):
-    """본문 텍스트 입력 — 줄바꿈 단위로 안전하게"""
-    # 에디터 본문 영역 클릭 (.se-component.se-text 위치)
+    """본문 텍스트 입력 — keyboard.type 방식 (포커스 유지, 청크 단위)"""
+    # 1. 본문 첫 텍스트 컴포넌트 클릭으로 포커스 획득
     body_comp = await page.query_selector(".se-component.se-text")
-    body_click_y = 360  # 기본 fallback
     if body_comp:
         box = await body_comp.bounding_box()
-        body_click_y = box['y'] + 10
-        await page.mouse.click(box['x'] + 200, body_click_y)
+        await page.mouse.click(box['x'] + 50, box['y'] + box['height'] / 2)
     else:
-        await page.mouse.click(500, body_click_y)
-    await page.wait_for_timeout(500)
+        await page.mouse.click(600, 370)
+    await page.wait_for_timeout(600)
 
-    def count_chars(text_list):
-        return sum(len(t.replace(' ','').replace('\n','')) for t in text_list)
-
+    # 2. 청크 단위 입력 (줄바꿈은 Enter 키)
     lines = body.split('\n')
     total = len(lines)
-    for i, line in enumerate(lines):
-        if line:
-            await page.keyboard.type(line, delay=12)
-        if i < total - 1:
-            await page.keyboard.press("Enter")
-            await page.wait_for_timeout(50)
-        # 매 50줄마다 글자수 확인 (.se-text-paragraph 기준)
-        if i > 0 and i % 50 == 0:
-            texts = await page.evaluate("""
-                () => Array.from(document.querySelectorAll('.se-text-paragraph')).map(el=>(el.innerText||'').replace(/\\s/g,'').length)
-            """)
-            chars = sum(texts)
-            print(f"    본문 진행: {i}/{total}줄, 에디터 {chars}자")
-            if chars < 5 and i > 30:
-                print("    포커스 재설정")
-                await page.mouse.click(500, body_click_y + 50)
-                await page.wait_for_timeout(300)
+    chunk_size = 30  # 30줄씩 처리
 
-    await page.wait_for_timeout(1000)
-    # 최종 글자수 — se-text-paragraph 합산
-    texts = await page.evaluate("""
-        () => Array.from(document.querySelectorAll('.se-text-paragraph')).map(el=>(el.innerText||''))
+    for chunk_start in range(0, total, chunk_size):
+        chunk = lines[chunk_start:chunk_start + chunk_size]
+        chunk_end = min(chunk_start + chunk_size, total)
+
+        for i, line in enumerate(chunk):
+            line_idx = chunk_start + i
+            if line:
+                await page.keyboard.type(line, delay=8)
+            if line_idx < total - 1:
+                await page.keyboard.press("Enter")
+                await page.wait_for_timeout(30)
+
+        # 청크 완료 후 글자수 확인
+        chars = await page.evaluate("""
+            () => {
+                const paras = document.querySelectorAll('.se-text-paragraph');
+                return Array.from(paras).reduce((s, el) => s + (el.innerText||'').replace(/[\\s\\n]/g,'').length, 0);
+            }
+        """)
+        title_chars = await page.evaluate("""
+            () => (document.querySelector('.se-title-text')?.innerText||'').replace(/[\\s\\n]/g,'').length
+        """)
+        body_chars_so_far = chars - title_chars
+        print(f"    본문 진행: {chunk_end}/{total}줄, 에디터 본문 {body_chars_so_far}자")
+
+        # 포커스 손실 감지
+        if body_chars_so_far < 5 and chunk_end > 30:
+            print("    ⚠️ 포커스 손실 감지 — 재설정 후 재입력")
+            if body_comp:
+                await page.mouse.click(box['x'] + 50, box['y'] + 50)
+            await page.wait_for_timeout(400)
+
+    await page.wait_for_timeout(800)
+
+    # 최종 글자수
+    final_chars = await page.evaluate("""
+        () => {
+            const paras = document.querySelectorAll('.se-text-paragraph');
+            return Array.from(paras).reduce((s, el) => s + (el.innerText||'').replace(/[\\s\\n]/g,'').length, 0);
+        }
     """)
-    final_chars = sum(len(t.replace('\n','').replace(' ','')) for t in texts)
-    # 제목 제외 (제목 글자수는 se-title-text에 있음)
     title_chars = await page.evaluate("""
-        () => (document.querySelector('.se-title-text')?.innerText||'').replace(/\\s/g,'').length
+        () => (document.querySelector('.se-title-text')?.innerText||'').replace(/[\\s\\n]/g,'').length
     """)
     body_chars = final_chars - title_chars
-    print(f"  본문 입력 완료: {body_chars}자 (제목 포함 {final_chars}자)")
+    print(f"  본문 입력 완료: {body_chars}자")
     return body_chars
 
 
 async def publish(page) -> str | None:
-    """발행 — 패널 열고 확인 버튼 클릭"""
-    # 플로팅 패널 JS로 숨김
-    await page.evaluate("""
-        () => {
-            document.querySelectorAll('.layer_popup__i0QOY, .se-help-panel').forEach(el=>el.style.display='none');
-            document.querySelectorAll('.se-floating-layer, .se-search-panel, .se-moment-panel, .se-library-panel').forEach(el=>{el.style.display='none';});
-        }
-    """)
-    await page.wait_for_timeout(800)
-
-    # 발행 버튼 마우스 클릭
-    pub_btn = await page.query_selector(".publish_btn__m9KHH, button[class*='publish_btn']")
+    """발행 — 우상단 publish_btn 클릭 → 패널 → confirm_btn 클릭"""
+    # 1. 우상단 발행 버튼 (publish_btn__m9KHH)
+    pub_btn = await page.query_selector(".publish_btn__m9KHH")
     if not pub_btn:
-        print("  ❌ 발행 버튼 없음")
+        print("  ❌ 발행 버튼(.publish_btn__m9KHH) 없음")
         await page.screenshot(path="/tmp/naver_simple_fail.png")
         return None
 
-    pub_box = await pub_btn.bounding_box()
-    await page.mouse.click(pub_box['x'] + pub_box['width']/2, pub_box['y'] + pub_box['height']/2)
-    print(f"  발행 버튼 클릭 @ ({pub_box['x']:.0f},{pub_box['y']:.0f})")
-    await page.wait_for_timeout(5000)
+    await pub_btn.click()
+    print("  발행 버튼 클릭")
+    await page.wait_for_timeout(3000)
     await page.screenshot(path="/tmp/naver_simple_panel.png")
 
-    # confirm 버튼 위치 확인
-    async def get_confirm():
-        return await page.evaluate("""
-            () => {
-                const btn = document.querySelector('.confirm_btn__WEaBq, button[class*="confirm_btn"]');
-                if (!btn) return null;
-                const r = btn.getBoundingClientRect();
-                if (r.width === 0) return null;
-                return {x: r.x + r.width/2, y: r.y + r.height/2};
-            }
-        """)
+    # 2. 패널 내 확인(발행) 버튼 (confirm_btn__WEaBq) 대기
+    confirm_btn = None
+    for attempt in range(3):
+        confirm_btn = await page.query_selector(".confirm_btn__WEaBq")
+        if confirm_btn:
+            box = await confirm_btn.bounding_box()
+            if box and box['width'] > 0:
+                break
+        print(f"  패널 미열림 ({attempt+1}/3) — 재클릭")
+        await pub_btn.click()
+        await page.wait_for_timeout(3000)
 
-    pos = await get_confirm()
-    if not pos:
-        print("  패널 미열림 — 재클릭")
-        await page.mouse.click(pub_box['x'] + pub_box['width']/2, pub_box['y'] + pub_box['height']/2)
-        await page.wait_for_timeout(5000)
-        pos = await get_confirm()
-
-    if not pos:
-        print("  ❌ confirm 버튼 없음")
+    if not confirm_btn:
+        print("  ❌ 확인 버튼(.confirm_btn__WEaBq) 없음")
         await page.screenshot(path="/tmp/naver_simple_fail.png")
         return None
 
-    # 확인 버튼 클릭 전 패널 열린 상태 재확인
-    panel_open = await page.evaluate("""
-        () => {
-            // 발행 패널 (우측 슬라이드)이 열려있는지 확인
-            const panel = document.querySelector('.publish_layer__t6JRl, [class*="publish_layer"], [class*="publishLayer"]');
-            return panel ? panel.getBoundingClientRect().width > 0 : false;
-        }
-    """)
-    print(f"  발행 패널 열림: {panel_open}")
+    box = await confirm_btn.bounding_box()
+    print(f"  확인 버튼 클릭 @ ({box['x']:.0f},{box['y']:.0f})")
+    await confirm_btn.click()
 
-    await page.mouse.click(pos['x'], pos['y'])
-    print(f"  확인 버튼 클릭 @ ({pos['x']:.0f},{pos['y']:.0f})")
-
-    # 발행 완료 대기 — URL 변화 또는 에러 감지
-    for _ in range(30):
+    # 3. 발행 완료 대기 — URL에 logNo 포함 또는 PostView로 이동 (최대 60초)
+    for i in range(60):
         await page.wait_for_timeout(1000)
         cur_url = page.url
         if "PostView" in cur_url or ("logNo" in cur_url and "postwrite" not in cur_url):
             return cur_url
-        # 에러 페이지 감지
-        if "error" in cur_url.lower() or "찾을 수 없" in (await page.evaluate("() => document.body.innerText||''")):
-            print(f"  ⚠️ 에러 페이지 감지: {cur_url}")
-            return None
+        if i > 3 and "postwrite" not in cur_url and "blog.naver.com" in cur_url:
+            # 에러 페이지 감지
+            page_text = await page.evaluate("() => document.body.innerText || ''")
+            if "페이지를 찾을 수 없습니다" in page_text or "에러가 발생했습니다" in page_text:
+                print(f"  ⚠️ 네이버 서버 에러 — URL: {cur_url}")
+                await page.screenshot(path="/tmp/naver_simple_fail.png")
+                return None
+            if cur_url != WRITE_URL:
+                return cur_url
+    cur_url = page.url
+    if "logNo" in cur_url:
+        return cur_url
+    print(f"  타임아웃(60s) — 최종 URL: {cur_url}")
+    await page.screenshot(path="/tmp/naver_simple_fail.png")
     return None
 
 
 async def main():
-    if not POST_TITLE:
+    title = POST_TITLE
+
+    if not title:
         print("❌ NAVER_TITLE 환경변수 필요")
         sys.exit(1)
 
@@ -325,8 +353,13 @@ async def main():
         print("❌ 본문 없음 (NAVER_BODY_PATH 또는 NAVER_BODY 필요)")
         sys.exit(1)
 
+    # 제목 길이 검증 (네이버 한도 ~38자)
+    if len(title) > 38:
+        title = title[:38]
+        print(f"  [경고] 제목 38자로 자름: {title}")
+
     print(f"\n[네이버 발행 시작]")
-    print(f"  제목: {POST_TITLE[:50]}")
+    print(f"  제목: {title[:50]}")
     print(f"  본문: {len(body)}자")
 
     async with async_playwright() as p:
@@ -359,7 +392,7 @@ async def main():
             sys.exit(1)
 
         # 제목 입력
-        await type_title(page, POST_TITLE)
+        await type_title(page, title)
 
         # 커버 이미지 (선택)
         if COVER_IMG:
@@ -393,7 +426,7 @@ async def main():
             out = {
                 "success": True,
                 "naver_url": result_url,
-                "title": POST_TITLE,
+                "title": title,
                 "body_chars": chars,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             }
