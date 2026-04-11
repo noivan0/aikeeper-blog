@@ -318,7 +318,7 @@ def parse_body_to_sections(body: str, og_map: dict) -> list:
 
 # ── Playwright 업로드 + 발행 ─────────────────────────────────────────────
 
-async def publish(title: str, body: str, product_links: list) -> str | None:
+async def publish(title: str, body: str, product_links: list, extra_image_urls: list | None = None) -> str | None:
     tmpdir = tempfile.mkdtemp()
 
     async with async_playwright() as p:
@@ -466,7 +466,27 @@ async def publish(title: str, body: str, product_links: list) -> str | None:
                 if local:
                     thumb_local[link] = local
 
-        print(f"  다운로드된 이미지: {len(thumb_local)}개")
+        # extra_image_urls: 추가 상품 이미지 (이미지 밀도 확보용)
+        # 쿠팡 API productImage URL → 직접 다운로드
+        extra_local = []
+        if extra_image_urls:
+            import requests as _req
+            for ei, eurl in enumerate(extra_image_urls[:4]):
+                try:
+                    r = _req.get(eurl, timeout=8, allow_redirects=True,
+                        headers={"Referer":"https://www.coupang.com/","User-Agent":"Mozilla/5.0"})
+                    if r.status_code == 200 and len(r.content) > 10000:
+                        ext = "jpg"
+                        save_path = os.path.join(tmpdir, f"extra_{ei}.{ext}")
+                        with open(save_path, "wb") as f:
+                            f.write(r.content)
+                        extra_local.append(save_path)
+                        print(f"    ✅ 추가이미지 {ei+1}: {len(r.content)//1024}KB")
+                except Exception as e:
+                    print(f"    ⚠️ 추가이미지 실패: {e}")
+            print(f"  추가 이미지 확보: {len(extra_local)}개 (총 {len(thumb_local)+len(extra_local)}개)")
+
+        print(f"  다운로드된 이미지: {len(thumb_local)}개 (+ 추가 {len(extra_local)}개)")
 
         # ── 3단계: 새 에디터 페이지로 이동 ────────────────────────────
         await page.goto(WRITE_URL, timeout=40000)
@@ -592,6 +612,65 @@ async def publish(title: str, body: str, product_links: list) -> str | None:
                         link=link
                     ))
 
+        # extra_local 이미지를 업로드하고 문서 앞부분에 삽입
+        if extra_local:
+            print(f"  추가 이미지 업로드 ({len(extra_local)}개)...")
+            extra_uploaded = []
+            for ei, local_path in enumerate(extra_local):
+                upload_resp2 = []
+                async def on_upload_resp2(resp):
+                    if "upphoto.naver.com" in resp.url and resp.request.method == "POST":
+                        try:
+                            text = await resp.text()
+                            upload_resp2.append(text)
+                        except: pass
+                page.on("response", on_upload_resp2)
+
+                img_btn2 = await page.query_selector(".se-image-toolbar-button")
+                if img_btn2:
+                    box2 = await img_btn2.bounding_box()
+                    await page.mouse.click(box2['x']+box2['width']/2, box2['y']+box2['height']/2)
+                    await page.wait_for_timeout(800)
+                    fi2 = await page.query_selector("input[type=file]")
+                    if fi2:
+                        await fi2.set_input_files(local_path)
+                        print(f"    업로드 중: extra_{ei}.jpg...")
+                        await page.wait_for_timeout(8000)
+
+                page.remove_listener("response", on_upload_resp2)
+
+                if upload_resp2:
+                    xml = upload_resp2[-1]
+                    url_m = re.search(r'<url>([^<]+)</url>', xml)
+                    if url_m:
+                        path_val = url_m.group(1)
+                        src_url = f"https://blogfiles.pstatic.net{path_val}?type=w1"
+                        w_m = re.search(r'<width>(\d+)</width>', xml)
+                        h_m = re.search(r'<height>(\d+)</height>', xml)
+                        sz_m = re.search(r'<fileSize>(\d+)</fileSize>', xml)
+                        fn_m = re.search(r'<fileName>([^<]+)</fileName>', xml)
+                        extra_uploaded.append({
+                            "src": src_url, "path": path_val,
+                            "width":  int(w_m.group(1)) if w_m else 492,
+                            "height": int(h_m.group(1)) if h_m else 492,
+                            "fileSize": int(sz_m.group(1)) if sz_m else 0,
+                            "fileName": fn_m.group(1) if fn_m else f"extra_{ei}.jpg",
+                        })
+                        print(f"    ✅ extra 업로드 완료: {src_url[:60]}")
+
+            # extra 이미지를 본문 중간에 분산 삽입
+            if extra_uploaded:
+                insert_positions = [len(final_comps)//3, 2*len(final_comps)//3]
+                for idx, eu in zip(insert_positions, extra_uploaded):
+                    ic = image_comp(
+                        src=eu["src"], path=eu["path"],
+                        width=eu["width"], height=eu["height"],
+                        filename=eu["fileName"],
+                        represent=False, file_size=eu["fileSize"]
+                    )
+                    final_comps.insert(min(idx, len(final_comps)), ic)
+                print(f"  추가 이미지 {len(extra_uploaded)}개 본문 중간 삽입 완료")
+
         doc_str = build_document_model(title, final_comps)
         pop_save = make_pop(auto_save_no=None)
         print(f"  documentModel: {len(doc_str)}자, 컴포넌트 {len(final_comps)+1}개")
@@ -693,12 +772,20 @@ async def main():
         if bl not in product_links:
             product_links.append(bl)
 
+    # 추가 이미지 URL (naver_homefeed_runner에서 전달)
+    extra_image_urls = []
+    try:
+        raw_extra = os.environ.get("EXTRA_IMAGE_URLS", "[]")
+        extra_image_urls = [u for u in json.loads(raw_extra) if u]
+    except: pass
+
     print(f"\n[네이버 API 발행 v6]")
     print(f"  제목: {title[:50]}")
     print(f"  본문: {len(body)}자")
     print(f"  상품링크: {len(product_links)}개")
+    print(f"  추가이미지: {len(extra_image_urls)}개")
 
-    result_url = await publish(title, body, product_links)
+    result_url = await publish(title, body, product_links, extra_image_urls=extra_image_urls)
 
     if result_url:
         print(f"\n✅ 발행 성공!")
