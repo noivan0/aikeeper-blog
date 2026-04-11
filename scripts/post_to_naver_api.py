@@ -266,20 +266,29 @@ def parse_body_to_sections(body: str, og_map: dict) -> list:
     flush()
 
     # 컴포넌트 조립
+    # 전략: 링크가 2회 연속으로 같은 URL이면
+    #   → 1회차: IMAGE_MARKER (업로드이미지)
+    #   → 2회차: OGLINK (OG카드) — 텍스트 사이에 분리 삽입
+    # 다른 URL이면: 각각 IMAGE_MARKER + OGLINK 쌍으로 처리
     components = []
     first_image = True
+    url_seen_count = {}  # 각 URL이 몇 번 등장했는지
 
     for sec_type, sec_content in sections:
         if sec_type == 'link':
             url = sec_content
-            # 이미지 업로드 마커 (실제 업로드는 Playwright에서)
-            image_upload_urls.append(url)
-            components.append({'_type': 'IMAGE_MARKER', '_url': url, '_is_first': first_image})
-            first_image = False
+            url_seen_count[url] = url_seen_count.get(url, 0) + 1
+            count = url_seen_count[url]
 
-            # OG카드
-            if url in og_map:
-                components.append({'_type': 'OGLINK', '_url': url})
+            if count == 1:
+                # 첫 번째 등장 → 업로드이미지만
+                image_upload_urls.append(url)
+                components.append({'_type': 'IMAGE_MARKER', '_url': url, '_is_first': first_image})
+                first_image = False
+            else:
+                # 두 번째 등장 → OG카드만 (이미지 없이)
+                if url in og_map:
+                    components.append({'_type': 'OGLINK', '_url': url})
 
         else:  # 'lines'
             paras = []
