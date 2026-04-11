@@ -24,9 +24,8 @@ trap "flock -u 9; rm -f '$LOCK_FILE'" EXIT
 # 일일 발행 횟수 제한 (Blogger API 할당량 보호)
 MAX_DAILY=3
 TODAY=$(date '+%Y-%m-%d')
-# 오늘 날짜 기준 완료 횟수 (타임스탬프 있는 완료 라인으로 카운트, tee 중복 감안해 /2)
-TODAY_COUNT_RAW=$(grep "\[$TODAY" "$LOG_FILE" 2>/dev/null | grep "===== 완료 \[blog:" | wc -l)
-TODAY_COUNT=$(( TODAY_COUNT_RAW / 2 ))
+# 오늘 날짜 기준 완료 횟수 (타임스탬프 포함 라인 유니크 처리 — tee 중복 방지)
+TODAY_COUNT=$(grep "^\[$TODAY" "$LOG_FILE" 2>/dev/null | grep "===== 완료 \[blog:" | sort -u | wc -l)
 if [ "$TODAY_COUNT" -ge "$MAX_DAILY" ]; then
     echo "[SKIP] 오늘 발행 ${TODAY_COUNT}회 달성 (최대 ${MAX_DAILY}회) — 종료"
     exit 0

@@ -22,7 +22,23 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 BASE_DIR     = Path(__file__).parent.parent
-ATOM_URL     = "https://ggultongmon.allsweep.xyz/atom.xml"
+
+# .env 로드 (크론/subprocess 환경에서 환경변수 누락 방지)
+try:
+    _env_file = BASE_DIR / ".env"
+    if _env_file.exists():
+        for _line in _env_file.read_text(encoding="utf-8").splitlines():
+            _line = _line.strip()
+            if not _line or _line.startswith("#") or "=" not in _line:
+                continue
+            _k, _v = _line.split("=", 1)
+            _k = _k.strip()
+            if _k and _k not in os.environ:
+                os.environ[_k] = _v.strip()
+except Exception:
+    pass
+
+ATOM_URL     = os.environ.get("GGULTONGMON_ATOM_URL", "https://ggultongmon.allsweep.xyz/atom.xml")
 LOG_FILE     = BASE_DIR / "results" / "naver_posts.jsonl"
 SCRIPT       = Path(__file__).parent / "post_to_naver_prosweep.py"
 LOCK_FILE    = Path("/tmp/naver_cron.lock")

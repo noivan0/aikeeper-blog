@@ -418,6 +418,18 @@ def main():
         except Exception as _tse:
             print(f"  ℹ️  티스토리 크로스포스팅 스킵 (비치명적): {_tse}")
 
+    # 4-7. 네이버 크로스포스팅 (비치명적, 비동기)
+    try:
+        import subprocess as _sub
+        _naver_env = {**os.environ, "DISPLAY": ":99"}
+        _sub.Popen(
+            [sys.executable, str(BASE_DIR / "scripts" / "naver_homefeed_runner.py")],
+            env=_naver_env
+        )
+        print("  ✅ 네이버 크로스포스팅 비동기 시작")
+    except Exception as _ne:
+        print(f"  ⚠️ 네이버 크로스포스팅 실패 (비치명적): {_ne}")
+
     # 5. Google Indexing API — 즉시 색인 요청
     if post_url:
         try:

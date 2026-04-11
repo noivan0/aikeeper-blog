@@ -19,7 +19,7 @@ from env_loader import load_env
 load_env()
 
 BASE_DIR   = Path(__file__).parent.parent
-ATOM_URL   = "https://ggultongmon.allsweep.xyz/atom.xml"
+ATOM_URL   = os.environ.get("GGULTONGMON_ATOM_URL", "https://ggultongmon.allsweep.xyz/atom.xml")
 LOG_FILE   = BASE_DIR / "results" / "naver_homefeed_posts.jsonl"
 LOCK_FILE  = Path("/tmp/naver_homefeed.lock")
 MAX_AGE_DAYS = 7

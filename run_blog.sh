@@ -18,15 +18,19 @@ for arg in "$@"; do
 done
 
 # ── .env 로드 (공통 API 키) ─────────────────────────────────
-# .env 로드 (JSON 값 포함 안전 처리 — xargs 방식은 JSON 다중줄 값에서 오류 발생)
-while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
-    key="${line%%=*}"
-    val="${line#*=}"
-    val="${val#\'}" ; val="${val%\'}"   # 싱글쿼트 제거
-    val="${val#\"}" ; val="${val%\"}"   # 더블쿼트 제거
-    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && export "$key=$val"
-done < .env
+# .env 로드 (Python 기반 — JSON 멀티라인 값 포함 안전 처리)
+BASE_DIR="$(pwd)"
+eval "$(python3 -c "
+import os, re, sys
+for line in open('$BASE_DIR/.env'):
+    line = line.strip()
+    if not line or line.startswith('#') or '=' not in line: continue
+    k, v = line.split('=', 1)
+    k = k.strip()
+    v = v.strip().strip(chr(39)).strip(chr(34))
+    if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', k) and chr(10) not in v:
+        print(f'export {k}={repr(v)}')
+" 2>/dev/null)"
 
 LOG_FILE="/var/log/aikeeper_cron.log"
 TIMESTAMP() { date '+%Y-%m-%d %H:%M:%S KST'; }
