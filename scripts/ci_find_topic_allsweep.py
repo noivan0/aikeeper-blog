@@ -22,9 +22,13 @@ if manual_topic.strip():
     sys.exit(0)
 
 # find_topics_allsweep.py 실행 (stdout 캡처)
+# GITHUB_OUTPUT 환경변수를 자식 프로세스에 전달하지 않음
+# → 자식이 GITHUB_OUTPUT에 직접 쓰면 빈 값이 먼저 기록되어 head -1에서 빈 topic이 선택되는 버그 방지
+child_env = {k: v for k, v in os.environ.items() if k != "GITHUB_OUTPUT"}
 r = subprocess.run(
     [sys.executable, "scripts/find_topics_allsweep.py", "", "", target_category],
     capture_output=True, text=True, timeout=240,
+    env=child_env,
 )
 output = r.stdout + r.stderr
 print(output)
