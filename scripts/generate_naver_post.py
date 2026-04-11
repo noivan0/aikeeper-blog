@@ -169,7 +169,11 @@ def build_prompt(topic: str, products: list, labels: list, original_url: str) ->
 
 [분량] 1,800~2,200자
 [문체] 대화체, 솔직한 장단점 (단점 1개 이상 필수), 유머 허용
-[제목] 28~38자, 이모지 없이, 가격/vs/직접써봄/내돈내산 포함
+[제목] 28~36자 (절대 38자 초과 금지), 이모지 없이
+  - 가격은 1개만 (두 상품 가격 모두 넣으면 38자 초과됨)
+  - 예시: "코멧 vs 모나리자 키친타월 직접써봄 내돈내산 비교후기" (28자)
+  - 예시: "6,990원 키친타월 vs 12,770원 — 흡수력 직접 비교" (28자)
+  - 나쁜 예: "코멧 vs 모나리자 키친타월 직접써봄 — 6,990원 vs 12,770원" (너무 길어 잘림)
 
 지금 바로 제목과 본문 전체를 작성해주세요.
 링크 URL은 반드시 위에 제공된 주소를 그대로, 각 상품마다 2번씩 사용할 것."""
@@ -207,16 +211,23 @@ def generate_naver_post(topic: str, products: list, labels: list, original_url: 
     if not title:
         title = topic[:38]
 
-    # 네이버 제목 한도: 30자 (초과 시 에러 페이지)
-    # 단, 실제로는 약 40자까지 허용 — 안전하게 38자로 제한
-    if len(title) > 38:
-        # 마침표/느낌표/물음표 앞에서 자르기 시도
-        cut = title[:38]
-        for ch in ['!', '?', '.', ',']:
-            idx = title.rfind(ch, 20, 38)
-            if idx > 20:
-                cut = title[:idx+1]
-                break
+    # 네이버 제목 한도: 38자 (안전 기준)
+    # 자를 때 숫자/단어 중간 절대 금지
+    MAX_TITLE = 38
+    if len(title) > MAX_TITLE:
+        cut = title[:MAX_TITLE]
+        # 1. 공백 앞에서 자르기 (단어 경계)
+        last_space = cut.rfind(' ', 15, MAX_TITLE)
+        if last_space > 15:
+            cut = cut[:last_space]
+        # 2. 숫자로 끝나거나 숫자+쉼표로 끝나면 뒤로 더 자르기
+        import re as _re
+        cut = _re.sub(r'[\d,]+$', '', cut).rstrip(' ,—-')
+        # 3. 특수문자(—, -, :)로 끝나면 제거
+        cut = cut.rstrip(' —-:,')
+        # 최소 15자는 유지
+        if len(cut) < 15:
+            cut = title[:MAX_TITLE].rstrip(' ,')
         title = cut
 
     body = '\n'.join(lines[body_start:]).strip()
