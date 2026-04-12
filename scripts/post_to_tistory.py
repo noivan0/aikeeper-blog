@@ -60,58 +60,107 @@ def _cover_img_block(image_url: str, alt: str = "") -> str:
         f'</p>'
     )
 
+def _make_seo_alt(pname: str, topic: str, price: str = "") -> str:
+    """
+    Google SEO용 alt 태그 생성.
+    상품명 + 주제 키워드 + 가격 조합으로 검색 의도 반영.
+    예: "제주삼다수 무라벨 2L 쿠팡 최저가 9600원 생수 추천"
+    """
+    name = pname.strip()
+    price_part = f" {price}" if price else ""
+    # 주제에서 핵심 키워드 추출 (앞 20자)
+    topic_kw = re.sub(r"[^\w\s가-힣]", " ", topic).strip()[:20].strip()
+    alt = f"{name}{price_part} - {topic_kw} 쿠팡 추천"
+    return alt[:100]  # alt 태그 최대 100자
+
+
 def _product_img_block(image_url: str, alt: str = "", price: str = "") -> str:
-    """상품 이미지 블록 (GitHub Pages URL 사용)"""
+    """상품 이미지 블록 (GitHub Pages URL, SEO alt 태그 포함)"""
     if not image_url:
         return ""
-    caption = f'<p style="text-align:center;font-size:14px;color:#666;margin:4px 0 16px;">{price}</p>' if price else ""
+    caption = (
+        f'<p style="text-align:center;font-size:14px;color:#555;'
+        f'margin:4px 0 20px;font-weight:bold;">{price}</p>'
+    ) if price else ""
     return (
-        f'<p style="text-align:center;margin:16px 0 0;">'
-        f'<img src="{image_url}" alt="{alt}" '
-        f'style="max-width:100%;border-radius:8px;margin:12px 0;" />'
+        f'<p style="text-align:center;margin:20px 0 0;">'
+        f'<img src="{image_url}" alt="{alt}" loading="lazy" '
+        f'style="max-width:100%;height:auto;border-radius:10px;'
+        f'box-shadow:0 2px 10px rgba(0,0,0,.12);margin:8px 0;" />'
         f'</p>'
         f'{caption}'
     )
 
 
 # ── 이미지 다운로드 + GitHub Pages 업로드 ───────────────────────────────────
+_DOWNLOAD_HEADERS = [
+    # 시도 1: Chrome + Coupang Referer
+    {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36",
+        "Referer": "https://www.coupang.com/",
+        "Accept": "image/avif,image/webp,image/apng,image/*,*/*",
+    },
+    # 시도 2: Googlebot-Image (CDN 우회)
+    {
+        "User-Agent": "Googlebot-Image/1.0",
+        "Accept": "image/*",
+    },
+    # 시도 3: Safari + 다른 Referer
+    {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/604.1",
+        "Referer": "https://search.naver.com/",
+        "Accept": "image/webp,image/*",
+    },
+]
+
 def _download_coupang_image(url: str) -> bytes:
-    """쿠팡 CDN 이미지 다운로드 (Referer 위장)"""
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36",
-                "Referer": "https://www.coupang.com/",
-                "Accept": "image/avif,image/webp,image/apng,image/*,*/*",
-            }
-        )
-        with urllib.request.urlopen(req, timeout=15) as r:
-            return r.read()
-    except Exception as e:
-        print(f"  [tistory] 이미지 다운로드 실패 ({url[:60]}): {e}")
-        return b""
+    """쿠팡 CDN 이미지 다운로드 (3가지 헤더 조합 순차 시도)"""
+    for i, headers in enumerate(_DOWNLOAD_HEADERS):
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as r:
+                data = r.read()
+                if data:
+                    if i > 0:
+                        print(f"  [tistory] 이미지 다운로드 성공 (시도 {i+1})")
+                    return data
+        except Exception as e:
+            print(f"  [tistory] 다운로드 시도 {i+1} 실패 ({url[:50]}...): {e}")
+    print(f"  [tistory] 이미지 다운로드 최종 실패: {url[:70]}")
+    return b""
 
 
-def _resize_image(data: bytes, max_size: int = 800) -> bytes:
-    """PIL로 이미지 리사이즈 (최대 800px, JPEG 품질 85)"""
+def _resize_image(data: bytes, max_px: int = 900, quality: int = 82) -> bytes:
+    """
+    PIL로 이미지 리사이즈 + WebP 압축.
+    - 긴 변 max_px 이하로 축소
+    - JPEG quality 82 (용량/화질 균형)
+    - 원본이 max_px 이하면 리사이즈 스킵 (화질 유지)
+    """
     try:
         from PIL import Image
         img = Image.open(io.BytesIO(data)).convert("RGB")
-        img.thumbnail((max_size, max_size))
+        w, h = img.size
+        if max(w, h) > max_px:
+            img.thumbnail((max_px, max_px), Image.LANCZOS)
+            resized = True
+        else:
+            resized = False
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=85)
-        return buf.getvalue()
+        img.save(buf, format="JPEG", quality=quality, optimize=True)
+        result = buf.getvalue()
+        orig_kb = len(data) // 1024
+        new_kb  = len(result) // 1024
+        print(f"  [tistory] 이미지 최적화: {orig_kb}KB -> {new_kb}KB"
+              f"{' (리사이즈 ' + str(img.size[0]) + 'x' + str(img.size[1]) + ')' if resized else ' (크기 유지)'}")
+        return result
     except Exception as e:
-        print(f"  [tistory] 리사이즈 실패: {e}")
+        print(f"  [tistory] 리사이즈 실패 (원본 사용): {e}")
         return data
 
 
 def _upload_to_github_pages(img_data: bytes, filename: str, ts: str) -> str:
-    """
-    이미지를 GitHub Pages gh-pages 브랜치에 업로드하고 공개 URL 반환.
-    경로: tistory/{ts}/{filename}
-    """
+    """이미지를 GitHub Pages gh-pages 브랜치에 업로드하고 공개 URL 반환."""
     gh_token = os.environ.get("GITHUB_PAT", "")
     repo     = os.environ.get("GITHUB_PAGES_REPO", "noivan0/aikeeper-blog")
     branch   = os.environ.get("GITHUB_PAGES_BRANCH", "gh-pages")
@@ -141,17 +190,18 @@ def _upload_to_github_pages(img_data: bytes, filename: str, ts: str) -> str:
     try:
         urllib.request.urlopen(req, timeout=30)
         public_url = f"{base_url}/{remote_path}"
-        print(f"  [tistory] 이미지 업로드: {filename} -> {public_url}")
+        print(f"  [tistory] GitHub 업로드 완료: {filename} -> {public_url}")
         return public_url
     except Exception as e:
         print(f"  [tistory] GitHub 업로드 실패 ({filename}): {e}")
         return ""
 
 
-def upload_product_images(products: list, ts: str) -> list:
+def upload_product_images(products: list, ts: str, topic: str = "") -> list:
     """
-    상품 목록의 productImage를 다운로드 -> 리사이즈 -> GitHub Pages 업로드.
-    반환: [{"name":..., "price":..., "gh_url":..., "original_url":...}, ...]
+    상품 목록의 productImage 전부 다운로드 -> 최적화 -> GitHub Pages 업로드.
+    다운로드 실패 시 3가지 헤더로 재시도.
+    반환: [{"index","name","price","url","gh_url","alt"}, ...]
     """
     results = []
     for i, p in enumerate(products):
@@ -164,21 +214,28 @@ def upload_product_images(products: list, ts: str) -> list:
         except (ValueError, TypeError):
             price_str = str(pprice) if pprice else ""
 
+        seo_alt = _make_seo_alt(pname, topic, price_str)
         gh_url = ""
+
         if pimg:
             print(f"  [tistory] 상품{i+1} 이미지 처리: {pname[:30]}")
             img_data = _download_coupang_image(pimg)
             if img_data:
-                img_data = _resize_image(img_data, max_size=800)
+                img_data = _resize_image(img_data)
                 fname = f"product_{i+1:02d}.jpg"
                 gh_url = _upload_to_github_pages(img_data, fname, ts)
-                time.sleep(0.5)  # GitHub API rate limit
+                time.sleep(0.5)
+            else:
+                print(f"  [tistory] 상품{i+1} 이미지 스킵 (다운로드 실패)")
+        else:
+            print(f"  [tistory] 상품{i+1} productImage 없음 ({pname[:30]})")
 
         results.append({
             "index": i + 1,
             "name": pname,
             "price": price_str,
             "url": p.get("shortenUrl", p.get("coupang_url", "")),
+            "alt": seo_alt,
             "gh_url": gh_url,
             "original_url": pimg,
         })
@@ -237,10 +294,11 @@ def generate_cross_post(topic: str, products: list, post_url: str,
 
         prod_list_text.append(f"- 상품{i+1}: {pname} / {price_str}")
 
-        # GitHub Pages에 업로드된 URL 우선 사용
+        # GitHub Pages에 업로드된 URL + SEO alt 사용
         ui = img_map.get(i + 1, {})
         gh_url = ui.get("gh_url", "")
-        img_html = _product_img_block(gh_url, pname, price_str) if gh_url else ""
+        seo_alt = ui.get("alt", _make_seo_alt(pname, topic, price_str))
+        img_html = _product_img_block(gh_url, seo_alt, price_str) if gh_url else ""
         prod_blocks.append({
             "index": i + 1,
             "name": pname,
@@ -350,10 +408,12 @@ def generate_cross_post(topic: str, products: list, post_url: str,
         messages=[{"role": "user", "content": prompt}],
     )
     text = msg.content[0].text.strip()
+    # ```json ... ``` 코드블록 제거
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\s*```\s*$", "", text, flags=re.MULTILINE)
     match = re.search(r'\{.*\}', text, re.DOTALL)
     if match:
         data = json.loads(match.group())
-        # thumbnail 키 추가 (대표 이미지용)
         data["thumbnail"] = cover_image_url
         return data
     raise ValueError(f"JSON 파싱 실패: {text[:200]}")
@@ -452,7 +512,9 @@ def cross_post(topic: str, products: list, post_url: str,
     uploaded_images = []
     if prod_img_count > 0:
         print("[tistory] 상품 이미지 GitHub Pages 업로드 중...")
-        uploaded_images = upload_product_images(products, ts)
+        # 티스토리 포스팅에 사용할 상품만 업로드 (최대 5개)
+        upload_products = [p for p in products if p.get("productImage", "")][:5]
+        uploaded_images = upload_product_images(upload_products, ts, topic=topic)
         # GitHub Pages 반영 대기 (5초)
         time.sleep(5)
 
