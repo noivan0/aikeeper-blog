@@ -1436,8 +1436,15 @@ async def main():
         product_data=product_data,
     )
 
-    # 본문 내 IMAGE_HERE에 사용할 이미지 목록 (product_data 이미지 우선)
-    body_images = coupang_images  # build_naver_content와 동일 순서 유지
+    # 본문 내 IMAGE_HERE에 사용할 이미지 목록
+    # product_data가 있으면 h2 소제목-이미지 1:1 매핑을 위해 product_data 순서 사용
+    # (coupang_images는 atom.xml img 태그 순서라 h2와 불일치 가능)
+    if product_data and any(p.get("image") for p in product_data):
+        body_images = [p.get("image", "") for p in product_data[:3]]
+        print(f"  이미지 소스: product_data (h2 매핑 보장)")
+    else:
+        body_images = coupang_images
+        print(f"  이미지 소스: coupang_images (fallback)")
 
     print(f"[포스팅 준비]")
     print(f"  제목: {POST_TITLE[:50]}")
