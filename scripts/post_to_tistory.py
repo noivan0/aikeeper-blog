@@ -51,6 +51,17 @@ def _top_cta(post_url: str) -> str:
 def _bottom_cta(post_url: str) -> str:
     return _btn(post_url, "&#127873; 전체 비교 + 쿠팡 최저가 구매링크", "#E8000D")
 
+def _source_link_block(post_url: str) -> str:
+    """원문 보기 링크 블록 — 백링크 역할 (SEO Authority 전달)"""
+    return (
+        f'<div style="margin:32px 0 8px;padding:16px 20px;'
+        f'background:#f8f9fa;border-left:4px solid #FF4500;border-radius:4px;">'
+        f'<p style="margin:0;font-size:14px;color:#555;">'
+        f'&#128279; 원문 보기: <a href="{post_url}" '
+        f'style="color:#FF4500;font-weight:bold;">{post_url}</a></p>'
+        f'</div>'
+    )
+
 def _cover_img_block(image_url: str, alt: str = "") -> str:
     """커버 이미지 블록 (대표 이미지용)"""
     return (
@@ -412,9 +423,10 @@ def generate_cross_post(topic: str, products: list, post_url: str,
                 prod_img_instructions += f"[추가 상세 이미지]\n{pb['extra_img_block']}\n"
 
     # HTML 블록 사전 생성
-    img_block     = _cover_img_block(cover_image_url, topic) if cover_image_url else ""
-    top_btn_block = _top_cta(post_url)
-    bottom_block  = _bottom_cta(post_url)
+    img_block      = _cover_img_block(cover_image_url, topic) if cover_image_url else ""
+    top_btn_block  = _top_cta(post_url)
+    bottom_block   = _bottom_cta(post_url)
+    source_link    = _source_link_block(post_url)
 
     # 앵글 선택
     import hashlib
@@ -480,6 +492,9 @@ def generate_cross_post(topic: str, products: list, post_url: str,
 
 [6] 하단 버튼 (아래 HTML 그대로 삽입):
 {bottom_block}
+
+[7] 원문 출처 링크 (아래 HTML 그대로 삽입, 반드시 포함):
+{source_link}
 
 === 링크 규칙 (필수) ===
 - 모든 <a> 태그에 target="_blank" 및 rel="noopener" 절대 사용 금지

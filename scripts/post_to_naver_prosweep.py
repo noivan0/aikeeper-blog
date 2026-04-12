@@ -323,6 +323,8 @@ def build_naver_content(
 
 CARD_URL:{original_url}
 
+LINK_TEXT:▶ 원문 전체 보기 (꿀통몬스터)|{original_url}
+
 
 ■ 구매 전 체크리스트
 
