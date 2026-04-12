@@ -197,13 +197,54 @@ def _upload_to_github_pages(img_data: bytes, filename: str, ts: str) -> str:
         return ""
 
 
-def upload_product_images(products: list, ts: str, topic: str = "") -> list:
+def fetch_images_from_blogger(post_url: str, max_count: int = 6) -> list:
     """
-    상품 목록의 productImage 전부 다운로드 -> 최적화 -> GitHub Pages 업로드.
-    다운로드 실패 시 3가지 헤더로 재시도.
+    Blogger 포스트 HTML에서 coupangcdn 이미지 URL 수집 (carousel_auto.py 동일 방식).
+    반환: 다운로드 가능한 coupangcdn URL 리스트 (최대 max_count개)
+    """
+    try:
+        req = urllib.request.Request(
+            post_url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        )
+        html = urllib.request.urlopen(req, timeout=15).read().decode("utf-8", errors="ignore")
+
+        imgs = re.findall(r'src=["\']([^"\']*coupangcdn[^"\']+)["\']', html)
+        seen = set()
+        unique = []
+        for img in imgs:
+            base = img.split("?")[0]
+            if base not in seen:
+                seen.add(base)
+                unique.append(img)
+
+        print(f"  [tistory] Blogger 포스트에서 coupangcdn 이미지 {len(unique)}개 발견")
+        return unique[:max_count]
+    except Exception as e:
+        print(f"  [tistory] Blogger 이미지 수집 실패: {e}")
+        return []
+
+
+def upload_product_images(products: list, ts: str, topic: str = "",
+                          blogger_post_url: str = "") -> list:
+    """
+    이미지 소스 전략:
+    1순위: Blogger 포스트 HTML에서 coupangcdn 이미지 수집 (실제 상세 이미지 포함)
+    2순위: products의 productImage (단일 썸네일)
+    수집된 이미지 → 최적화 → GitHub Pages 업로드.
     반환: [{"index","name","price","url","gh_url","alt"}, ...]
     """
     results = []
+
+    # 1순위: Blogger 포스트에서 coupangcdn 이미지 수집 (상품 수 × 2까지)
+    blogger_imgs = []
+    if blogger_post_url:
+        max_img = max(len(products) * 2, 6)
+        blogger_imgs = fetch_images_from_blogger(blogger_post_url, max_count=max_img)
+
+    n_prods = len(products)
+
+    # --- 상품에 1:1 매핑되는 이미지 처리 ---
     for i, p in enumerate(products):
         pname  = p.get("productName", p.get("name", f"상품{i+1}"))
         pprice = p.get("productPrice", p.get("price", ""))
@@ -217,28 +258,56 @@ def upload_product_images(products: list, ts: str, topic: str = "") -> list:
         seo_alt = _make_seo_alt(pname, topic, price_str)
         gh_url = ""
 
-        if pimg:
-            print(f"  [tistory] 상품{i+1} 이미지 처리: {pname[:30]}")
-            img_data = _download_coupang_image(pimg)
+        # 이미지 소스: Blogger 이미지 → productImage fallback
+        img_src = blogger_imgs[i] if i < len(blogger_imgs) else pimg
+
+        if img_src:
+            print(f"  [tistory] 상품{i+1} 메인이미지: {pname[:25]}")
+            img_data = _download_coupang_image(img_src)
             if img_data:
                 img_data = _resize_image(img_data)
-                fname = f"product_{i+1:02d}.webp"
-                gh_url = _upload_to_github_pages(img_data, fname, ts)
+                gh_url = _upload_to_github_pages(img_data, f"product_{i+1:02d}.webp", ts)
                 time.sleep(0.5)
-            else:
-                print(f"  [tistory] 상품{i+1} 이미지 스킵 (다운로드 실패)")
+            elif img_src != pimg and pimg:
+                img_data2 = _download_coupang_image(pimg)
+                if img_data2:
+                    img_data2 = _resize_image(img_data2)
+                    gh_url = _upload_to_github_pages(img_data2, f"product_{i+1:02d}.webp", ts)
+                    time.sleep(0.5)
         else:
-            print(f"  [tistory] 상품{i+1} productImage 없음 ({pname[:30]})")
+            print(f"  [tistory] 상품{i+1} 이미지 없음")
 
         results.append({
             "index": i + 1,
             "name": pname,
             "price": price_str,
-            "url": p.get("shortenUrl", p.get("coupang_url", "")),
+            "url": p.get("shortenUrl", p.get("productUrl", p.get("coupang_url", ""))),
             "alt": seo_alt,
             "gh_url": gh_url,
             "original_url": pimg,
         })
+
+    # --- Blogger에서 추가로 수집된 이미지 (상품 수 초과분) ---
+    extra_blogger = blogger_imgs[n_prods:]
+    for j, extra_url in enumerate(extra_blogger):
+        idx = n_prods + j + 1
+        print(f"  [tistory] 추가 상세이미지 {j+1}: {extra_url[30:70]}")
+        img_data = _download_coupang_image(extra_url)
+        gh_url = ""
+        if img_data:
+            img_data = _resize_image(img_data)
+            gh_url = _upload_to_github_pages(img_data, f"product_{idx:02d}.webp", ts)
+            time.sleep(0.5)
+        results.append({
+            "index": idx,
+            "name": f"추가이미지{j+1}",
+            "price": "",
+            "url": "",
+            "alt": f"{topic[:25]} 상세 이미지 쿠팡",
+            "gh_url": gh_url,
+            "original_url": extra_url,
+        })
+
     return results
 
 
@@ -276,16 +345,22 @@ def generate_cross_post(topic: str, products: list, post_url: str,
     )
 
     uploaded_images = uploaded_images or []
-    # uploaded_images를 index 기준 dict로
+    # uploaded_images를 index 기준 dict로 + 추가 이미지 분리
     img_map = {ui["index"]: ui for ui in uploaded_images}
+    n_prods = len(products)
+
+    # Blogger에서 추가로 수집된 이미지 (상품 수 초과분)
+    # 예: 상품 3개인데 이미지 6개 → extra_imgs = index 4,5,6
+    extra_imgs = [ui for ui in uploaded_images if ui["index"] > n_prods and ui.get("gh_url")]
 
     # 상품별 정보 + 이미지 블록 사전 생성
     prod_blocks = []
     prod_list_text = []
+    extra_used = 0  # extra_imgs 순서대로 각 상품에 추가 배정
     for i, p in enumerate(products):
         pname  = p.get("productName", p.get("name", ""))
         pprice = p.get("productPrice", p.get("price", ""))
-        purl   = p.get("shortenUrl", p.get("coupang_url", ""))
+        purl   = p.get("shortenUrl", p.get("productUrl", p.get("coupang_url", "")))
 
         try:
             price_str = f"{int(pprice):,}원" if pprice else ""
@@ -294,29 +369,47 @@ def generate_cross_post(topic: str, products: list, post_url: str,
 
         prod_list_text.append(f"- 상품{i+1}: {pname} / {price_str}")
 
-        # GitHub Pages에 업로드된 URL + SEO alt 사용
+        # 메인 이미지
         ui = img_map.get(i + 1, {})
         gh_url = ui.get("gh_url", "")
         seo_alt = ui.get("alt", _make_seo_alt(pname, topic, price_str))
         img_html = _product_img_block(gh_url, seo_alt, price_str) if gh_url else ""
+
+        # 추가 이미지 (Blogger에서 수집한 extra)
+        extra_html = ""
+        if extra_used < len(extra_imgs):
+            ei = extra_imgs[extra_used]
+            if ei.get("gh_url"):
+                extra_alt = f"{pname} 상세 이미지 - {topic[:20]} 쿠팡"[:100]
+                extra_html = _product_img_block(ei["gh_url"], extra_alt, "")
+                extra_used += 1
+
         prod_blocks.append({
             "index": i + 1,
             "name": pname,
             "price": price_str,
             "url": purl,
             "img_block": img_html,
+            "extra_img_block": extra_html,
         })
 
     prod_list = "\n".join(prod_list_text)
+    total_imgs = sum(1 for pb in prod_blocks if pb["img_block"]) + \
+                 sum(1 for pb in prod_blocks if pb["extra_img_block"])
+    print(f"  [tistory] 본문 삽입 이미지: {total_imgs}개 (메인+추가)")
 
     # 상품 이미지 블록 설명 (프롬프트용)
     prod_img_instructions = ""
     for pb in prod_blocks:
-        if pb["img_block"]:
+        if pb["img_block"] or pb["extra_img_block"]:
             prod_img_instructions += (
-                f"\n상품{pb['index']} ({pb['name']}) 이미지 블록 (해당 상품 설명 h2/h3 바로 아래에 삽입):\n"
-                f"{pb['img_block']}\n"
+                f"\n상품{pb['index']} ({pb['name']}) 이미지 블록들 "
+                f"(해당 상품 h2/h3 소제목 바로 아래에 순서대로 삽입):\n"
             )
+            if pb["img_block"]:
+                prod_img_instructions += f"[메인 이미지]\n{pb['img_block']}\n"
+            if pb["extra_img_block"]:
+                prod_img_instructions += f"[추가 상세 이미지]\n{pb['extra_img_block']}\n"
 
     # HTML 블록 사전 생성
     img_block     = _cover_img_block(cover_image_url, topic) if cover_image_url else ""
@@ -395,54 +488,36 @@ def generate_cross_post(topic: str, products: list, post_url: str,
 === 태그 ===
 쉼표 구분 8~10개 (상품명, 카테고리, 롱테일 키워드, 상황 키워드 혼합)
 
-=== 응답 형식 (JSON만 출력, 다른 텍스트 금지) ===
-{{
-  "title": "제목",
-  "content": "[1]~[6] 합친 완성 HTML",
-  "tag": "태그1,태그2,태그3"
-}}"""
+=== 응답 형식 (아래 구분자 형식 그대로 출력, 다른 텍스트 없이) ===
+<TITLE>제목을 여기에</TITLE>
+<TAG>태그1,태그2,태그3</TAG>
+<CONTENT>
+[1]~[6] 합친 완성 HTML을 여기에
+</CONTENT>"""
 
     msg = client.messages.create(
         model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
-        max_tokens=6000,
+        max_tokens=8000,
         messages=[{"role": "user", "content": prompt}],
     )
     text = msg.content[0].text.strip()
-    # ```json ... ``` 코드블록 제거
-    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
-    text = re.sub(r"\s*```\s*$", "", text, flags=re.MULTILINE)
-    text = text.strip()
 
-    # 1) 전체 텍스트가 JSON인지 먼저 시도
-    try:
-        data = json.loads(text)
-        data["thumbnail"] = cover_image_url
-        return data
-    except json.JSONDecodeError:
-        pass
+    # 구분자 파싱 (HTML 이스케이프 문제 없음)
+    title_m = re.search(r'<TITLE>(.*?)</TITLE>', text, re.DOTALL)
+    tag_m   = re.search(r'<TAG>(.*?)</TAG>',     text, re.DOTALL)
 
-    # 2) 첫 { 부터 끝 } 까지 추출 (greedy가 아닌 RFC 파서 활용)
-    start = text.find('{')
-    if start != -1:
-        # 괄호 균형으로 JSON 범위 찾기
-        depth = 0
-        end = start
-        for i, ch in enumerate(text[start:], start):
-            if ch == '{':
-                depth += 1
-            elif ch == '}':
-                depth -= 1
-                if depth == 0:
-                    end = i
-                    break
-        try:
-            data = json.loads(text[start:end+1])
-            data["thumbnail"] = cover_image_url
-            return data
-        except json.JSONDecodeError as e:
-            pass
+    # CONTENT: 닫는 태그 없을 수도 있음(토큰 초과 시) → </CONTENT> 없으면 끝까지
+    content_m = re.search(r'<CONTENT>(.*?)(?:</CONTENT>|$)', text, re.DOTALL)
 
-    raise ValueError(f"JSON 파싱 실패: {text[:300]}")
+    if title_m and content_m:
+        return {
+            "title":     title_m.group(1).strip(),
+            "content":   content_m.group(1).strip(),
+            "tag":       tag_m.group(1).strip() if tag_m else "",
+            "thumbnail": cover_image_url,
+        }
+
+    raise ValueError(f"응답 파싱 실패: {text[:300]}")
 
 
 # ── 티스토리 발행 ────────────────────────────────────────────────────────────
@@ -536,11 +611,14 @@ def cross_post(topic: str, products: list, post_url: str,
     print(f"[tistory] 상품 {len(products)}개 (이미지 있는 상품: {prod_img_count}개)")
     ts = time.strftime("%Y%m%d_%H%M%S")
     uploaded_images = []
-    if prod_img_count > 0:
+    if prod_img_count > 0 or post_url:
         print("[tistory] 상품 이미지 GitHub Pages 업로드 중...")
-        # 티스토리 포스팅에 사용할 상품만 업로드 (최대 5개)
-        upload_products = [p for p in products if p.get("productImage", "")][:5]
-        uploaded_images = upload_product_images(upload_products, ts, topic=topic)
+        # Blogger 포스트 URL로 실제 상세 이미지 수집 우선
+        # products는 상품명/가격 메타로만 활용
+        upload_products = products[:5]
+        uploaded_images = upload_product_images(
+            upload_products, ts, topic=topic, blogger_post_url=post_url
+        )
         # GitHub Pages 반영 대기 (5초)
         time.sleep(5)
 
