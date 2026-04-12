@@ -130,12 +130,13 @@ def _download_coupang_image(url: str) -> bytes:
     return b""
 
 
-def _resize_image(data: bytes, max_px: int = 900, quality: int = 82) -> bytes:
+def _resize_image(data: bytes, max_px: int = 1200, quality: int = 80) -> bytes:
     """
-    PIL로 이미지 리사이즈 + WebP 압축.
-    - 긴 변 max_px 이하로 축소
-    - JPEG quality 82 (용량/화질 균형)
-    - 원본이 max_px 이하면 리사이즈 스킵 (화질 유지)
+    Google SEO 최적화 이미지 처리.
+    - 목표: 1,200px (Google Discover / Featured Snippet 권장 최소)
+    - 포맷: WebP (JPEG 대비 30~50% 용량 절감, 구글 권장)
+    - quality 80: 시각 품질 유지 + 파일 크기 균형
+    - 원본이 max_px 이하면 업스케일 없이 WebP 변환만 수행
     """
     try:
         from PIL import Image
@@ -143,19 +144,18 @@ def _resize_image(data: bytes, max_px: int = 900, quality: int = 82) -> bytes:
         w, h = img.size
         if max(w, h) > max_px:
             img.thumbnail((max_px, max_px), Image.LANCZOS)
-            resized = True
+            action = f"리사이즈 {img.size[0]}x{img.size[1]}"
         else:
-            resized = False
+            action = f"크기 유지 {w}x{h}"
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=quality, optimize=True)
+        img.save(buf, format="WEBP", quality=quality, method=6)
         result = buf.getvalue()
         orig_kb = len(data) // 1024
         new_kb  = len(result) // 1024
-        print(f"  [tistory] 이미지 최적화: {orig_kb}KB -> {new_kb}KB"
-              f"{' (리사이즈 ' + str(img.size[0]) + 'x' + str(img.size[1]) + ')' if resized else ' (크기 유지)'}")
+        print(f"  [tistory] 이미지 최적화: {orig_kb}KB -> {new_kb}KB ({action}, WebP)")
         return result
     except Exception as e:
-        print(f"  [tistory] 리사이즈 실패 (원본 사용): {e}")
+        print(f"  [tistory] 최적화 실패 (원본 JPEG 사용): {e}")
         return data
 
 
@@ -222,7 +222,7 @@ def upload_product_images(products: list, ts: str, topic: str = "") -> list:
             img_data = _download_coupang_image(pimg)
             if img_data:
                 img_data = _resize_image(img_data)
-                fname = f"product_{i+1:02d}.jpg"
+                fname = f"product_{i+1:02d}.webp"
                 gh_url = _upload_to_github_pages(img_data, fname, ts)
                 time.sleep(0.5)
             else:
@@ -411,12 +411,38 @@ def generate_cross_post(topic: str, products: list, post_url: str,
     # ```json ... ``` 코드블록 제거
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
     text = re.sub(r"\s*```\s*$", "", text, flags=re.MULTILINE)
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if match:
-        data = json.loads(match.group())
+    text = text.strip()
+
+    # 1) 전체 텍스트가 JSON인지 먼저 시도
+    try:
+        data = json.loads(text)
         data["thumbnail"] = cover_image_url
         return data
-    raise ValueError(f"JSON 파싱 실패: {text[:200]}")
+    except json.JSONDecodeError:
+        pass
+
+    # 2) 첫 { 부터 끝 } 까지 추출 (greedy가 아닌 RFC 파서 활용)
+    start = text.find('{')
+    if start != -1:
+        # 괄호 균형으로 JSON 범위 찾기
+        depth = 0
+        end = start
+        for i, ch in enumerate(text[start:], start):
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        try:
+            data = json.loads(text[start:end+1])
+            data["thumbnail"] = cover_image_url
+            return data
+        except json.JSONDecodeError as e:
+            pass
+
+    raise ValueError(f"JSON 파싱 실패: {text[:300]}")
 
 
 # ── 티스토리 발행 ────────────────────────────────────────────────────────────
