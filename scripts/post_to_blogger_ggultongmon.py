@@ -220,9 +220,35 @@ def main():
     token = get_oauth_token()
     result = publish_to_blogger(title, html, LABELS, token)
     post_url = result.get("url", "")
+    post_id  = result.get("id", "")
     print(f"✅ 포스팅 완료: {title}")
     print(f"   URL: {post_url}")
-    
+
+    # PLACEHOLDER_POST_URL → 실제 포스트 URL로 PATCH 업데이트
+    if post_url and post_id:
+        try:
+            current_content = result.get("content", html)
+            if "PLACEHOLDER_POST_URL" in current_content:
+                fixed_content = current_content.replace("PLACEHOLDER_POST_URL", post_url)
+                patch_r = publish_to_blogger.__globals__.get("blogger_request") or None
+                # blogger_request를 직접 호출할 수 없으므로 requests 사용
+                import requests as _req
+                _token = get_oauth_token()
+                _BLOG_ID = os.environ.get("TARGET_BLOG_ID", BLOGGER_BLOG_ID)
+                _pr = _req.patch(
+                    f"https://www.googleapis.com/blogger/v3/blogs/{_BLOG_ID}/posts/{post_id}",
+                    headers={"Authorization": f"Bearer {_token}",
+                             "Content-Type": "application/json"},
+                    json={"content": fixed_content},
+                    timeout=20
+                )
+                if _pr.status_code in (200, 201):
+                    print(f"  ✅ JSON-LD URL 업데이트 완료 (PLACEHOLDER → {post_url[:60]})")
+                else:
+                    print(f"  ⚠️  JSON-LD PATCH 실패 HTTP {_pr.status_code}")
+        except Exception as _pe:
+            print(f"  ℹ️  JSON-LD PATCH 스킵: {_pe}")
+
     # 4-1. 카드뉴스 자동 생성 (비치명적 — 실패해도 포스팅은 완료)
     if post_url:
         try:

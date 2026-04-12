@@ -639,6 +639,21 @@ def build_full_html(title: str, content: str, products: list,
             "acceptedAnswer": {"@type": "Answer", "text": a.strip()[:500]}
         })
 
+    _BLOG_GG_URL = "https://ggultongmon.allsweep.xyz"
+    # 발행 전에는 포스트 URL 미확정 → 플레이스홀더 사용 → 발행 후 PATCH로 교체
+    _PLACEHOLDER = "PLACEHOLDER_POST_URL"
+
+    # GitHub Pages 커버 이미지 우선 (coupangcdn 403 방지)
+    _gh_thumb = thumb_src
+    _carousel_urls = os.environ.get("CAROUSEL_IMAGE_URLS", "[]")
+    try:
+        _all_carousel = json.loads(_carousel_urls)
+        _cover = next((u for u in _all_carousel if "slide_01" in u or "cover" in u), None)
+        if _cover:
+            _gh_thumb = _cover
+    except Exception:
+        pass
+
     json_ld_blog = json.dumps({
         "@context": "https://schema.org",
         "@type": "BlogPosting",
@@ -646,17 +661,47 @@ def build_full_html(title: str, content: str, products: list,
         "description": meta_desc[:160],
         "keywords": keywords_str,
         "datePublished": datetime.now(timezone(timedelta(hours=9))).isoformat(),
-        "author": {"@type": "Person", "name": "꿀통 몬스터 에디터"},
+        "dateModified": datetime.now(timezone(timedelta(hours=9))).isoformat(),
+        "author": {"@type": "Person", "name": "꿀통 몬스터 에디터", "url": _BLOG_GG_URL},
         "publisher": {"@type": "Organization", "name": "꿀통 몬스터",
-                      "url": "https://ggultongmon.allsweep.xyz"},
+                      "url": _BLOG_GG_URL,
+                      "logo": {"@type": "ImageObject", "url": f"{_BLOG_GG_URL}/favicon.ico"}},
+        "mainEntityOfPage": {"@type": "WebPage", "@id": _PLACEHOLDER},
+        "url": _PLACEHOLDER,
         "inLanguage": "ko-KR",
         "articleSection": "쿠팡 상품 추천",
         "image": [
-            {"@type": "ImageObject", "url": thumb_src, "width": 1200, "height": 1200},
-            {"@type": "ImageObject", "url": thumb_src, "width": 1200, "height": 900},
-            {"@type": "ImageObject", "url": thumb_src, "width": 1200, "height": 630},
+            {"@type": "ImageObject", "url": _gh_thumb, "width": 1200, "height": 1200},
+            {"@type": "ImageObject", "url": _gh_thumb, "width": 1200, "height": 900},
+            {"@type": "ImageObject", "url": _gh_thumb, "width": 1200, "height": 630},
         ],
+        "thumbnailUrl": _gh_thumb,
     }, ensure_ascii=False, separators=(',', ':'))
+
+    # Product 스키마 (상품 3개 각각)
+    product_schemas = ""
+    for prod in (products or [])[:3]:
+        pname  = prod.get("name", "")
+        plink  = prod.get("link", prod.get("coupang_url", ""))
+        pprice = prod.get("price", prod.get("price_str", ""))
+        # 가격에서 숫자만 추출
+        price_num = re.sub(r"[^0-9]", "", str(pprice)) if pprice else ""
+        if not pname or not plink:
+            continue
+        pschema = {
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "name": pname,
+            "offers": {
+                "@type": "Offer",
+                "priceCurrency": "KRW",
+                "availability": "https://schema.org/InStock",
+                "url": plink,
+            }
+        }
+        if price_num:
+            pschema["offers"]["price"] = price_num
+        product_schemas += f'\n<script type="application/ld+json">\n{json.dumps(pschema, ensure_ascii=False, separators=(",",":"))}\n</script>'
 
     json_ld_faq = ""
     if faq_items:
@@ -744,6 +789,7 @@ def build_full_html(title: str, content: str, products: list,
         f"{thumb_html}"
         f'<script type="application/ld+json">\n{json_ld_blog}\n</script>'
         f"{json_ld_faq}\n"
+        f"{product_schemas}\n"
         f'<meta name="description" content="{meta_desc[:160].replace(chr(34),"&quot;")}">\n'
         f'<meta name="keywords" content="{keywords_str}">\n'
         f'<meta name="robots" content="index, follow, max-image-preview:large">\n'

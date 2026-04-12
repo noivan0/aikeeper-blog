@@ -57,7 +57,7 @@ def _source_link_block(post_url: str) -> str:
         f'<div style="margin:32px 0 8px;padding:16px 20px;'
         f'background:#f8f9fa;border-left:4px solid #FF4500;border-radius:4px;">'
         f'<p style="margin:0;font-size:14px;color:#555;">'
-        f'&#128279; 원문 보기: <a href="{post_url}" '
+        f'&#128279; 원문 보기: <a href="{post_url}" rel="dofollow" '
         f'style="color:#FF4500;font-weight:bold;">{post_url}</a></p>'
         f'</div>'
     )

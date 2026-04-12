@@ -31,6 +31,23 @@ if [ "$TODAY_COUNT" -ge "$MAX_DAILY" ]; then
     exit 0
 fi
 
+# 최소 발행 간격 체크 (3시간 = 10800초) — Google 크롤 예산 최적화
+MIN_INTERVAL=10800
+LAST_POST_LINE=$(grep "^\[$TODAY" "$LOG_FILE" 2>/dev/null | grep "===== 완료 \[blog:" | tail -1)
+if [ -n "$LAST_POST_LINE" ]; then
+    LAST_POST_TIME_STR=$(echo "$LAST_POST_LINE" | grep -oP '\d{2}:\d{2}:\d{2}' | head -1)
+    if [ -n "$LAST_POST_TIME_STR" ]; then
+        NOW_EPOCH=$(date +%s)
+        LAST_EPOCH=$(date -d "${TODAY} ${LAST_POST_TIME_STR}" +%s 2>/dev/null || echo 0)
+        DIFF=$(( NOW_EPOCH - LAST_EPOCH ))
+        if [ "$DIFF" -lt "$MIN_INTERVAL" ]; then
+            REMAIN=$(( (MIN_INTERVAL - DIFF) / 60 ))
+            echo "[SKIP] 마지막 발행 후 ${DIFF}초 경과 — 최소 ${MIN_INTERVAL}초(3h) 필요, ${REMAIN}분 후 재시도"
+            exit 0
+        fi
+    fi
+fi
+
 mkdir -p "$POSTS_DIR"
 echo "[$KST] ===== 포스팅 시작 [blog: $BLOG_KEY] =====" | tee -a "$LOG_FILE"
 

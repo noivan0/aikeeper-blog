@@ -248,6 +248,69 @@ def count_words(html: str) -> int:
     return len(text.split())
 
 
+def inject_internal_links(content: str, labels: list, blog_url: str, exclude_url: str = "") -> str:
+    """
+    atom.xml에서 같은 라벨의 최근 포스팅 3개를 찾아 '관련 글' 섹션을 본문 최하단에 삽입.
+    Topical Authority 강화 + 내부 PageRank 배분 + 크롤 depth 감소.
+    """
+    import urllib.request, xml.etree.ElementTree as ET, re as _re
+    try:
+        req = urllib.request.Request(
+            f"{blog_url}/atom.xml",
+            headers={"User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache"}
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            root = ET.fromstring(r.read().decode())
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        entries = root.findall("atom:entry", ns)
+
+        related = []
+        for entry in entries:
+            # URL
+            url = ""
+            for link in entry.findall("atom:link", ns):
+                if link.get("rel") == "alternate":
+                    url = link.get("href", "")
+                    break
+            if not url or url == exclude_url:
+                continue
+            # 제목
+            title_el = entry.find("atom:title", ns)
+            entry_title = (title_el.text or "").strip() if title_el is not None else ""
+            if not entry_title:
+                continue
+            # 라벨 매칭
+            entry_cats = [c.get("term", "") for c in entry.findall("atom:category", ns)]
+            if any(lbl in entry_cats for lbl in labels):
+                related.append((url, entry_title))
+            if len(related) >= 3:
+                break
+
+        if not related:
+            return content
+
+        items_html = "\n".join(
+            f'<li style="margin-bottom:8px;"><a href="{u}" '
+            f'style="color:#333;text-decoration:none;">'
+            f'📄 {t[:50]}</a></li>'
+            for u, t in related
+        )
+        block = (
+            '\n<div style="margin:40px 0 24px;padding:20px 24px;'
+            'background:#f8f9fa;border-radius:8px;border:1px solid #e9ecef;">'
+            '<h3 style="margin:0 0 12px;font-size:16px;font-weight:700;color:#333;">'
+            '📚 관련 글 더 보기</h3>'
+            f'<ul style="margin:0;padding-left:18px;line-height:1.9;">{items_html}</ul>'
+            '</div>\n'
+        )
+        # 본문 최하단 (</body> 직전 또는 끝)에 삽입
+        if "</body>" in content:
+            return content.replace("</body>", block + "</body>", 1)
+        return content + block
+    except Exception:
+        return content
+
+
 def build_json_ld(title: str, meta_desc: str, labels: list,
                   faqs: list = None, hero_image_url: str = "",
                   word_count: int = 0, read_time: int = 0,
@@ -256,7 +319,9 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))  # KST
     pub_date_full = now.strftime("%Y-%m-%dT%H:%M:%S+09:00")
     keywords = ", ".join(labels)
-    canonical_url = post_url or BLOG_URL
+    # 발행 전에는 포스트 URL을 알 수 없으므로 플레이스홀더 사용 → 발행 후 PATCH로 교체
+    _PLACEHOLDER = "PLACEHOLDER_POST_URL"
+    canonical_url = post_url if post_url else _PLACEHOLDER
 
     # ── 1. BlogPosting (구글 Article + 네이버 구조화 데이터 공식 기준) ──
     blogposting = {
@@ -359,7 +424,7 @@ def build_json_ld(title: str, meta_desc: str, labels: list,
             {"@type": "ListItem", "position": 1,
              "name": "홈", "item": BLOG_URL},
             {"@type": "ListItem", "position": 2,
-             "name": title[:50], "item": BLOG_URL}
+             "name": title[:50], "item": canonical_url}
         ]
     }
     scripts += f"""
@@ -950,23 +1015,11 @@ def post_to_blogger(file_path: str):
                 # JSON-LD에서 BLOG_URL(홈)로 된 mainEntityOfPage/@id 와 url 필드를 포스트 URL로 교체
                 import re as _re, json as _json
                 def _fix_jld(content: str, purl: str) -> str:
-                    def _replace(m):
-                        try:
-                            d = _json.loads(m.group(1))
-                            if d.get('@type') == 'BlogPosting' and 'AI키퍼' in d.get('author', {}).get('name', ''):
-                                mid = d.get('mainEntityOfPage', {})
-                                if mid.get('@id', '') == BLOG_URL:
-                                    d['mainEntityOfPage']['@id'] = purl
-                                if d.get('url', '') == BLOG_URL:
-                                    d['url'] = purl
-                                return f'<script type="application/ld+json">\n{_json.dumps(d, ensure_ascii=False, separators=(",", ":"))}\n</script>'
-                        except Exception:
-                            pass
-                        return m.group(0)
-                    return _re.sub(
-                        r'<script type=["\']application/ld\+json["\']>(.*?)</script>',
-                        _replace, content, flags=_re.S
-                    )
+                    """PLACEHOLDER_POST_URL을 실제 포스트 URL로 교체"""
+                    if "PLACEHOLDER_POST_URL" not in content:
+                        return content
+                    # 문자열 단순 교체 — JSON 내 값이므로 안전
+                    return content.replace("PLACEHOLDER_POST_URL", purl)
                 fixed_content = _fix_jld(current_content, post_url)
                 if fixed_content != current_content:
                     patch_r = blogger_request(
