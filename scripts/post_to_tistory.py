@@ -2,12 +2,12 @@
 """
 ggultongmon -> 티스토리 크로스포스팅
 - 카테고리: '쿠팡' (ID 1199098)
-- 이미지: 캐러셀 커버 이미지 + 상품별 productImage 포함
+- 이미지: 캐러셀 커버 이미지 + 상품별 productImage -> GitHub Pages 업로드
 - CTA: 버튼 스타일로 ggultongmon 연결
 - 대표 이미지: cover_image_url -> thumbnail 설정
 - SEO: E-E-A-T 기반 2,500~3,000자 + FAQ 섹션
 """
-import os, sys, json, re, requests
+import os, sys, json, re, requests, urllib.request, base64, time, io
 from pathlib import Path
 from anthropic import Anthropic
 
@@ -61,7 +61,9 @@ def _cover_img_block(image_url: str, alt: str = "") -> str:
     )
 
 def _product_img_block(image_url: str, alt: str = "", price: str = "") -> str:
-    """상품 메인 이미지 블록"""
+    """상품 이미지 블록 (GitHub Pages URL 사용)"""
+    if not image_url:
+        return ""
     caption = f'<p style="text-align:center;font-size:14px;color:#666;margin:4px 0 16px;">{price}</p>' if price else ""
     return (
         f'<p style="text-align:center;margin:16px 0 0;">'
@@ -70,6 +72,117 @@ def _product_img_block(image_url: str, alt: str = "", price: str = "") -> str:
         f'</p>'
         f'{caption}'
     )
+
+
+# ── 이미지 다운로드 + GitHub Pages 업로드 ───────────────────────────────────
+def _download_coupang_image(url: str) -> bytes:
+    """쿠팡 CDN 이미지 다운로드 (Referer 위장)"""
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36",
+                "Referer": "https://www.coupang.com/",
+                "Accept": "image/avif,image/webp,image/apng,image/*,*/*",
+            }
+        )
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.read()
+    except Exception as e:
+        print(f"  [tistory] 이미지 다운로드 실패 ({url[:60]}): {e}")
+        return b""
+
+
+def _resize_image(data: bytes, max_size: int = 800) -> bytes:
+    """PIL로 이미지 리사이즈 (최대 800px, JPEG 품질 85)"""
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(data)).convert("RGB")
+        img.thumbnail((max_size, max_size))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
+    except Exception as e:
+        print(f"  [tistory] 리사이즈 실패: {e}")
+        return data
+
+
+def _upload_to_github_pages(img_data: bytes, filename: str, ts: str) -> str:
+    """
+    이미지를 GitHub Pages gh-pages 브랜치에 업로드하고 공개 URL 반환.
+    경로: tistory/{ts}/{filename}
+    """
+    gh_token = os.environ.get("GITHUB_PAT", "")
+    repo     = os.environ.get("GITHUB_PAGES_REPO", "noivan0/aikeeper-blog")
+    branch   = os.environ.get("GITHUB_PAGES_BRANCH", "gh-pages")
+    base_url = os.environ.get("GITHUB_PAGES_BASE", "https://noivan0.github.io/aikeeper-blog")
+
+    if not gh_token or not img_data:
+        return ""
+
+    remote_path = f"tistory/{ts}/{filename}"
+    content = base64.b64encode(img_data).decode()
+    api_url = f"https://api.github.com/repos/{repo}/contents/{remote_path}"
+
+    payload = json.dumps({
+        "message": f"tistory img: {ts}/{filename}",
+        "content": content,
+        "branch": branch,
+    }).encode()
+
+    req = urllib.request.Request(
+        api_url, data=payload, method="PUT",
+        headers={
+            "Authorization": f"token {gh_token}",
+            "Accept": "application/vnd.github.v3+json",
+            "Content-Type": "application/json",
+        }
+    )
+    try:
+        urllib.request.urlopen(req, timeout=30)
+        public_url = f"{base_url}/{remote_path}"
+        print(f"  [tistory] 이미지 업로드: {filename} -> {public_url}")
+        return public_url
+    except Exception as e:
+        print(f"  [tistory] GitHub 업로드 실패 ({filename}): {e}")
+        return ""
+
+
+def upload_product_images(products: list, ts: str) -> list:
+    """
+    상품 목록의 productImage를 다운로드 -> 리사이즈 -> GitHub Pages 업로드.
+    반환: [{"name":..., "price":..., "gh_url":..., "original_url":...}, ...]
+    """
+    results = []
+    for i, p in enumerate(products):
+        pname  = p.get("productName", p.get("name", f"상품{i+1}"))
+        pprice = p.get("productPrice", p.get("price", ""))
+        pimg   = p.get("productImage", "")
+
+        try:
+            price_str = f"{int(pprice):,}원" if pprice else ""
+        except (ValueError, TypeError):
+            price_str = str(pprice) if pprice else ""
+
+        gh_url = ""
+        if pimg:
+            print(f"  [tistory] 상품{i+1} 이미지 처리: {pname[:30]}")
+            img_data = _download_coupang_image(pimg)
+            if img_data:
+                img_data = _resize_image(img_data, max_size=800)
+                fname = f"product_{i+1:02d}.jpg"
+                gh_url = _upload_to_github_pages(img_data, fname, ts)
+                time.sleep(0.5)  # GitHub API rate limit
+
+        results.append({
+            "index": i + 1,
+            "name": pname,
+            "price": price_str,
+            "url": p.get("shortenUrl", p.get("coupang_url", "")),
+            "gh_url": gh_url,
+            "original_url": pimg,
+        })
+    return results
 
 
 # ── requests 세션 ────────────────────────────────────────────────────────────
@@ -91,17 +204,23 @@ def _sess():
 
 # ── Claude 크로스포스트 생성 ─────────────────────────────────────────────────
 def generate_cross_post(topic: str, products: list, post_url: str,
-                        labels: list, cover_image_url: str = "") -> dict:
+                        labels: list, cover_image_url: str = "",
+                        uploaded_images: list = None) -> dict:
     """
     Claude로 E-E-A-T 기반 완결형 크로스포스팅 생성.
-    - 커버 이미지 + 상품별 productImage 본문 삽입
+    - 커버 이미지 + 상품별 GitHub Pages 이미지 본문 삽입
     - 2,500~3,000자, FAQ 섹션 포함
     - target="_blank" 금지
+    uploaded_images: upload_product_images() 반환값 (gh_url 포함)
     """
     client = Anthropic(
         api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         base_url=os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
     )
+
+    uploaded_images = uploaded_images or []
+    # uploaded_images를 index 기준 dict로
+    img_map = {ui["index"]: ui for ui in uploaded_images}
 
     # 상품별 정보 + 이미지 블록 사전 생성
     prod_blocks = []
@@ -109,7 +228,6 @@ def generate_cross_post(topic: str, products: list, post_url: str,
     for i, p in enumerate(products):
         pname  = p.get("productName", p.get("name", ""))
         pprice = p.get("productPrice", p.get("price", ""))
-        pimg   = p.get("productImage", "")
         purl   = p.get("shortenUrl", p.get("coupang_url", ""))
 
         try:
@@ -119,7 +237,10 @@ def generate_cross_post(topic: str, products: list, post_url: str,
 
         prod_list_text.append(f"- 상품{i+1}: {pname} / {price_str}")
 
-        img_html = _product_img_block(pimg, pname, price_str) if pimg else ""
+        # GitHub Pages에 업로드된 URL 우선 사용
+        ui = img_map.get(i + 1, {})
+        gh_url = ui.get("gh_url", "")
+        img_html = _product_img_block(gh_url, pname, price_str) if gh_url else ""
         prod_blocks.append({
             "index": i + 1,
             "name": pname,
@@ -324,12 +445,20 @@ def cross_post(topic: str, products: list, post_url: str,
     if cover_image_url:
         print(f"[tistory] 커버 이미지: {cover_image_url[:80]}...")
 
-    # 상품 이미지 개수 로그
+    # 상품 이미지 다운로드 -> GitHub Pages 업로드
     prod_img_count = sum(1 for p in products if p.get("productImage", ""))
     print(f"[tistory] 상품 {len(products)}개 (이미지 있는 상품: {prod_img_count}개)")
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    uploaded_images = []
+    if prod_img_count > 0:
+        print("[tistory] 상품 이미지 GitHub Pages 업로드 중...")
+        uploaded_images = upload_product_images(products, ts)
+        # GitHub Pages 반영 대기 (5초)
+        time.sleep(5)
 
     print("[tistory] Claude 크로스포스트 생성 중...")
-    data = generate_cross_post(topic, products, post_url, labels, cover_image_url)
+    data = generate_cross_post(topic, products, post_url, labels, cover_image_url,
+                               uploaded_images=uploaded_images)
     print(f"[tistory] 제목: {data['title']}")
 
     result = publish_to_tistory(
