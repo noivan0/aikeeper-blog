@@ -2,8 +2,10 @@
 """
 ggultongmon -> 티스토리 크로스포스팅
 - 카테고리: '쿠팡' (ID 1199098)
-- 이미지: 캐러셀 커버 이미지 (GitHub Pages URL) 포함
+- 이미지: 캐러셀 커버 이미지 + 상품별 productImage 포함
 - CTA: 버튼 스타일로 ggultongmon 연결
+- 대표 이미지: cover_image_url -> thumbnail 설정
+- SEO: E-E-A-T 기반 2,500~3,000자 + FAQ 섹션
 """
 import os, sys, json, re, requests
 from pathlib import Path
@@ -29,7 +31,7 @@ API_BASE         = f"https://{BLOG_NAME}.tistory.com/manage"
 requests.packages.urllib3.disable_warnings()
 
 
-# ── 버튼 스타일 HTML ─────────────────────────────────────────────────────────
+# ── HTML 블록 헬퍼 ───────────────────────────────────────────────────────────
 def _btn(post_url: str, text: str, bg: str = "#FF4500") -> str:
     css = (
         f"display:inline-block;background:{bg};color:#fff!important;"
@@ -39,20 +41,18 @@ def _btn(post_url: str, text: str, bg: str = "#FF4500") -> str:
     )
     return (
         f'<div style="text-align:center;margin:28px 0;">'
-        f'<a href="{post_url}" target="_blank" rel="noopener" style="{css}">{text}</a>'
+        f'<a href="{post_url}" style="{css}">{text}</a>'
         f'</div>'
     )
 
 def _top_cta(post_url: str) -> str:
-    """본문 상단 버튼 (이미지 바로 아래)"""
     return _btn(post_url, "&#128073; 지금 바로 최저가 확인하기", "#FF4500")
 
 def _bottom_cta(post_url: str) -> str:
-    """본문 하단 버튼"""
     return _btn(post_url, "&#127873; 전체 비교 + 쿠팡 최저가 구매링크", "#E8000D")
 
 def _cover_img_block(image_url: str, alt: str = "") -> str:
-    """커버 이미지 블록"""
+    """커버 이미지 블록 (대표 이미지용)"""
     return (
         f'<p style="text-align:center;margin:0 0 4px;">'
         f'<img src="{image_url}" alt="{alt}" '
@@ -60,10 +60,20 @@ def _cover_img_block(image_url: str, alt: str = "") -> str:
         f'</p>'
     )
 
+def _product_img_block(image_url: str, alt: str = "", price: str = "") -> str:
+    """상품 메인 이미지 블록"""
+    caption = f'<p style="text-align:center;font-size:14px;color:#666;margin:4px 0 16px;">{price}</p>' if price else ""
+    return (
+        f'<p style="text-align:center;margin:16px 0 0;">'
+        f'<img src="{image_url}" alt="{alt}" '
+        f'style="max-width:100%;border-radius:8px;margin:12px 0;" />'
+        f'</p>'
+        f'{caption}'
+    )
+
 
 # ── requests 세션 ────────────────────────────────────────────────────────────
 def _sess():
-    # 항상 최신 환경변수에서 읽기 (재갱신 후에도 반영)
     session = os.environ.get("TISTORY_SESSION", TSSESSION)
     s = requests.Session()
     s.verify = False
@@ -82,31 +92,67 @@ def _sess():
 # ── Claude 크로스포스트 생성 ─────────────────────────────────────────────────
 def generate_cross_post(topic: str, products: list, post_url: str,
                         labels: list, cover_image_url: str = "") -> dict:
-    """Claude로 다른 앵글의 완결형 크로스포스팅 생성 (이미지/버튼 포함)"""
+    """
+    Claude로 E-E-A-T 기반 완결형 크로스포스팅 생성.
+    - 커버 이미지 + 상품별 productImage 본문 삽입
+    - 2,500~3,000자, FAQ 섹션 포함
+    - target="_blank" 금지
+    """
     client = Anthropic(
         api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         base_url=os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
     )
 
-    prod_list = "\n".join(
-        f"- {p.get('productName','')}: {int(p.get('productPrice',0)):,}원"
-        for p in products
-    )
+    # 상품별 정보 + 이미지 블록 사전 생성
+    prod_blocks = []
+    prod_list_text = []
+    for i, p in enumerate(products):
+        pname  = p.get("productName", p.get("name", ""))
+        pprice = p.get("productPrice", p.get("price", ""))
+        pimg   = p.get("productImage", "")
+        purl   = p.get("shortenUrl", p.get("coupang_url", ""))
 
-    # 커버 이미지 블록 (버튼과 분리 — 도입부 텍스트 사이에 삽입)
-    img_block = _cover_img_block(cover_image_url, topic) if cover_image_url else ""
+        try:
+            price_str = f"{int(pprice):,}원" if pprice else ""
+        except (ValueError, TypeError):
+            price_str = str(pprice) if pprice else ""
+
+        prod_list_text.append(f"- 상품{i+1}: {pname} / {price_str}")
+
+        img_html = _product_img_block(pimg, pname, price_str) if pimg else ""
+        prod_blocks.append({
+            "index": i + 1,
+            "name": pname,
+            "price": price_str,
+            "url": purl,
+            "img_block": img_html,
+        })
+
+    prod_list = "\n".join(prod_list_text)
+
+    # 상품 이미지 블록 설명 (프롬프트용)
+    prod_img_instructions = ""
+    for pb in prod_blocks:
+        if pb["img_block"]:
+            prod_img_instructions += (
+                f"\n상품{pb['index']} ({pb['name']}) 이미지 블록 (해당 상품 설명 h2/h3 바로 아래에 삽입):\n"
+                f"{pb['img_block']}\n"
+            )
+
+    # HTML 블록 사전 생성
+    img_block     = _cover_img_block(cover_image_url, topic) if cover_image_url else ""
     top_btn_block = _top_cta(post_url)
-    bottom_block = _bottom_cta(post_url)
+    bottom_block  = _bottom_cta(post_url)
 
-    # 앵글 유형 — 매번 다른 관점으로 작성되도록 topic 기반 랜덤 선택
+    # 앵글 선택
     import hashlib
     _angle_seed = int(hashlib.md5(topic.encode()).hexdigest(), 16) % 5
     angles = [
-        "실패 경험 → 해결 스토리형: 처음 잘못 샀다가 손해 본 경험을 도입으로 시작하고, 올바른 선택 기준을 알려주는 스토리텔링 방식",
+        "실패 경험 -> 해결 스토리형: 처음 잘못 샀다가 손해 본 경험을 도입으로 시작하고, 올바른 선택 기준을 알려주는 스토리텔링 방식",
         "사용 상황별 추천형: '이런 상황이라면 이 제품' 식으로 독자 상황(입문자/자주 사용/가성비 중시 등)에 맞게 추천하는 방식",
         "구매 전 체크리스트형: 이 카테고리 상품을 살 때 놓치기 쉬운 3~5가지 함정/실수를 앞에 짚고, 각 제품이 어떻게 해결하는지 설명",
-        "사용법·활용 팁형: 제품 소개보다 올바른 사용법, 관리법, 극대화 팁 위주로 쓰고 제품은 도구로 자연스럽게 녹여내는 방식",
-        "비교 기준 심화형: 가격/디자인이 아닌 소재·인증·실제 착용감 등 전문적 기준으로 심층 비교하는 방식",
+        "사용법 활용 팁형: 제품 소개보다 올바른 사용법, 관리법, 극대화 팁 위주로 쓰고 제품은 도구로 자연스럽게 녹여내는 방식",
+        "비교 기준 심화형: 가격/디자인이 아닌 소재, 인증, 실제 착용감 등 전문적 기준으로 심층 비교하는 방식",
     ]
     angle = angles[_angle_seed]
 
@@ -117,66 +163,87 @@ def generate_cross_post(topic: str, products: list, post_url: str,
 상품 목록:
 {prod_list}
 
-=== 핵심 원칙 ===
-구글 중복 콘텐츠 패널티를 피하기 위해 원문({post_url})과 **완전히 다른 각도**로 접근해야 합니다.
+=== E-E-A-T 기반 SEO 핵심 원칙 ===
+구글 중복 콘텐츠 패널티를 피하기 위해 원문({post_url})과 완전히 다른 각도로 접근해야 합니다.
 선택된 앵글: {angle}
+
+[Experience] 실제 구매/사용 경험 기반 1인칭 서술 자연스럽게 녹이기
+[Expertise] 카테고리 전문 지식 (소재, 성분, 인증, 기술 스펙, 수치 데이터) 포함
+[Authoritativeness] 구체적 수치, 비교 데이터, 실측값 포함
+[Trustworthiness] 단점/주의사항도 솔직하게 언급 (광고성 일색 금지)
 
 === 제목 ===
 - 위 앵글에 맞는 제목 (원문 제목과 60% 이상 달라야 함)
 - 독자의 고민/실수/상황을 직접 건드리는 표현 사용
+- 핵심 키워드 자연스럽게 포함
 
-=== 본문 구조 (①~⑤ 순서 고정) ===
+=== 본문 구조 (1~6 순서 고정) ===
 
-① 커버 이미지 (아래 HTML 그대로 삽입):
+[1] 커버 이미지 (아래 HTML 그대로 삽입):
 {img_block}
 
-② 도입 문단 — 2~3문장, <p style="margin-bottom:20px;"> 태그:
-   - 위 앵글에 맞는 도입 (공감·문제제기·상황 설정)
+[2] 도입 문단 - <p style="margin-bottom:20px;"> 태그 사용:
+   - 3~4문장, 위 앵글에 맞는 도입 (공감, 문제제기, 상황 설정)
+   - 핵심 키워드 자연스럽게 포함
    - 이 글에서 무엇을 얻을 수 있는지 명시
 
-③ 상단 버튼 (아래 HTML 그대로 삽입):
+[3] 상단 버튼 (아래 HTML 그대로 삽입):
 {top_btn_block}
 
-④ 본문 본체:
-   - <h2> 소제목 3~5개로 구성
-   - 각 <h2> 앞: <p style="margin:28px 0 4px;">&nbsp;</p> 삽입
-   - 각 <h2> 아래: <p style="margin-bottom:16px;"> 2~3문장씩 분리
+[4] 본문 본체 (h2 소제목 4~5개):
+   - 각 h2 앞: <p style="margin:28px 0 4px;">&nbsp;</p> 삽입
+   - 각 h2 아래: <p style="margin-bottom:16px;"> 3~4문장씩 상세 서술
    - 항목 나열: <ul style="margin:8px 0 16px;padding-left:20px;"><li style="margin-bottom:8px;">
    - 핵심 키워드: <strong>으로 강조
-   - 제품별 설명: 이름·가격·핵심 스펙(소재·인증·착용방식 등)·추천 대상을 각각 명시
-   - 전체 분량: 1,800~2,200자 (원문보다 제품 설명 더 상세하게)
+   - 제품별 설명 섹션: 이름, 가격, 핵심 스펙, 추천 대상, 가성비 수치 명시
+   - 단점/주의사항 1~2개 솔직 언급 (신뢰도 향상)
+   - 상품 이미지 블록: 각 상품 설명 h2/h3 바로 아래에 해당 상품 이미지 삽입
+{prod_img_instructions}
+   - 전체 분량: 2,500~3,000자 (풍부하고 상세하게)
 
-⑤ 하단 버튼 (아래 HTML 그대로 삽입):
+[5] FAQ 섹션 (구글 Featured Snippet 타겟):
+   - h2 제목: "자주 묻는 질문"
+   - Q&A 3~4개, <strong>Q: 질문</strong> + <p>A: 답변</p> 형식
+   - 실제 독자가 궁금해할 구체적 질문 (가격, 사용법, 비교, 주의사항)
+
+[6] 하단 버튼 (아래 HTML 그대로 삽입):
 {bottom_block}
 
+=== 링크 규칙 (필수) ===
+- 모든 <a> 태그에 target="_blank" 및 rel="noopener" 절대 사용 금지
+- 링크는 같은 탭에서 열려야 함 (Google AdSense 전면광고 노출 필수 조건)
+
 === 태그 ===
-쉼표 구분 6~8개 (상품명·카테고리·상황 키워드 혼합)
+쉼표 구분 8~10개 (상품명, 카테고리, 롱테일 키워드, 상황 키워드 혼합)
 
 === 응답 형식 (JSON만 출력, 다른 텍스트 금지) ===
 {{
   "title": "제목",
-  "content": "①~⑤ 합친 완성 HTML",
+  "content": "[1]~[6] 합친 완성 HTML",
   "tag": "태그1,태그2,태그3"
 }}"""
 
     msg = client.messages.create(
         model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
-        max_tokens=4096,
+        max_tokens=6000,
         messages=[{"role": "user", "content": prompt}],
     )
     text = msg.content[0].text.strip()
     match = re.search(r'\{.*\}', text, re.DOTALL)
     if match:
-        return json.loads(match.group())
+        data = json.loads(match.group())
+        # thumbnail 키 추가 (대표 이미지용)
+        data["thumbnail"] = cover_image_url
+        return data
     raise ValueError(f"JSON 파싱 실패: {text[:200]}")
 
 
 # ── 티스토리 발행 ────────────────────────────────────────────────────────────
 def _refresh_session_if_needed() -> str:
     """세션이 만료된 경우 자동 재갱신 후 새 세션값 반환"""
-    import subprocess, re as _re
+    import subprocess
     script = Path(__file__).parent / "refresh_tistory_session.py"
-    print("  [tistory] 세션 만료 감지 → 자동 재갱신 시도...")
+    print("  [tistory] 세션 만료 감지 -> 자동 재갱신 시도...")
     env2 = {**os.environ, "DISPLAY": ":99"}
     r = subprocess.run([sys.executable, str(script)], env=env2,
                        capture_output=True, text=True, timeout=90)
@@ -184,7 +251,6 @@ def _refresh_session_if_needed() -> str:
     if r.returncode != 0:
         raise RuntimeError(f"세션 재갱신 실패: {r.stderr[-200:]}")
 
-    # .env에서 새 세션값 읽기
     env_file = Path(__file__).parent.parent / ".env"
     for line in env_file.read_text().splitlines():
         if line.startswith("TISTORY_SESSION="):
@@ -195,8 +261,12 @@ def _refresh_session_if_needed() -> str:
 
 
 def publish_to_tistory(title: str, content: str, tag: str = "",
-                       category: str = CATEGORY_COUPANG) -> dict:
-    """티스토리 /manage/post.json API로 글 발행 (세션 만료 시 자동 재갱신)"""
+                       category: str = CATEGORY_COUPANG,
+                       thumbnail_url: str = "") -> dict:
+    """
+    티스토리 /manage/post.json API로 글 발행.
+    thumbnail_url: 대표 이미지 URL (있을 경우 payload에 포함)
+    """
     if not TSSESSION and not os.environ.get("TISTORY_SESSION"):
         raise RuntimeError("TISTORY_SESSION 환경변수 없음")
 
@@ -204,23 +274,26 @@ def publish_to_tistory(title: str, content: str, tag: str = "",
     payload = {
         "title":           title,
         "content":         content,
-        "visibility":      "20",       # 공개
-        "category":        category,   # 쿠팡 카테고리
+        "visibility":      "20",
+        "category":        category,
         "tag":             tag,
         "acceptComment":   "1",
         "acceptTrackback": "0",
         "published":       "1",
     }
+    if thumbnail_url:
+        payload["thumbnail"] = thumbnail_url
+
     r = s.post(f"{API_BASE}/post.json", json=payload, timeout=30)
     if r.status_code != 200:
         raise RuntimeError(f"발행 실패 {r.status_code}: {r.text[:200]}")
 
-    # 세션 만료 감지: 응답이 HTML(로그인 페이지)인 경우
+    # 세션 만료 감지: 응답이 HTML인 경우
     content_type = r.headers.get("content-type", "")
     if "html" in content_type or r.text.strip().startswith("<!"):
-        print("  [tistory] 세션 만료 감지 (HTML 응답) → 재갱신 후 재시도")
-        new_sess = _refresh_session_if_needed()
-        s2 = _sess()  # 새 세션으로 재생성
+        print("  [tistory] 세션 만료 감지 (HTML 응답) -> 재갱신 후 재시도")
+        _refresh_session_if_needed()
+        s2 = _sess()
         r = s2.post(f"{API_BASE}/post.json", json=payload, timeout=30)
         if r.status_code != 200:
             raise RuntimeError(f"재시도 발행 실패 {r.status_code}: {r.text[:200]}")
@@ -228,7 +301,6 @@ def publish_to_tistory(title: str, content: str, tag: str = "",
     try:
         result = r.json()
     except Exception:
-        # 여전히 HTML이면 세션 문제
         raise RuntimeError(f"응답 JSON 파싱 실패 (세션 문제 가능성): {r.text[:200]}")
 
     entry_url = result.get("entryUrl", "")
@@ -243,7 +315,7 @@ def cross_post(topic: str, products: list, post_url: str,
     labels = labels or []
     print(f"[tistory] 크로스포스팅 시작: {topic[:40]}...")
 
-    # 커버 이미지 — 파이프라인에서 넘겨받지 못한 경우 CAROUSEL_IMAGE_URLS 에서 추출
+    # 커버 이미지 fallback
     if not cover_image_url:
         import json as _cj
         _all = _cj.loads(os.environ.get("CAROUSEL_IMAGE_URLS", "[]"))
@@ -251,6 +323,10 @@ def cross_post(topic: str, products: list, post_url: str,
         cover_image_url = (_candidates or _all or [""])[0]
     if cover_image_url:
         print(f"[tistory] 커버 이미지: {cover_image_url[:80]}...")
+
+    # 상품 이미지 개수 로그
+    prod_img_count = sum(1 for p in products if p.get("productImage", ""))
+    print(f"[tistory] 상품 {len(products)}개 (이미지 있는 상품: {prod_img_count}개)")
 
     print("[tistory] Claude 크로스포스트 생성 중...")
     data = generate_cross_post(topic, products, post_url, labels, cover_image_url)
@@ -260,6 +336,7 @@ def cross_post(topic: str, products: list, post_url: str,
         title=data["title"],
         content=data["content"],
         tag=data.get("tag", ",".join(labels)),
+        thumbnail_url=data.get("thumbnail", cover_image_url),
     )
     return result
 
@@ -275,6 +352,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     products = json.loads(args.products)
-    result = cross_post(args.topic, products, args.post_url,
-                        cover_image_url=args.cover_img)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    result = cross_post(
+        topic=args.topic,
+        products=products,
+        post_url=args.post_url,
+        cover_image_url=args.cover_img,
+    )
+    print(json.dumps(result, ensure_ascii=False))
