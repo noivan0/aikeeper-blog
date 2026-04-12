@@ -426,19 +426,55 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
         else:
             await page.wait_for_timeout(5000)
 
-        # 발행 버튼으로 tokenId 캡처
+        # 발행 버튼 → 확인 버튼으로 tokenId 캡처 (RabbitWrite POST에서 추출)
+        # 이 때 "_" 제목 임시 포스팅이 발행됨 → 아래에서 즉시 삭제
+        dummy_log_no = None
         pub_btn = await page.query_selector(".publish_btn__m9KHH")
         if pub_btn:
             await pub_btn.click(); await page.wait_for_timeout(3000)
             confirm = await page.query_selector(".confirm_btn__WEaBq")
             if confirm:
                 await confirm.click(); await page.wait_for_timeout(6000)
+                # 발행 완료 후 URL에서 logNo 추출 (임시 포스팅 logNo)
+                cur_url = page.url
+                m = re.search(r'logNo[=:](\d+)', cur_url)
+                if m:
+                    dummy_log_no = m.group(1)
+                    print(f"  임시 발행 logNo: {dummy_log_no} (즉시 삭제 예정)")
 
         token_id = captured["token_id"]
         se_auth  = captured["se_auth"]
         se_app_id = captured["se_app_id"]
         print(f"  tokenId: {'있음' if token_id else '없음'}")
         print(f"  se-auth: {'있음' if se_auth else '없음'}")
+
+        # ── 임시 발행된 "_" 포스팅 즉시 삭제 ───────────────────────────
+        if dummy_log_no:
+            try:
+                del_url = f"https://blog.naver.com/{BLOG_ID}/{dummy_log_no}"
+                await page.goto(del_url, timeout=15000)
+                await page.wait_for_timeout(2000)
+                # 관리 메뉴 → 삭제 버튼
+                more_btn = await page.query_selector(".blog_menu_btn, .post_option_btn, .se-blogpost-manage-btn")
+                if more_btn:
+                    await more_btn.click(); await page.wait_for_timeout(1000)
+                del_btn = await page.query_selector("a:has-text('삭제'), button:has-text('삭제'), .btn_delete")
+                if del_btn:
+                    await del_btn.click(); await page.wait_for_timeout(1000)
+                    ok_btn = await page.query_selector("button:has-text('확인'), .btn_ok")
+                    if ok_btn:
+                        await ok_btn.click(); await page.wait_for_timeout(2000)
+                        print(f"  ✅ 임시 포스팅 삭제 완료 (logNo={dummy_log_no})")
+                else:
+                    # 직접 삭제 API 시도
+                    del_resp = await page.evaluate(
+                        "([bid, logNo]) => fetch(`https://blog.naver.com/${bid}/delete/${logNo}`, "
+                        "{method:'POST', credentials:'include'}).then(r=>r.status).catch(e=>-1)",
+                        [BLOG_ID, dummy_log_no]
+                    )
+                    print(f"  임시 포스팅 삭제 API 응답: {del_resp}")
+            except Exception as e:
+                print(f"  ⚠️ 임시 포스팅 삭제 실패 (수동 삭제 필요, logNo={dummy_log_no}): {e}")
 
         if not token_id:
             print("  ❌ tokenId 없음"); await browser.close(); return None
