@@ -451,28 +451,23 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
         # ── 임시 발행된 "_" 포스팅 즉시 삭제 ───────────────────────────
         if dummy_log_no:
             try:
-                del_url = f"https://blog.naver.com/{BLOG_ID}/{dummy_log_no}"
-                await page.goto(del_url, timeout=15000)
-                await page.wait_for_timeout(2000)
-                # 관리 메뉴 → 삭제 버튼
-                more_btn = await page.query_selector(".blog_menu_btn, .post_option_btn, .se-blogpost-manage-btn")
-                if more_btn:
-                    await more_btn.click(); await page.wait_for_timeout(1000)
-                del_btn = await page.query_selector("a:has-text('삭제'), button:has-text('삭제'), .btn_delete")
-                if del_btn:
-                    await del_btn.click(); await page.wait_for_timeout(1000)
-                    ok_btn = await page.query_selector("button:has-text('확인'), .btn_ok")
-                    if ok_btn:
-                        await ok_btn.click(); await page.wait_for_timeout(2000)
-                        print(f"  ✅ 임시 포스팅 삭제 완료 (logNo={dummy_log_no})")
+                # PostDelete.naver가 올바른 엔드포인트 (200 반환 확인됨)
+                # 먼저 블로그 홈으로 이동해 세션/쿠키 확보
+                await page.goto(f"https://blog.naver.com/{BLOG_ID}", timeout=15000)
+                await page.wait_for_timeout(1500)
+                del_resp = await page.evaluate(
+                    "([bid, logNo]) => fetch('https://blog.naver.com/PostDelete.naver', {"
+                    "  method: 'POST',"
+                    "  headers: {'Content-Type': 'application/x-www-form-urlencoded'},"
+                    "  body: `blogId=${bid}&logNo=${logNo}`,"
+                    "  credentials: 'include'"
+                    "}).then(r => r.status).catch(e => -1)",
+                    [BLOG_ID, dummy_log_no]
+                )
+                if del_resp == 200:
+                    print(f"  ✅ 임시 포스팅 삭제 완료 (logNo={dummy_log_no})")
                 else:
-                    # 직접 삭제 API 시도
-                    del_resp = await page.evaluate(
-                        "([bid, logNo]) => fetch(`https://blog.naver.com/${bid}/delete/${logNo}`, "
-                        "{method:'POST', credentials:'include'}).then(r=>r.status).catch(e=>-1)",
-                        [BLOG_ID, dummy_log_no]
-                    )
-                    print(f"  임시 포스팅 삭제 API 응답: {del_resp}")
+                    print(f"  ⚠️ 임시 포스팅 삭제 응답: {del_resp} (수동 삭제 필요, logNo={dummy_log_no})")
             except Exception as e:
                 print(f"  ⚠️ 임시 포스팅 삭제 실패 (수동 삭제 필요, logNo={dummy_log_no}): {e}")
 
