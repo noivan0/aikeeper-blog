@@ -26,6 +26,22 @@ products 항목 지원 필드:
 """
 
 import os, sys, re, json, argparse, urllib.request, random
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).parent))
+try:
+    from env_loader import load_env
+    load_env()
+except ImportError:
+    _env = _Path(__file__).parent.parent / ".env"
+    if _env.exists():
+        import os
+        for _l in _env.read_text().splitlines():
+            _l = _l.strip()
+            if _l and not _l.startswith("#") and "=" in _l:
+                _k, _v = _l.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 from pathlib import Path
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont

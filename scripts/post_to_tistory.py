@@ -13,15 +13,20 @@ from anthropic import Anthropic
 
 BASE_DIR = Path(__file__).parent.parent
 
-# .env 로드
-env_file = BASE_DIR / ".env"
-if env_file.exists():
-    for line in env_file.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip())
+import sys
+sys.path.insert(0, str(Path(__file__).parent))
+try:
+    from env_loader import load_env
+    load_env()
+except ImportError:
+    # env_loader 없으면 직접 로드
+    _env = Path(__file__).parent.parent / ".env"
+    if _env.exists():
+        for _l in _env.read_text().splitlines():
+            _l = _l.strip()
+            if _l and not _l.startswith("#") and "=" in _l:
+                _k, _v = _l.split("=", 1)
+                __import__("os").environ.setdefault(_k.strip(), _v.strip())
 
 TSSESSION        = os.environ.get("TISTORY_SESSION", "")
 BLOG_NAME        = os.environ.get("TISTORY_BLOG_NAME", "banidad")
