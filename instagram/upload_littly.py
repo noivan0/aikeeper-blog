@@ -104,7 +104,10 @@ class LittlyClient:
         """
         page   = self.get_page()
         blocks = page["data"]["blocks"]
-        pl_idx = next(i for i, b in enumerate(blocks) if b["type"] == "productLink")
+        pl_idx_iter = (i for i, b in enumerate(blocks) if b["type"] == "productLink")
+        pl_idx = next(pl_idx_iter, None)
+        if pl_idx is None:
+            return {"success": False, "error": "productLink 블록 없음"}
         pl_block = blocks[pl_idx]
 
         new_links = []

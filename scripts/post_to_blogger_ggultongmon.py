@@ -128,6 +128,29 @@ def save_markdown(title: str, content: str, labels: list, products: list) -> Pat
 
 
 def main():
+    # 파이프라인 임포트 사전 검증 (ImportError가 비치명적 except에 묻히지 않도록)
+    _import_errors = []
+    try:
+        sys.path.insert(0, str(BASE_DIR / "instagram"))
+        from carousel_auto import generate_carousel  # noqa: F401
+    except ImportError as e:
+        _import_errors.append(f"carousel_auto: {e}")
+    try:
+        from upload_instagram import publish_carousel_from_dir  # noqa: F401
+    except ImportError as e:
+        _import_errors.append(f"upload_instagram: {e}")
+    try:
+        from upload_youtube_community import publish_community_from_dir  # noqa: F401
+    except ImportError as e:
+        _import_errors.append(f"upload_youtube_community: {e}")
+    try:
+        from upload_threads import publish_thread  # noqa: F401
+    except ImportError as e:
+        _import_errors.append(f"upload_threads: {e}")
+    if _import_errors:
+        print(f"[WARN] 파이프라인 모듈 임포트 실패: {_import_errors}")
+        # 발행 자체는 계속 진행
+
     # 주제가 비어있으면 발행 의미 없음 — 조기 종료
     if not TOPIC or len(TOPIC.strip()) < 5:
         print(f"[SKIP] 주제(TOPIC)가 비어있음 — 발행 건너뜀")
@@ -234,7 +257,7 @@ def main():
                 # blogger_request를 직접 호출할 수 없으므로 requests 사용
                 import requests as _req
                 _token = get_oauth_token()
-                _BLOG_ID = os.environ.get("TARGET_BLOG_ID", BLOGGER_BLOG_ID)
+                _BLOG_ID = os.environ.get("TARGET_BLOG_ID", BLOG_ID)
                 _pr = _req.patch(
                     f"https://www.googleapis.com/blogger/v3/blogs/{_BLOG_ID}/posts/{post_id}",
                     headers={"Authorization": f"Bearer {_token}",
@@ -289,8 +312,53 @@ def main():
                     )
                 else:
                     print(f"  ℹ️  Instagram 업로드 실패: {ig_result.get('error','')}")
-            except Exception as _ie:
-                print(f"  ℹ️  Instagram 업로드 스킵 (비치명적): {_ie}")
+            except Exception as _ige:
+                print(f"  ℹ️  Instagram 업로드 스킵 (비치명적): {_ige}")
+
+            # 4-2b. YouTube 커뮤니티 게시글 업로드 (비치명적)
+            # 게시글 공통 텍스트 (자동업로드 성공 시 or 텔레그램 fallback 시 공통 사용)
+            _yt_label_tags = " ".join(f"#{t.replace(' ','')}" for t in LABELS[:3]) if LABELS else ""
+            _yt_prices = " / ".join(
+                f"{p.get('productName','')[:15]} {int(p.get('productPrice',0)):,}원"
+                for p in products[:3]
+            ) if products else ""
+            _yt_text = (
+                f"{TOPIC}\n\n"
+                f"{_yt_prices}\n\n"
+                f"상세 리뷰 → {post_url}\n\n"
+                f"#쿠팡 #가성비 #꿀통몬스터 {_yt_label_tags}"
+            )
+            _yt_uploaded = False
+            try:
+                from upload_youtube_community import publish_community_from_dir
+                yt_result = publish_community_from_dir(
+                    slides_dir=carousel_result["out_dir"],
+                    text=_yt_text,
+                )
+                if yt_result.get("success"):
+                    print(f"  ✅ YouTube 커뮤니티 업로드 완료")
+                    _yt_uploaded = True
+                else:
+                    print(f"  ℹ️  YouTube 커뮤니티 업로드 실패: {yt_result.get('error','')}")
+            except Exception as _yte:
+                print(f"  ℹ️  YouTube 커뮤니티 업로드 스킵 (비치명적): {_yte}")
+
+            # 4-2c. YouTube 자동업로드 실패 시 → 텔레그램으로 수동업로드 요청 (fallback)
+            if not _yt_uploaded:
+                try:
+                    from notify_telegram_community import notify_for_manual_upload
+                    tg_result = notify_for_manual_upload(
+                        slides_dir=carousel_result["out_dir"],
+                        post_text=_yt_text,
+                        topic=TOPIC,
+                        post_url=post_url,
+                    )
+                    if tg_result.get("success"):
+                        print(f"  ✅ 텔레그램 수동업로드 알림 전송 완료")
+                    else:
+                        print(f"  ℹ️  텔레그램 알림 실패: {tg_result.get('error','')}")
+                except Exception as _tge:
+                    print(f"  ℹ️  텔레그램 알림 스킵 (비치명적): {_tge}")
 
         except Exception as _ce:
             print(f"  ℹ️  카드뉴스 생성 스킵 (비치명적): {_ce}")

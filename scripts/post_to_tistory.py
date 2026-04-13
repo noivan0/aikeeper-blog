@@ -564,6 +564,7 @@ def publish_to_tistory(title: str, content: str, tag: str = "",
     티스토리 /manage/post.json API로 글 발행.
     thumbnail_url: 대표 이미지 URL (있을 경우 payload에 포함)
     """
+    global TSSESSION  # 재갱신 후 전역 변수 업데이트 가능하도록 선언
     if not TSSESSION and not os.environ.get("TISTORY_SESSION"):
         raise RuntimeError("TISTORY_SESSION 환경변수 없음")
 
@@ -589,7 +590,7 @@ def publish_to_tistory(title: str, content: str, tag: str = "",
     content_type = r.headers.get("content-type", "")
     if "html" in content_type or r.text.strip().startswith("<!"):
         print("  [tistory] 세션 만료 감지 (HTML 응답) -> 재갱신 후 재시도")
-        _refresh_session_if_needed()
+        TSSESSION = _refresh_session_if_needed()  # 전역 변수 업데이트 → 구 세션 사용 방지
         s2 = _sess()
         r = s2.post(f"{API_BASE}/post.json", json=payload, timeout=30)
         if r.status_code != 200:
@@ -634,8 +635,8 @@ def cross_post(topic: str, products: list, post_url: str,
         uploaded_images = upload_product_images(
             upload_products, ts, topic=topic, blogger_post_url=post_url
         )
-        # GitHub Pages 반영 대기 (5초)
-        time.sleep(5)
+        # GitHub Pages 반영 대기 (환경변수로 설정 가능)
+        time.sleep(int(os.environ.get("TISTORY_GH_WAIT_SEC", "30")))
 
     print("[tistory] Claude 크로스포스트 생성 중...")
     data = generate_cross_post(topic, products, post_url, labels, cover_image_url,

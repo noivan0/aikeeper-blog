@@ -31,8 +31,8 @@ from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 
 # ── 경로 ──────────────────────────────────────────────────────
-BOLD_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
-REG_PATH  = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+BOLD_PATH = os.environ.get("CAROUSEL_FONT_PATH", "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc")
+REG_PATH  = os.environ.get("CAROUSEL_FONT_PATH_REG", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")
 W, H = 1080, 1080
 PAD  = 60
 

@@ -35,9 +35,10 @@ def load_env():
 
 load_env()
 
-ACCOUNT_ID  = os.environ.get("INSTAGRAM_ACCOUNT_ID", "17841473576603862")
+ACCOUNT_ID  = os.environ.get("IG_ACCOUNT_ID", os.environ.get("INSTAGRAM_ACCOUNT_ID", "17841473576603862"))
 PAGE_TOKEN  = os.environ.get("INSTAGRAM_PAGE_TOKEN", "")
-API_BASE    = "https://graph.facebook.com/v19.0"
+_IG_API_VERSION = os.environ.get("IG_API_VERSION", "v19.0")
+API_BASE    = f"https://graph.facebook.com/{_IG_API_VERSION}"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -331,9 +332,27 @@ def publish_carousel_from_dir(
     if not any(image_urls):
         return {"success": False, "error": "이미지 공개 URL 생성 실패"}
 
-    # 잠시 대기 (GitHub Pages 반영 시간)
-    print("[instagram] GitHub Pages 반영 대기 (180초)...")
-    time.sleep(180)
+    # GitHub Pages 반영 대기 (환경변수로 최대 대기시간 설정, URL 가용성 확인 루프)
+    wait_sec = int(os.environ.get("GITHUB_PAGES_WAIT_SEC", "300"))
+    first_url = next((u for u in image_urls if u), None)
+    print(f"[instagram] GitHub Pages 반영 대기 중 (최대 {wait_sec}초)...")
+    time.sleep(60)  # 첫 60초는 무조건 대기
+    if first_url:
+        elapsed = 60
+        while elapsed < wait_sec:
+            try:
+                req_check = urllib.request.Request(first_url, method="HEAD")
+                with urllib.request.urlopen(req_check, timeout=10):
+                    print(f"[instagram] GitHub Pages URL 접근 확인 완료 ({elapsed}초 경과)")
+                    break
+            except Exception:
+                print(f"[instagram] URL 아직 미반영, 30초 후 재확인... ({elapsed}초 경과)")
+                time.sleep(30)
+                elapsed += 30
+        else:
+            print(f"[instagram] 최대 대기 시간 초과 ({wait_sec}초) — 그대로 진행")
+    else:
+        print(f"[instagram] URL 없음 — 추가 대기 없이 진행")
 
     result = upload_carousel(image_urls, caption)
     # image_urls도 함께 반환 (litt.ly 등 외부 연동용)

@@ -106,7 +106,13 @@ ANGLE=$(grep '^angle=' "$TOPIC_FILE" | cut -d= -f2-)
 CATEGORY=$(grep '^category=' "$TOPIC_FILE" | cut -d= -f2-)
 LABELS=$(grep '^labels=' "$TOPIC_FILE" | cut -d= -f2-)
 META_DESC=$(grep '^meta_desc=' "$TOPIC_FILE" | cut -d= -f2-)
-PRODUCTS_JSON=$(grep '^products_json=' "$TOPIC_FILE" | cut -d= -f2-)
+PRODUCTS_JSON=$(python3 -c "
+import sys
+for line in open('$TOPIC_FILE'):
+    if line.startswith('products_json='):
+        print(line[len('products_json='):].rstrip())
+        break
+")
 rm -f "$TOPIC_FILE"
 
 echo "[$(date '+%H:%M:%S')] 주제: $TOPIC" | tee -a "$LOG_FILE"

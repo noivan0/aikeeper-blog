@@ -298,7 +298,8 @@ def pick_category_and_products() -> tuple[int, str, list]:
     # fallback 0.5: git pull로 Actions 캐시 갱신 후 재시도
     print("[FALLBACK] git pull로 쿠팡 캐시 갱신 시도...")
     refresh_cache_from_git()
-    for cat_id, cat_name in random.sample(priority_cats + other_cats, min(5, len(priority_cats + other_cats))):
+    _fallback_cats = [(cid, CATEGORIES[cid]) for cid in CATEGORIES if cid not in SKIP_CATEGORIES]
+    for cat_id, cat_name in random.sample(_fallback_cats, min(5, len(_fallback_cats))):
         products = get_best_products(cat_id)
         if len(products) >= 3:
             print(f"[캐시 폴백 성공] 카테고리: {cat_name}({cat_id}) | 상품 {len(products)}개")
@@ -461,6 +462,20 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
 
     # 첫 시도
     result = parse_result(_call(prompt))
+
+    # 주제 빈값 감지 → 최대 3회 재시도
+    for attempt in range(3):
+        if result["topic"]:
+            break
+        print(f"  [빈주제] topic이 비어있음 → 재시도 ({attempt+1}/3)")
+        result = parse_result(_call(prompt))
+
+    # 여전히 비어있으면 상품명 기반으로 fallback 주제 생성
+    if not result["topic"] and result["selected_products"]:
+        p = result["selected_products"]
+        names = [x["productName"][:15] for x in p[:3]]
+        result["topic"] = f"{names[0]} vs {names[1]}, 직접 써봤습니다"
+        print(f"  [FALLBACK] 빈 주제 → 상품명 기반 자동 생성: {result['topic']}")
 
     # 중복 감지 → 최대 2회 재시도
     for attempt in range(2):

@@ -165,7 +165,8 @@ def publish_thread(
     print(f"[threads] CTA 게시 완료: {cta_id}")
     results.append({"type": "cta", "post_id": cta_id})
 
-    permalink = f"https://www.threads.net/@ggultongmon/post/{hook_id}"
+    _threads_username = os.environ.get("THREADS_USERNAME", "ggultongmon")
+    permalink = f"https://www.threads.net/@{_threads_username}/post/{hook_id}"
     print(f"\n✅ Threads 스레드 게시 완료!")
     print(f"   메인 포스트: {permalink}")
     print(f"   총 {len(results)}개 (훅 1 + 상품 {len(products)} + CTA 1)")

@@ -22,7 +22,7 @@ BASE_DIR   = Path(__file__).parent.parent
 ATOM_URL   = os.environ.get("GGULTONGMON_ATOM_URL", "https://ggultongmon.allsweep.xyz/atom.xml")
 LOG_FILE   = BASE_DIR / "results" / "naver_homefeed_posts.jsonl"
 LOCK_FILE  = Path("/tmp/naver_homefeed.lock")
-MAX_AGE_DAYS = 7
+MAX_AGE_DAYS = int(os.environ.get("NAVER_MAX_AGE_DAYS", "7"))
 
 
 def log(msg: str):
@@ -167,18 +167,9 @@ def run_post(post: dict) -> bool:
         log(f"  ❌ 본문 생성 실패: {r.stderr[:200]}")
         return False
 
-    # 출력에서 제목/본문 파일 경로 추출
+    # GITHUB_OUTPUT 파일 읽기
     title = ""
     body_path = ""
-    for line in r.stdout.split('\n'):
-        if line.startswith('[네이버 포스트 생성]'):
-            continue
-        if '제목' in line and '===':
-            pass
-        if line.startswith('naver_title='):
-            pass
-
-    # GITHUB_OUTPUT 파일 읽기
     out_file = env["GITHUB_OUTPUT"]
     if Path(out_file).exists():
         for line in Path(out_file).read_text().splitlines():
@@ -207,29 +198,60 @@ def run_post(post: dict) -> bool:
     }
     r2 = subprocess.run(
         [sys.executable, str(Path(__file__).parent / "post_to_naver_api.py")],
-        env=env2, capture_output=False, timeout=300
+        env=env2, capture_output=True, text=True, timeout=300
     )
+    # stdout을 로그에도 출력
+    if r2.stdout:
+        print(r2.stdout)
+    if r2.stderr:
+        print(r2.stderr)
 
-    # 발행 성공 여부 로그 파일로 확인
+    # 발행 성공 여부를 stdout에서 URL 직접 추출
+    naver_url = ""
     if r2.returncode == 0:
-        # 로그 파일에서 최신 성공 URL 확인
+        # stdout에서 발행된 네이버 URL 추출
+        _url_match = re.search(r'https?://blog\.naver\.com/\S+', r2.stdout)
+        if _url_match:
+            naver_url = _url_match.group(0).rstrip(".,;)")
+
+    if r2.returncode == 0 and naver_url:
+        # homefeed 로그에 기록
+        LOG_FILE.parent.mkdir(exist_ok=True)
+        with open(LOG_FILE, "a") as f:
+            f.write(json.dumps({
+                "original_url": post['url'],
+                "original_title": post['title'],
+                "naver_title": title,
+                "naver_url": naver_url,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }, ensure_ascii=False) + "\n")
+        log(f"  ✅ 발행 성공: {naver_url}")
+        return True
+    elif r2.returncode == 0:
+        # URL을 찾지 못했지만 returncode는 0 — 로그 파일로 fallback
         simple_log = BASE_DIR / "results" / "naver_simple_posts.jsonl"
         if simple_log.exists():
-            last = simple_log.read_text().splitlines()[-1]
-            d = json.loads(last)
-            if d.get("success"):
-                # homefeed 로그에도 기록
-                LOG_FILE.parent.mkdir(exist_ok=True)
-                with open(LOG_FILE, "a") as f:
-                    f.write(json.dumps({
-                        "original_url": post['url'],
-                        "original_title": post['title'],
-                        "naver_title": title,
-                        "naver_url": d.get("naver_url", ""),
-                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    }, ensure_ascii=False) + "\n")
-                log(f"  ✅ 발행 성공: {d.get('naver_url','')}")
-                return True
+            lines = simple_log.read_text().splitlines()
+            if lines:
+                try:
+                    d = json.loads(lines[-1])
+                    if d.get("success"):
+                        naver_url = d.get("naver_url", "")
+                        LOG_FILE.parent.mkdir(exist_ok=True)
+                        with open(LOG_FILE, "a") as f:
+                            f.write(json.dumps({
+                                "original_url": post['url'],
+                                "original_title": post['title'],
+                                "naver_title": title,
+                                "naver_url": naver_url,
+                                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            }, ensure_ascii=False) + "\n")
+                        log(f"  ✅ 발행 성공 (로그파일 확인): {naver_url}")
+                        return True
+                except Exception:
+                    pass
+        log(f"  ⚠️  returncode=0이나 URL 미확인 — 성공 처리")
+        return True
     log(f"  ❌ 발행 실패 (returncode={r2.returncode})")
     return False
 

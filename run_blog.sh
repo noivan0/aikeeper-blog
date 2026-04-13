@@ -166,8 +166,12 @@ if [ -n "$GITHUB_REPO" ]; then
     git config user.email "aikeeper@noreply"
     git add ${POSTS_DIR}/
     git diff --staged --quiet || git commit -m "auto[$BLOG_ID]: AI 포스트 $(date '+%Y-%m-%d %H:%M KST')"
-    git pull --rebase https://${GITHUB_PAT}@github.com/${GITHUB_REPO}.git ${GITHUB_BRANCH} 2>&1 | tee -a "$LOG_FILE" || true
-    git push https://${GITHUB_PAT}@github.com/${GITHUB_REPO}.git ${GITHUB_BRANCH} 2>&1 | tee -a "$LOG_FILE" || true
+    # PAT를 git URL에 직접 노출하지 않도록 insteadOf 설정 사용 (ps aux 노출 방지)
+    git config url."https://${GITHUB_PAT}@github.com/".insteadOf "https://github.com/"
+    git pull --rebase https://github.com/${GITHUB_REPO}.git ${GITHUB_BRANCH} 2>&1 | tee -a "$LOG_FILE" || true
+    git push https://github.com/${GITHUB_REPO}.git ${GITHUB_BRANCH} 2>&1 | tee -a "$LOG_FILE" || true
+    # 사용 후 insteadOf 설정 제거 (로컬 설정 오염 방지)
+    git config --unset url."https://${GITHUB_PAT}@github.com/".insteadOf 2>/dev/null || true
 fi
 
 echo "[$(TIMESTAMP)] ===== 완료 [blog: ${BLOG_ID}] =====" | tee -a "$LOG_FILE"
