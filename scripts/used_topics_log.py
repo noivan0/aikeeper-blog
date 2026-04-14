@@ -51,7 +51,8 @@ def is_duplicate(topic: str, keywords: str = "", days: int = 7,
     if not check_product_ids:
         return False
 
-    # 30일 이내 동일 상품ID 재사용 차단
+    # 30일 이내 동일 상품ID(개별 상품) 재사용 차단
+    # 상품군 단위 차단은 find_topics에서 Claude 프롬프트로 처리 (기간: 7일)
     cutoff = today - datetime.timedelta(days=30)
 
     with open(LOG_FILE, encoding="utf-8") as f:

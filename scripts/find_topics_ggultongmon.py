@@ -382,17 +382,17 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
     if used_product_groups or used_product_names:
         parts = []
         if used_product_groups:
-            glist = "\n".join(f"- {g}" for g in used_product_groups[-40:])
+            glist = "\n".join(f"- {g}" for g in used_product_groups[-30:])
             parts.append(
-                f"[⛔ 이미 발행된 상품군 목록 — 동일하거나 유사한 상품군은 선정 금지]\n"
+                f"[최근 7일 이내 발행된 상품군 — 아래와 유사한 상품군은 이번 주 재발행 자제]\n"
                 f"{glist}\n"
-                f"→ 판단 기준: '소비자가 같은 니즈로 검색할 상품군이면 중복'\n"
-                f"   예) '생수' 발행 후 '무라벨 생수' = 중복 ❌\n"
-                f"   예) '생수' 발행 후 '로션' = 다른 상품군 ✅\n"
-                f"   예) '자외선차단 쿨토시' 발행 후 '바라클라바' = 중복 ❌\n"
-                f"   예) '자외선차단 쿨토시' 발행 후 '클렌징폼' = 다른 상품군 ✅\n"
-                f"   예) '남성 양말' 발행 후 '여성 양말' = 중복 ❌ (양말은 동일 상품군)\n"
-                f"→ 위 목록에 없는 완전히 새로운 상품군을 선정하세요.\n"
+                f"→ 판단 기준: '소비자가 같은 구매 니즈로 검색할 상품군이면 유사'\n"
+                f"   예) '생수' 발행 후 이번 주 '무라벨 생수' → 자제 (같은 니즈)\n"
+                f"   예) '생수' 발행 후 이번 주 '로션' → OK (다른 니즈)\n"
+                f"   예) '남성 양말' 발행 후 이번 주 '여성 양말' → 자제 (양말 동일)\n"
+                f"   예) '남성 양말' 발행 후 이번 주 '남성 운동화' → OK (다른 상품)\n"
+                f"→ 7일이 지난 상품군은 다른 상품으로 얼마든지 재발행 가능.\n"
+                f"→ 위 목록과 완전히 다른 상품군을 우선 선정하세요.\n"
             )
         if used_product_names:
             nlist = "\n".join(f"- {n}" for n in used_product_names[-40:])
@@ -546,38 +546,43 @@ if __name__ == "__main__":
     client_secret = os.environ.get("BLOGGER_CLIENT_SECRET", "")
     used_titles = load_recent_post_titles(blog_id, refresh_token, client_id, client_secret, max_posts=50)
 
-    # ── 공통 used_topics.jsonl 로그 — 최근 30일 사용 상품 수집 ──────────
+    # ── 공통 used_topics.jsonl 로그 수집 ──────────────────────────────────
+    # 상품ID:  30일 이내 동일 상품 재선정 차단
+    # 상품군:   7일 이내 유사 상품군 재발행 차단 (7일 지나면 다른 상품으로 재발행 OK)
     import datetime as _dt
     _today = _dt.date.today()
-    used_product_ids: list[str] = []        # 최근 30일 사용 상품 ID
-    used_product_names: list[str] = []      # 최근 30일 사용 상품명
-    used_product_groups: list[str] = []     # 최근 발행된 상품군 키워드 (Claude 프롬프트용)
+    PRODUCT_ID_BLOCK_DAYS   = 30   # 동일 상품ID 재선정 차단 기간
+    PRODUCT_GROUP_BLOCK_DAYS = 7   # 유사 상품군 재발행 차단 기간
+    used_product_ids: list[str] = []    # 30일 이내 사용 상품 ID
+    used_product_names: list[str] = []  # 30일 이내 사용 상품명
+    used_product_groups: list[str] = [] # 7일 이내 발행된 상품군 키워드
     try:
         sys.path.insert(0, BASE_DIR)
         from scripts.used_topics_log import get_recent_topics as _get_recent
-        _recent = _get_recent(days=60)  # 60일치 로드 (상품군 중복 방지)
+        _recent = _get_recent(days=30)
         _today_count = len([e for e in _recent if e.get('date') == _today.isoformat()])
         print(f"  [공통로그] 당일 발행 {_today_count}개 로드")
         for _entry in _recent:
             if _entry.get('blog') != 'ggultongmon':
                 continue
-            # 상품 ID 수집 (30일 이내)
             _entry_date = _dt.date.fromisoformat(_entry.get("date", "2000-01-01"))
-            if (_today - _entry_date).days <= 30:
+            _age = (_today - _entry_date).days
+            # 상품ID: 30일 이내 차단
+            if _age <= PRODUCT_ID_BLOCK_DAYS:
                 for _pid in _entry.get("product_ids", []):
                     _pid_s = str(_pid)
                     if _pid_s not in used_product_ids:
                         used_product_ids.append(_pid_s)
-            # 상품명 수집
-            for _pname in _entry.get("product_names", []):
-                if _pname and _pname not in used_product_names:
-                    used_product_names.append(_pname)
-            # 상품군 키워드 수집 (search_keyword 기반)
-            _kw = _entry.get("search_keyword", "").strip()
-            if _kw and _kw not in used_product_groups:
-                used_product_groups.append(_kw)
-        print(f"  [공통로그] 최근 30일 사용 상품ID {len(used_product_ids)}개")
-        print(f"  [공통로그] 누적 상품군 {len(used_product_groups)}개")
+                for _pname in _entry.get("product_names", []):
+                    if _pname and _pname not in used_product_names:
+                        used_product_names.append(_pname)
+            # 상품군: 7일 이내만 차단
+            if _age <= PRODUCT_GROUP_BLOCK_DAYS:
+                _kw = _entry.get("search_keyword", "").strip()
+                if _kw and _kw not in used_product_groups:
+                    used_product_groups.append(_kw)
+        print(f"  [공통로그] 최근 {PRODUCT_ID_BLOCK_DAYS}일 사용 상품ID {len(used_product_ids)}개")
+        print(f"  [공통로그] 최근 {PRODUCT_GROUP_BLOCK_DAYS}일 상품군 {len(used_product_groups)}개")
     except Exception as _e:
         print(f"  [공통로그] 로드 스킵: {_e}")
 
