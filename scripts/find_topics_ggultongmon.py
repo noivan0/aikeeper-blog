@@ -432,8 +432,19 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
 ✅ 선택해야 할 롱테일: "2만원대 블루투스 이어폰 노이즈캔슬링 성능 비교", "4L 에어프라이어 1인가구 추천 3종"
 → 상품명·가격대·사용 상황·타겟이 제목에 구체적으로 드러나도록 하세요
 
+**[응답 순서 — 반드시 이 순서대로]**
+
+===PRODUCT_IDS===
+위 목록에서 포스트에 쓸 상품 번호 (쉼표 구분, 3개, 예: 1,3,5)
+반드시 동일한 구매 의도를 가진 상품 3개를 먼저 확정한다.
+
+===CONSISTENCY_CHECK===
+선택한 상품명을 그대로 나열하고, 이 3개가 동일 구매 의도인지 한 줄로 확인
+예) "나이키양말/화이트삭양말/코멧우산 → 양말과 우산은 구매의도 불일치 → 재선정 필요"
+예) "세타필로션/일리윤로션/에스트라크림 → 모두 보습 스킨케어 → OK"
+
 ===TOPIC===
-포스트 제목 (50자 이내, 이모지 금지)
+포스트 제목 (50자 이내, 이모지 금지) — 반드시 위에서 선택한 상품을 기반으로 작성
 - 광고 카피처럼 궁금증을 유발하거나 감정을 자극하는 문장으로 작성
 - "TOP3", "완전정리", "후회없는 선택법" 같은 진부한 표현은 피하세요
 - 대신 아래 스타일 중 하나를 상황에 맞게 적용:
@@ -443,14 +454,20 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
   경고형: "이거 모르고 사면 두 번 삽니다"
   공감형: "저도 처음엔 비싼 걸 샀습니다, 결론은 달랐습니다"
   질문형: "왜 같은 가격인데 이렇게 다를까요?"
+
 ===SEARCH_KEYWORD===
-파트너스 API 검색 키워드 (1~3단어, 한국어, 소비자가 검색할 실제 단어)
-===PRODUCT_IDS===
-위 목록에서 포스트에 쓸 상품 번호 (쉼표 구분, 3개, 예: 1,3,5)
+선택한 상품들의 실제 상품명 기반 검색 키워드 (1~3단어, 한국어)
+반드시 위에서 선택한 PRODUCT_IDS 상품군과 일치해야 함
+
 ===ANGLE===
 포스트 작성 각도 한 줄 (독자 관점, 구체적)
+
 ===LABELS===
-이 글의 카테고리 라벨 3개 (쉼표 구분, 예: 아기용품, 신생아 준비물, 육아템)
+선택한 상품들의 실제 카테고리 라벨 3개 (쉼표 구분)
+반드시 위에서 선택한 실제 상품명/상품군 기반으로 작성
+예) 양말 포스트 → "남성 양말, 스포츠 양말, 양말 추천" O / "여성패션, 가성비 가방" X
+예) 로션 포스트 → "보습 로션, 민감성 피부, 스킨케어" O / "뷰티, 화장품" X
+
 ===META===
 검색결과 설명 (150~160자)"""
 
@@ -470,15 +487,33 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
             selected = products[:3]
         if len(selected) < 3:
             selected = products[:3]
+
+        # 일관성 검증: CONSISTENCY_CHECK에 "불일치" "재선정" 등 경고 포함 시 로그
+        consistency = extract(text, "CONSISTENCY_CHECK")
+        if consistency and any(w in consistency for w in ["불일치", "재선정", "다른 목적", "NG", "X"]):
+            print(f"  [일관성경고] {consistency[:80]}")
+
+        # SEARCH_KEYWORD와 LABELS가 실제 상품명과 관련 있는지 간단 검증
+        search_kw = extract(text, "SEARCH_KEYWORD") or cat_name
+        labels = [l.strip() for l in extract(text, "LABELS").split(",") if l.strip()]
+
+        # 선택 상품명 키워드 추출 (간단 검증용)
+        selected_names_flat = " ".join([
+            p.get("productName", p.get("name", "")).lower()
+            for p in selected
+        ])
+
         return {
             "topic":             topic,
-            "search_keyword":    extract(text, "SEARCH_KEYWORD") or cat_name,
+            "search_keyword":    search_kw,
             "angle":             extract(text, "ANGLE"),
-            "labels":            [l.strip() for l in extract(text, "LABELS").split(",") if l.strip()],
+            "labels":            labels,
             "meta_desc":         extract(text, "META"),
             "category":          cat_name,
             "cat_id":            cat_id,
             "selected_products": selected,
+            "consistency_check": consistency,
+            "selected_names":    selected_names_flat,
         }
 
     def _call(p):
@@ -492,7 +527,21 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
     # 첫 시도
     result = parse_result(_call(prompt))
 
-    # 주제 빈값 감지 → 최대 3회 재시도
+    # ① 일관성 검증: 선택 상품들이 동일 구매의도인지 — 최대 2회 재시도
+    for attempt in range(2):
+        consistency = result.get("consistency_check", "")
+        if not consistency:
+            break
+        if any(w in consistency for w in ["불일치", "재선정", "다른 목적", "NG", " X"]):
+            print(f"  [일관성재시도 {attempt+1}/2] 상품 조합 불일치 감지 → 재선정")
+            retry_prompt = (prompt +
+                f"\n\n[필수] 방금 선택한 상품들은 구매 의도가 일치하지 않습니다: {consistency[:60]}\n"
+                f"반드시 동일한 구매 의도를 가진 상품 3개를 다시 선정하세요.")
+            result = parse_result(_call(retry_prompt))
+        else:
+            break
+
+    # ② 주제 빈값 감지 → 최대 3회 재시도
     for attempt in range(3):
         if result["topic"]:
             break
@@ -506,7 +555,7 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
         result["topic"] = f"{names[0]} vs {names[1]}, 직접 써봤습니다"
         print(f"  [FALLBACK] 빈 주제 → 상품명 기반 자동 생성: {result['topic']}")
 
-    # 중복 감지 → 최대 2회 재시도
+    # ③ 중복 감지 → 최대 2회 재시도
     for attempt in range(2):
         if not is_duplicate_topic(result["topic"], used_titles):
             break
