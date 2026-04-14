@@ -10,7 +10,8 @@ from pathlib import Path
 LOG_FILE = Path(__file__).parent.parent / "used_topics.jsonl"
 
 
-def log_topic(blog_id: str, topic: str, keywords: str, search_keyword: str = "", product_ids: list = None) -> None:
+def log_topic(blog_id: str, topic: str, keywords: str, search_keyword: str = "",
+              product_ids: list = None, product_names: list = None) -> None:
     """발행 성공 시 주제를 로그에 기록"""
     entry = {
         "blog": blog_id,
@@ -18,6 +19,7 @@ def log_topic(blog_id: str, topic: str, keywords: str, search_keyword: str = "",
         "keywords": keywords,
         "search_keyword": search_keyword,   # 쿠팡 검색 키워드 (상품 중복 방지용)
         "product_ids": product_ids or [],   # 쿠팡 상품 ID 목록 (상품 레벨 중복 방지)
+        "product_names": product_names or [],  # 쿠팡 상품명 목록 (Claude 프롬프트용)
         "date": datetime.date.today().isoformat(),
         "ts": datetime.datetime.now().isoformat(),
     }
@@ -49,6 +51,9 @@ def is_duplicate(topic: str, keywords: str = "", days: int = 7,
     if not check_product_ids:
         return False
 
+    # 30일 이내 동일 상품ID 재사용 차단
+    cutoff = today - datetime.timedelta(days=30)
+
     with open(LOG_FILE, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -58,8 +63,8 @@ def is_duplicate(topic: str, keywords: str = "", days: int = 7,
                 entry = json.loads(line)
                 entry_date = datetime.date.fromisoformat(entry["date"])
 
-                # 당일 발행만 체크
-                if entry_date != today:
+                # 30일 이내 발행만 체크
+                if entry_date < cutoff:
                     continue
 
                 # 상품 ID 1개 이상 겹치면 중복

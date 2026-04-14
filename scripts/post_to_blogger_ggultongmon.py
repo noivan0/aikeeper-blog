@@ -604,9 +604,15 @@ def main():
             for p in products
             if p.get("productId") or p.get("itemId")
         ]
+        _product_names = [
+            p.get("productName", p.get("name", ""))
+            for p in products
+            if p.get("productName") or p.get("name")
+        ]
         _log_topic("ggultongmon", TOPIC, _keywords,
-                   search_keyword=_keywords, product_ids=_product_ids)
-        print(f"  📝 used_topics.jsonl 기록 완료: {TOPIC[:50]} | 상품ID {len(_product_ids)}개")
+                   search_keyword=_keywords, product_ids=_product_ids,
+                   product_names=_product_names)
+        print(f"  📝 used_topics.jsonl 기록 완료: {TOPIC[:50]} | 상품ID {len(_product_ids)}개 | 상품명 {len(_product_names)}개")
     except Exception as _le:
         print(f"  ℹ️  주제 로그 기록 스킵 (비치명적): {_le}")
 

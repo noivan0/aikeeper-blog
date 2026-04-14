@@ -327,14 +327,17 @@ def pick_category_and_products() -> tuple[int, str, list]:
 
 
 def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
-                               used_titles: list = None) -> dict:
+                               used_titles: list = None,
+                               used_product_names: list = None) -> dict:
     """
     Claude에게 베스트 상품 목록을 주고 블로그 포스트 최적 주제 선정 요청
     - 단순 카테고리명이 아닌 실제 상품명 기반으로 구체적 검색 키워드 도출
     - used_titles: 기존 포스트 제목 목록 (중복방지용)
+    - used_product_names: 최근 30일 사용된 상품명 목록 (상품 단위 중복방지)
     """
     today = datetime.now(timezone(timedelta(hours=9))).strftime("%Y년 %m월 %d일")
     used_titles = used_titles or []
+    used_product_names = used_product_names or []
 
     # 상위 15개 상품 요약 (상품 없으면 카테고리명으로 주제 생성 요청)
     if products:
@@ -364,17 +367,28 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
     # 최근 포스트 제목 컨텍스트 (동일 제품군 중복 방지)
     recent_context = ""
     if used_titles:
-        recent_list = "\n".join(f"- {t}" for t in used_titles[:20])
+        recent_list = "\n".join(f"- {t}" for t in used_titles[:50])
         recent_context = (
-            f"\n[참고: 기존 포스트 제목 목록]\n{recent_list}\n"
-            f"→ 같은 카테고리/시즌 키워드(캠핑, 봄 등)가 겹쳐도 괜찮습니다.\n"
+            f"\n[참고: 기존 포스트 제목 목록 (최근 50개)]\n{recent_list}\n"
+            f"→ 같은 카테고리/시즌 키워드가 겹쳐도 괜찮습니다.\n"
             f"→ 단, 거의 동일한 제품군을 동일한 구매의도로 다루는 경우만 피하세요.\n"
-            f"  (예: '에어프라이어 TOP3'가 이미 있으면 '에어프라이어 추천' 금지,\n"
-            f"   하지만 '봄 캠핑 버너'가 있어도 '봄 캠핑 랜턴'은 OK)\n"
+        )
+
+    # 최근 30일 사용된 상품명 컨텍스트 (상품 단위 중복 방지 — 핵심)
+    used_products_context = ""
+    if used_product_names:
+        pname_list = "\n".join(f"- {n}" for n in used_product_names[:60])
+        used_products_context = (
+            f"\n[⛔ 최근 발행에서 이미 사용한 상품 목록 — 아래 상품은 절대 재선정 금지]\n"
+            f"{pname_list}\n"
+            f"→ 위 상품과 동일한 상품(브랜드+제품명 기준)은 선정하지 마세요.\n"
+            f"→ 같은 카테고리의 다른 상품은 괜찮습니다.\n"
+            f"   예) '삼다수'가 이미 있으면 '아쿠아시스'나 '스파클'만 다시 써도 되는 조합인지 확인.\n"
+            f"   단, 삼다수+아쿠아시스+스파클 세 개가 모두 이미 발행됐다면 생수 카테고리 자체를 피하세요.\n"
         )
 
     prompt = f"""오늘은 {today}. 쿠팡 '{cat_name}' 카테고리 실시간 베스트 상품 목록입니다.
-{high_cpc_hint}{season_hint}{recent_context}
+{high_cpc_hint}{season_hint}{recent_context}{used_products_context}
 {product_summary}
 
 이 상품들을 분석해서 쿠팡 파트너스 블로그 '꿀통 몬스터' 포스트 주제를 선정하세요.
@@ -517,24 +531,28 @@ if __name__ == "__main__":
     client_secret = os.environ.get("BLOGGER_CLIENT_SECRET", "")
     used_titles = load_recent_post_titles(blog_id, refresh_token, client_id, client_secret, max_posts=50)
 
-    # ── 공통 used_topics.jsonl 로그 — 당일 사용 상품 ID만 수집 ──────────
+    # ── 공통 used_topics.jsonl 로그 — 최근 30일 사용 상품 ID 수집 ──────────
     import datetime as _dt
     _today = _dt.date.today()
     used_search_keywords: list[str] = []   # 미사용 (주제 차단 없음)
-    used_product_ids: list[str] = []       # 당일 사용 상품 ID만
+    used_product_ids: list[str] = []       # 최근 30일 사용 상품 ID
+    used_product_names: list[str] = []     # 최근 30일 사용 상품명 (Claude 프롬프트용)
     try:
         sys.path.insert(0, BASE_DIR)
         from scripts.used_topics_log import get_recent_topics as _get_recent
-        _recent = _get_recent(days=1)
-        print(f"  [공통로그] 당일 발행 {len(_recent)}개 로드")
+        _recent = _get_recent(days=30)
+        print(f"  [공통로그] 당일 발행 {len([e for e in _recent if e.get('date') == _today.isoformat()])}개 로드")
         for _entry in _recent:
-            _entry_date = _dt.date.fromisoformat(_entry.get("date", "2000-01-01"))
-            if _entry_date == _today:
-                for _pid in _entry.get("product_ids", []):
-                    _pid_s = str(_pid)
-                    if _pid_s not in used_product_ids:
-                        used_product_ids.append(_pid_s)
-        print(f"  [공통로그] 당일 사용 상품ID {len(used_product_ids)}개")
+            for _pid in _entry.get("product_ids", []):
+                _pid_s = str(_pid)
+                if _pid_s not in used_product_ids:
+                    used_product_ids.append(_pid_s)
+            # 상품명 수집 (topic에서 추출용)
+            _pnames = _entry.get("product_names", [])
+            for _pname in _pnames:
+                if _pname and _pname not in used_product_names:
+                    used_product_names.append(_pname)
+        print(f"  [공통로그] 최근 30일 사용 상품ID {len(used_product_ids)}개")
     except Exception as _e:
         print(f"  [공통로그] 로드 스킵: {_e}")
 
@@ -551,26 +569,31 @@ if __name__ == "__main__":
 
     # Step 2: Claude 주제 선정 — 검색 키워드/상품ID 중복 사전 필터
     # 이미 사용된 search_keyword와 겹치는 상품 제거
-    if used_search_keywords or used_product_ids:
+    if used_product_ids:
         filtered_products = []
+        excluded = []
         for p in products:
             pid = str(p.get("productId", p.get("itemId", "")))
-            # 상품 ID 중복 체크
+            # 최근 30일 사용 상품 ID 중복 체크 — 제거
             if pid and pid in used_product_ids:
+                excluded.append(p.get("productName", p.get("name", pid)))
                 continue
             filtered_products.append(p)
+        if excluded:
+            print(f"  [상품필터] 최근 30일 중복 상품 {len(excluded)}개 제외: {', '.join(excluded[:5])}")
         if len(filtered_products) < 3:
-            filtered_products = products  # 필터 후 부족하면 원본 유지
+            print(f"  [상품필터] 후보 부족({len(filtered_products)}개) → 원본 유지 (Claude가 2차 판단)")
+            filtered_products = products
         products = filtered_products
         print(f"  [상품필터] 중복 제거 후 {len(products)}개 후보")
 
     if manual_topic:
         print(f"[수동] 주제 고정: {manual_topic}")
-        topic_data = generate_topic_with_claude(cat_id, cat_name, products, used_titles)
+        topic_data = generate_topic_with_claude(cat_id, cat_name, products, used_titles, used_product_names)
         topic_data["topic"] = manual_topic  # 주제만 덮어쓰기
     else:
         print(f"Claude 주제 선정 중...")
-        topic_data = generate_topic_with_claude(cat_id, cat_name, products, used_titles)
+        topic_data = generate_topic_with_claude(cat_id, cat_name, products, used_titles, used_product_names)
 
     # 주제/키워드 레벨 차단 없음 — 상품 ID만 체크 (post_to_blogger_ggultongmon에서 처리)
     print(f"\n선정 주제: {topic_data['topic']}")
