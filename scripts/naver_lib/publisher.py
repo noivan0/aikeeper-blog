@@ -41,6 +41,14 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     - OG_MAP 없는 링크(브랜드커넥트) → PLAIN_LINK (텍스트 링크로 처리)
     반환: (components, image_upload_urls)
     """
+    # ── 본문 전처리: HTML 태그 완전 제거 (AI 생성 HTML이 텍스트로 출력되는 문제 방지) ──
+    A_TAG_PREPROC = re.compile(r'<a\s+href=["\']([^"\']+)["\'][^>]*>[^<]*</a>', re.IGNORECASE)
+    def _replace_a_tag(m):
+        return f"\n지금 네이버에서 확인하기 → {m.group(1)}\n"
+    body = A_TAG_PREPROC.sub(_replace_a_tag, body)
+    body = re.sub(r'<[^>]+>', '', body)           # 나머지 HTML 태그 제거
+    body = re.sub(r'^-{3,}$', '', body, flags=re.MULTILINE)  # --- 구분선 제거
+
     LINK_PAT  = re.compile(r'https?://(?:link\.coupang\.com|naver\.me|brand\.naver\.com)\S+')
     A_TAG_PAT = re.compile(r'<a\s+href=["\']([^"\']+)["\'][^>]*>([^<]*)</a>', re.IGNORECASE)
 
@@ -77,7 +85,11 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
             current_lines.append(line)
     flush()
 
-    HEADING_EMOJIS = ('🛒', '✅', '⚠', '📌', '🎯', '💡', '🔍', '📊', '🏷', '💰', '👍', '❌', '🔑', '📋', '🎁')
+    HEADING_EMOJIS = (
+        '🛒', '✅', '⚠', '📌', '🎯', '💡', '🔍', '📊', '🏷', '💰', '👍', '❌', '🔑', '📋', '🎁',
+        '🥚', '🔩', '⏱', '🍠', '💬', '🧹', '🔧', '📋', '🏆', '🌟', '💎', '🎪', '🔑', '🛍',
+        '🎁', '💝', '🔥', '⚡', '🌈', '🎨', '📱', '🖥', '🏠', '🍳', '🥘', '🧺', '🪣', '🧴',
+    )
     components = []
     first_image = True
     url_seen_count: dict[str, int] = {}
@@ -395,18 +407,21 @@ async def publish(
 
         # IMAGE_HERE_SLOT을 extra_uploaded 이미지로 교체
         # 소제목 직후 배치: IMAGE_HERE_SLOT 위치에 실제 이미지 삽입
+        # 문제 2 수정: IMAGE_HERE_SLOT → 이미지 있으면 삽입, 없으면 제거 (절대 텍스트로 남기지 않음)
         extra_queue = list(extra_uploaded)
         new_final = []
         for comp in final_comps:
-            if isinstance(comp, dict) and comp.get('_type') == 'IMAGE_HERE_SLOT' and extra_queue:
-                eu = extra_queue.pop(0)
-                new_final.append(image_comp(
-                    src=eu["src"], path=eu["path"],
-                    width=eu["width"], height=eu["height"],
-                    filename=eu["fileName"],
-                    represent=(len(new_final) == 0),  # 첫 번째 이미지만 대표
-                    file_size=eu["fileSize"]
-                ))
+            if isinstance(comp, dict) and comp.get('_type') == 'IMAGE_HERE_SLOT':
+                if extra_queue:
+                    eu = extra_queue.pop(0)
+                    new_final.append(image_comp(
+                        src=eu["src"], path=eu["path"],
+                        width=eu["width"], height=eu["height"],
+                        filename=eu["fileName"],
+                        represent=(len(new_final) == 0),
+                        file_size=eu["fileSize"]
+                    ))
+                # else: 이미지 없으면 그냥 스킵 (IMAGE_HERE_SLOT 제거)
             else:
                 new_final.append(comp)
         final_comps = new_final
