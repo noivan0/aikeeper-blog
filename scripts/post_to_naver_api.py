@@ -3,7 +3,8 @@
 네이버 블로그 API 발행 v6 — 이미지/OG링크/스타일 완전 지원
 ─────────────────────────────────────────────────────────────
 핵심 흐름:
-1. Playwright 에디터 로드 → tokenId / se-auth 캡처
+1. Playwright 에디터 로드 → 쿠팡 링크 입력(se-auth 캡처) → Ctrl+S 자동저장(tokenId 캡처)
+   ※ 임시 발행 없음 — "_" 포스팅이 블로그에 남지 않음
 2. 쿠팡 상품 이미지를 로컬에 다운로드 → #hidden-file input으로 업로드
 3. 업로드 결과(src/path) 수집 → image 컴포넌트 구성
 4. oglink API 호출 → oglinkSign 수집
@@ -351,9 +352,15 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
         captured = {"token_id": "", "se_auth": "", "se_app_id": ""}
 
         async def on_req(req):
+            # RabbitWrite.naver POST → tokenId 추출
             if "RabbitWrite.naver" in req.url and req.method == "POST":
                 pp = urllib.parse.parse_qs(req.post_data or "", keep_blank_values=True)
                 if pp.get("tokenId"):
+                    captured["token_id"] = pp["tokenId"][0]
+            # RabbitAutoSaveWrite.naver POST → tokenId 추출 (임시 발행 없이 캡처 가능)
+            if "RabbitAutoSaveWrite.naver" in req.url and req.method == "POST":
+                pp = urllib.parse.parse_qs(req.post_data or "", keep_blank_values=True)
+                if pp.get("tokenId") and not captured["token_id"]:
                     captured["token_id"] = pp["tokenId"][0]
             if "oglink" in req.url and "platform.editor" in req.url:
                 if not captured["se_auth"]:
@@ -405,15 +412,15 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
             print("  ❌ 에디터 로드 실패"); await browser.close(); return None
         await page.wait_for_timeout(1000)
 
-        # ── 1단계: tokenId + se-auth 캡처 ──────────────────────────────
-        # 제목에 더미 입력
+        # ── 1단계: tokenId + se-auth 캡처 (자동저장 방식 — 임시 발행 없음) ──
+        # 제목에 더미 입력 (에디터 활성화용)
         tc = await page.query_selector(".se-title-text")
         if tc:
             box = await tc.bounding_box()
             await page.mouse.click(box['x']+50, box['y']+box['height']/2)
         await page.keyboard.type("_", delay=10)
 
-        # 본문에 쿠팡 링크 타이핑 → OG 트리거 + se-auth 캡처
+        # 본문에 쿠팡 링크 타이핑 → OG 카드 트리거 → se-auth 캡처
         be = await page.query_selector(".se-component.se-text")
         if be:
             box = await be.bounding_box()
@@ -426,53 +433,22 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
         else:
             await page.wait_for_timeout(5000)
 
-        # 발행 버튼 → 확인 버튼으로 tokenId 캡처 (RabbitWrite POST에서 추출)
-        # 이 때 "_" 제목 임시 포스팅이 발행됨 → 아래에서 즉시 삭제
-        dummy_log_no = None
-        pub_btn = await page.query_selector(".publish_btn__m9KHH")
-        if pub_btn:
-            await pub_btn.click(); await page.wait_for_timeout(3000)
-            confirm = await page.query_selector(".confirm_btn__WEaBq")
-            if confirm:
-                await confirm.click(); await page.wait_for_timeout(6000)
-                # 발행 완료 후 URL에서 logNo 추출 (임시 포스팅 logNo)
-                cur_url = page.url
-                m = re.search(r'logNo[=:](\d+)', cur_url)
-                if m:
-                    dummy_log_no = m.group(1)
-                    print(f"  임시 발행 logNo: {dummy_log_no} (즉시 삭제 예정)")
+        # Ctrl+S로 자동저장 트리거 → RabbitAutoSaveWrite.naver POST → tokenId 캡처
+        # 실제 발행이 아니므로 "_" 임시 포스팅이 블로그에 남지 않음
+        print("  자동저장(Ctrl+S)으로 tokenId 캡처 시도...")
+        await page.keyboard.press("Control+s")
+        await page.wait_for_timeout(4000)  # 자동저장 완료 대기
 
-        token_id = captured["token_id"]
-        se_auth  = captured["se_auth"]
+        token_id  = captured["token_id"]
+        se_auth   = captured["se_auth"]
         se_app_id = captured["se_app_id"]
         print(f"  tokenId: {'있음' if token_id else '없음'}")
         print(f"  se-auth: {'있음' if se_auth else '없음'}")
 
-        # ── 임시 발행된 "_" 포스팅 즉시 삭제 ───────────────────────────
-        if dummy_log_no:
-            try:
-                # PostDelete.naver가 올바른 엔드포인트 (200 반환 확인됨)
-                # 먼저 블로그 홈으로 이동해 세션/쿠키 확보
-                await page.goto(f"https://blog.naver.com/{BLOG_ID}", timeout=15000)
-                await page.wait_for_timeout(1500)
-                del_resp = await page.evaluate(
-                    "([bid, logNo]) => fetch('https://blog.naver.com/PostDelete.naver', {"
-                    "  method: 'POST',"
-                    "  headers: {'Content-Type': 'application/x-www-form-urlencoded'},"
-                    "  body: `blogId=${bid}&logNo=${logNo}`,"
-                    "  credentials: 'include'"
-                    "}).then(r => r.status).catch(e => -1)",
-                    [BLOG_ID, dummy_log_no]
-                )
-                if del_resp == 200:
-                    print(f"  ✅ 임시 포스팅 삭제 완료 (logNo={dummy_log_no})")
-                else:
-                    print(f"  ⚠️ 임시 포스팅 삭제 응답: {del_resp} (수동 삭제 필요, logNo={dummy_log_no})")
-            except Exception as e:
-                print(f"  ⚠️ 임시 포스팅 삭제 실패 (수동 삭제 필요, logNo={dummy_log_no}): {e}")
-
         if not token_id:
-            print("  ❌ tokenId 없음"); await browser.close(); return None
+            print("  ❌ tokenId 캡처 실패 (자동저장 미작동) — 발행 중단")
+            await browser.close()
+            return None
 
         # ── 2단계: 쿠팡 썸네일 다운로드 ───────────────────────────────
         # 먼저 oglink API로 썸네일 URL 수집
