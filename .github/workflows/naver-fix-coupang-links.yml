@@ -1,0 +1,86 @@
+name: Naver Blog - Fix Coupang Links (AFFSDP → shortenUrl)
+
+on:
+  workflow_dispatch:
+    inputs:
+      coupang_urls:
+        description: 'JSON array of coupang URLs to convert'
+        required: true
+        type: string
+
+jobs:
+  convert-deeplinks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Convert AFFSDP URLs to shortenUrl
+        env:
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+          COUPANG_URLS_JSON: ${{ github.event.inputs.coupang_urls }}
+        run: |
+          python3 - << 'PYEOF'
+          import hmac, hashlib, json, os, sys, urllib.request
+          from time import gmtime, strftime
+
+          ACCESS_KEY = os.environ['COUPANG_ACCESS_KEY']
+          SECRET_KEY = os.environ['COUPANG_SECRET_KEY']
+          DOMAIN = 'https://api-gateway.coupang.com'
+          coupang_urls = json.loads(os.environ['COUPANG_URLS_JSON'])
+
+          def gen_hmac(method, path):
+              dt = strftime('%y%m%d', gmtime()) + 'T' + strftime('%H%M%S', gmtime()) + 'Z'
+              msg = dt + method + path
+              sig = hmac.new(SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()
+              return f'CEA algorithm=HmacSHA256, access-key={ACCESS_KEY}, signed-date={dt}, signature={sig}'
+
+          def deeplink_batch(urls):
+              path = '/v2/providers/affiliate_open_api/apis/openapi/deeplink'
+              auth = gen_hmac('POST', path)
+              body = json.dumps({'coupangUrls': urls}).encode('utf-8')
+              req = urllib.request.Request(
+                  DOMAIN + path, data=body, method='POST',
+                  headers={'Authorization': auth, 'Content-Type': 'application/json;charset=UTF-8'}
+              )
+              with urllib.request.urlopen(req, timeout=15) as r:
+                  return json.loads(r.read().decode('utf-8'))
+
+          results = {}
+          # 최대 10개씩 배치 처리
+          for i in range(0, len(coupang_urls), 10):
+              batch = coupang_urls[i:i+10]
+              try:
+                  resp = deeplink_batch(batch)
+                  data_list = resp.get('data', [])
+                  if len(data_list) == len(batch):
+                      for orig_url, item in zip(batch, data_list):
+                          shorten = item.get('shortenUrl', '')
+                          if shorten:
+                              results[orig_url] = shorten
+                              print(f'OK: {orig_url[-40:]} -> {shorten}', flush=True)
+                          else:
+                              print(f'FAIL(no shortenUrl): {orig_url[-40:]}', flush=True)
+                  else:
+                      print(f'WARN: 배치 크기 불일치 {len(data_list)} vs {len(batch)}', flush=True)
+              except Exception as e:
+                  print(f'FAIL batch: {e}', flush=True)
+
+          print(f'\n총 {len(results)}/{len(coupang_urls)} 변환 완료', flush=True)
+
+          os.makedirs('results', exist_ok=True)
+          with open('results/shorten_url_map.json', 'w') as f:
+              json.dump(results, f, ensure_ascii=False, indent=2)
+          print('저장: results/shorten_url_map.json', flush=True)
+          PYEOF
+
+      - name: Commit shorten_url_map.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add results/shorten_url_map.json
+          git diff --staged --quiet || git commit -m "chore: naver shorten url map $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          git push origin main
