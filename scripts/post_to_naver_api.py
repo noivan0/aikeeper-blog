@@ -65,7 +65,9 @@ OGLINK_API       = "https://platform.editor.naver.com/api/blogpc001/v1/oglink"
 #   se-fs-(빈값) → 20px (소제목, se-fs-fs19와 동일 크기)
 #   se-fs-fs28 → 23px (대제목)
 # se-fs-fs20 → 11px (절대 사용 금지)
-FS = {"tiny": "fs11", "normal": "fs16", "heading": "fs20", "large": "fs28"}
+# 네이버 SE 실제 렌더링 기준 (2026-04-12 역공학 확정)
+# fs11=13px, fs13=15px(본문), fs19=20px(소제목), fs28=23px — fs20 절대 금지(=11px)
+FS = {"tiny": "fs11", "normal": "fs13", "heading": "fs19", "large": "fs28"}
 
 
 def _uid():
