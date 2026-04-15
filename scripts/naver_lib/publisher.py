@@ -318,8 +318,15 @@ async def publish(
                 import requests as _req
                 for ei, eurl in enumerate(extra_image_urls[:15]):
                     try:
+                        # URL 도메인에 맞는 Referer 자동 선택
+                        if 'naver' in eurl or 'pstatic' in eurl:
+                            _ref = 'https://smartstore.naver.com/'
+                        elif 'coupang' in eurl:
+                            _ref = 'https://www.coupang.com/'
+                        else:
+                            _ref = 'https://www.naver.com/'
                         r = _req.get(eurl, timeout=8, allow_redirects=True,
-                                     headers={"Referer": "https://www.naver.com/", "User-Agent": "Mozilla/5.0"})
+                                     headers={"Referer": _ref, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
                         if r.status_code == 200 and len(r.content) > 10000:
                             save_path = _os.path.join(tmpdir, f"extra_{ei}.jpg")
                             with open(save_path, "wb") as f:
