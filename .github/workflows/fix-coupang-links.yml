@@ -1,0 +1,181 @@
+name: Fix Coupang Links (shortenUrl)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix-links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Install dependencies
+        run: pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
+
+      - name: Fix all AFFSDP links → shortenUrl
+        env:
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+          GGULTONGMON_REFRESH_TOKEN: ${{ secrets.GGULTONGMON_REFRESH_TOKEN }}
+          GGULTONGMON_CLIENT_ID: ${{ secrets.GGULTONGMON_CLIENT_ID }}
+          GGULTONGMON_CLIENT_SECRET: ${{ secrets.GGULTONGMON_CLIENT_SECRET }}
+        run: |
+          python3 - << 'PYEOF'
+          import hmac, hashlib, json, os, re, sys, time, urllib.parse, urllib.request
+          from time import gmtime, strftime
+
+          import google.oauth2.credentials
+          import googleapiclient.discovery
+
+          ACCESS_KEY = os.environ['COUPANG_ACCESS_KEY']
+          SECRET_KEY = os.environ['COUPANG_SECRET_KEY']
+          BLOG_ID = '4422596386410826373'
+          DOMAIN = 'https://api-gateway.coupang.com'
+          SUB_ID = 'ggultongmon'
+
+          # Blogger 인증
+          creds = google.oauth2.credentials.Credentials(
+              token=None,
+              refresh_token=os.environ['GGULTONGMON_REFRESH_TOKEN'],
+              client_id=os.environ['GGULTONGMON_CLIENT_ID'],
+              client_secret=os.environ['GGULTONGMON_CLIENT_SECRET'],
+              token_uri='https://oauth2.googleapis.com/token'
+          )
+          service = googleapiclient.discovery.build('blogger', 'v3', credentials=creds)
+
+          AFFSDP_PAT = re.compile(r'https://link\.coupang\.com/re/AFFSDP\?[^\s"<]+')
+
+          def gen_hmac(method, path, query=''):
+              dt = strftime('%y%m%d', gmtime()) + 'T' + strftime('%H%M%S', gmtime()) + 'Z'
+              msg = dt + method + path + query
+              sig = hmac.new(SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()
+              return f'CEA algorithm=HmacSHA256, access-key={ACCESS_KEY}, signed-date={dt}, signature={sig}'
+
+          def deeplink(urls):
+              path = '/v2/providers/affiliate_open_api/apis/openapi/deeplink'
+              auth = gen_hmac('POST', path)
+              body = json.dumps({'coupangUrls': urls}).encode('utf-8')
+              req = urllib.request.Request(
+                  DOMAIN + path, data=body, method='POST',
+                  headers={'Authorization': auth, 'Content-Type': 'application/json;charset=UTF-8'}
+              )
+              with urllib.request.urlopen(req, timeout=15) as r:
+                  raw = r.read()
+                  for enc in ('utf-8', 'euc-kr', 'cp949', 'latin-1'):
+                      try:
+                          return json.loads(raw.decode(enc))
+                      except Exception:
+                          continue
+              return {}
+
+          def get_all_posts():
+              posts, token, page = [], None, 0
+              while True:
+                  kwargs = dict(blogId=BLOG_ID, maxResults=50, fetchBodies=True)
+                  if token: kwargs['pageToken'] = token
+                  r = service.posts().list(**kwargs).execute()
+                  posts.extend(r.get('items', []))
+                  token = r.get('nextPageToken')
+                  page += 1
+                  print(f'  페이지 {page}: 누적 {len(posts)}개', flush=True)
+                  if not token: break
+                  time.sleep(0.3)
+              return posts
+
+          def extract_links(content):
+              result = {}
+              for raw in AFFSDP_PAT.findall(content):
+                  url = raw.replace('&amp;', '&').split('"')[0].split("'")[0].rstrip(');,')
+                  params = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(url).query))
+                  pk = params.get('pageKey', '')
+                  if pk and pk not in result:
+                      result[pk] = {'itemId': params.get('itemId',''), 'vendorItemId': params.get('vendorItemId','')}
+              return result
+
+          def fix_content(content, pk_map):
+              def rep(m):
+                  raw = m.group(0)
+                  url = raw.replace('&amp;', '&').split('"')[0].split("'")[0].rstrip(');,')
+                  params = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(url).query))
+                  pk = params.get('pageKey', '')
+                  return pk_map.get(pk, raw)
+              return AFFSDP_PAT.sub(rep, content)
+
+          print('전체 포스팅 수집 중...')
+          all_posts = get_all_posts()
+          print(f'총 {len(all_posts)}개\n')
+
+          to_fix = []
+          for p in all_posts:
+              content = p.get('content', '')
+              if 'link.coupang.com/re/AFFSDP' in content:
+                  lm = extract_links(content)
+                  if lm:
+                      to_fix.append({'id': p['id'], 'title': p['title'], 'content': content, 'link_map': lm})
+
+          print(f'수정 대상: {len(to_fix)}개\n')
+          ok, skip, fail = 0, 0, 0
+          results = []
+
+          for idx, post in enumerate(to_fix):
+              pid, title = post['id'], post['title'][:50]
+              lm = post['link_map']
+              keys = list(lm.keys())
+              pk_to_shorten = {}
+
+              for i in range(0, len(keys), 10):
+                  batch = keys[i:i+10]
+                  urls = []
+                  for pk in batch:
+                      iid, vid = lm[pk]['itemId'], lm[pk]['vendorItemId']
+                      if iid and vid:
+                          urls.append(f'https://www.coupang.com/vp/products/{pk}?itemId={iid}&vendorItemId={vid}')
+                      else:
+                          urls.append(f'https://www.coupang.com/vp/products/{pk}')
+                  try:
+                      r = deeplink(urls)
+                      for j, d in enumerate(r.get('data', [])):
+                          s = d.get('shortenUrl', '')
+                          if s: pk_to_shorten[batch[j]] = s
+                  except Exception as e:
+                      print(f'  [WARN] deeplink 실패: {e}', flush=True)
+                  if i + 10 < len(keys): time.sleep(0.3)
+
+              if not pk_to_shorten:
+                  print(f'  [{idx+1}/{len(to_fix)}] SKIP(단종): {title}', flush=True)
+                  skip += 1
+                  results.append({'id': pid, 'title': title, 'status': 'skip'})
+                  continue
+
+              new_content = fix_content(post['content'], pk_to_shorten)
+              remaining = len(AFFSDP_PAT.findall(new_content))
+              try:
+                  service.posts().patch(blogId=BLOG_ID, postId=pid, body={'content': new_content}).execute()
+                  ok += 1
+                  print(f'  [{idx+1}/{len(to_fix)}] OK: {title} | {len(pk_to_shorten)}/{len(keys)}개 | 잔여:{remaining}', flush=True)
+                  results.append({'id': pid, 'title': title, 'status': 'ok', 'fixed': len(pk_to_shorten), 'remaining': remaining})
+              except Exception as e:
+                  fail += 1
+                  print(f'  [{idx+1}/{len(to_fix)}] FAIL: {title} | {e}', flush=True)
+                  results.append({'id': pid, 'title': title, 'status': 'fail', 'error': str(e)})
+              time.sleep(1.0)
+
+          print(f'\n=== 완료 ===')
+          print(f'성공: {ok} | 단종스킵: {skip} | 실패: {fail}')
+
+          os.makedirs('results', exist_ok=True)
+          with open('results/fix_links_log.jsonl', 'w') as f:
+              for r in results:
+                  f.write(json.dumps(r, ensure_ascii=False) + '\n')
+          PYEOF
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add results/fix_links_log.jsonl
+          git diff --staged --quiet || git commit -m "chore: fix coupang links log $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          git push origin main
