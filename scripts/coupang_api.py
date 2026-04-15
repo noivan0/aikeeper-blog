@@ -270,6 +270,92 @@ def _save_local_cache(cat_id: str, products: list):
     except Exception:
         pass
 
+def _load_item_id_cache() -> dict:
+    """item_ids 캐시 로드 — {productId: {itemId, vendorItemId}}"""
+    try:
+        if _LOCAL_CACHE.exists():
+            data = json.loads(_LOCAL_CACHE.read_text(encoding="utf-8"))
+            return data.get("item_ids", {})
+    except Exception:
+        pass
+    return {}
+
+def _save_item_id_cache(product_id: str, item_id: str, vendor_item_id: str):
+    """itemId/vendorItemId를 로컬 캐시에 저장"""
+    try:
+        _LOCAL_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        existing = {}
+        if _LOCAL_CACHE.exists():
+            existing = json.loads(_LOCAL_CACHE.read_text(encoding="utf-8"))
+        item_ids = existing.get("item_ids", {})
+        item_ids[str(product_id)] = {
+            "itemId": str(item_id),
+            "vendorItemId": str(vendor_item_id),
+        }
+        existing["item_ids"] = item_ids
+        existing["updated_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+        _LOCAL_CACHE.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+def _extract_item_ids_from_url(url: str) -> tuple:
+    """
+    URL에서 itemId, vendorItemId 파라미터 추출.
+    반환: (itemId, vendorItemId) 또는 (None, None)
+    """
+    m = re.search(r'itemId=(\d+).*?vendorItemId=(\d+)', url)
+    if m:
+        return m.group(1), m.group(2)
+    # vendorItemId가 itemId 앞에 올 수도 있음
+    m2 = re.search(r'vendorItemId=(\d+).*?itemId=(\d+)', url)
+    if m2:
+        return m2.group(2), m2.group(1)
+    return None, None
+
+def _get_item_ids_via_redirect(product_url: str) -> tuple:
+    """
+    productUrl 리다이렉트 추적으로 itemId/vendorItemId 추출.
+    우선순위: URL 직접 파싱 → curl 리다이렉트 → scrapling
+    반환: (itemId, vendorItemId) 또는 (None, None)
+    """
+    import subprocess
+
+    # 1단계: productUrl 자체에 itemId/vendorItemId가 있는지 확인
+    item_id, vendor_item_id = _extract_item_ids_from_url(product_url)
+    if item_id and vendor_item_id:
+        return item_id, vendor_item_id
+
+    # 2단계: curl 리다이렉트 추적
+    try:
+        result = subprocess.run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{redirect_url}",
+             "-L", "--max-redirs", "5",
+             "-A", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)",
+             product_url],
+            capture_output=True, text=True, timeout=10
+        )
+        redirect_url = result.stdout.strip()
+        if redirect_url:
+            item_id, vendor_item_id = _extract_item_ids_from_url(redirect_url)
+            if item_id and vendor_item_id:
+                return item_id, vendor_item_id
+    except Exception:
+        pass
+
+    return None, None
+
+def _build_complete_coupang_link(product_url: str, item_id: str, vendor_item_id: str) -> str:
+    """
+    productUrl에 itemId/vendorItemId가 없으면 추가하여 완전한 링크 반환.
+    이미 있으면 그대로 반환.
+    """
+    if 'itemId=' in product_url and 'vendorItemId=' in product_url:
+        return product_url  # 이미 완전한 링크
+    # pageKey 파라미터 뒤에 삽입
+    if '?' in product_url:
+        return f"{product_url}&itemId={item_id}&vendorItemId={vendor_item_id}"
+    return product_url
+
 def refresh_cache_from_git():
     """git pull로 Actions 캐시 갱신"""
     try:
@@ -333,7 +419,8 @@ def get_products_with_shorten(keyword_or_products, limit: int = 5) -> list:
     """
     상품 수집 + shortenUrl 설정 통합
     - keyword_or_products: str(키워드) 또는 list(이미 수집된 상품)
-    - productUrl이 이미 affiliate URL이므로 deeplink API 불필요
+    - productUrl에서 itemId/vendorItemId 추출 → 완전한 링크 생성
+    - 추출된 itemId/vendorItemId는 로컬 캐시에 저장 (재조회 방지)
     """
     try:
         if isinstance(keyword_or_products, str):
@@ -341,9 +428,53 @@ def get_products_with_shorten(keyword_or_products, limit: int = 5) -> list:
         else:
             products = list(keyword_or_products)
 
+        # 캐시 로드 (한 번만)
+        item_id_cache = _load_item_id_cache()
+
         for p in products:
-            if not p.get("shortenUrl"):
-                p["shortenUrl"] = p.get("productUrl", "#")
+            if p.get("shortenUrl"):
+                continue  # 이미 shortenUrl이 있으면 건너뜀
+
+            product_url = p.get("productUrl", "#")
+            product_id = str(p.get("productId", ""))
+
+            # 1. productUrl 자체에 itemId/vendorItemId가 있는지 확인
+            item_id, vendor_item_id = _extract_item_ids_from_url(product_url)
+
+            if item_id and vendor_item_id:
+                # productUrl이 이미 완전한 링크 → 그대로 사용
+                p["shortenUrl"] = product_url
+                # 캐시에 없으면 저장
+                if product_id and product_id not in item_id_cache:
+                    _save_item_id_cache(product_id, item_id, vendor_item_id)
+                    item_id_cache[product_id] = {"itemId": item_id, "vendorItemId": vendor_item_id}
+
+            elif product_id and product_id in item_id_cache:
+                # 2. 로컬 캐시에 itemId/vendorItemId가 있으면 링크 완성
+                cached = item_id_cache[product_id]
+                item_id = cached["itemId"]
+                vendor_item_id = cached["vendorItemId"]
+                p["shortenUrl"] = _build_complete_coupang_link(product_url, item_id, vendor_item_id)
+                print(f"  [캐시] {product_id}: itemId={item_id}, vendorItemId={vendor_item_id}")
+
+            elif product_url and product_url != "#":
+                # 3. 리다이렉트 추적으로 itemId/vendorItemId 추출
+                print(f"  [리다이렉트] {product_id} itemId 추출 중...")
+                item_id, vendor_item_id = _get_item_ids_via_redirect(product_url)
+                if item_id and vendor_item_id:
+                    p["shortenUrl"] = _build_complete_coupang_link(product_url, item_id, vendor_item_id)
+                    print(f"  [성공] itemId={item_id}, vendorItemId={vendor_item_id}")
+                    if product_id:
+                        _save_item_id_cache(product_id, item_id, vendor_item_id)
+                        item_id_cache[product_id] = {"itemId": item_id, "vendorItemId": vendor_item_id}
+                else:
+                    # 4. 추출 실패 → 기존 productUrl 유지 (비치명적 fallback)
+                    print(f"  [FALLBACK] {product_id}: itemId 추출 실패, productUrl 사용")
+                    p["shortenUrl"] = product_url
+
+            else:
+                p["shortenUrl"] = product_url or "#"
+
         return products
     except Exception as e:
         print(f"[WARN] 상품 수집 실패: {e}")

@@ -37,9 +37,13 @@ CATEGORY        = os.environ.get("CATEGORY") or os.environ.get("category", "")
 BLOG_ID         = os.environ.get("TARGET_BLOG_ID", "4422596386410826373")
 PRODUCTS_JSON   = os.environ.get("PRODUCTS_JSON") or os.environ.get("products_json", "")
 
-BLOGGER_CLIENT_ID     = os.environ["BLOGGER_CLIENT_ID"]
-BLOGGER_CLIENT_SECRET = os.environ["BLOGGER_CLIENT_SECRET"]
-BLOGGER_REFRESH_TOKEN = os.environ["BLOGGER_REFRESH_TOKEN"]
+# ggultongmon 전용 OAuth 클라이언트 우선 사용, 없으면 기존 공용 키 폴백
+BLOGGER_CLIENT_ID     = (os.environ.get("GGULTONGMON_CLIENT_ID")
+                         or os.environ.get("BLOGGER_CLIENT_ID", ""))
+BLOGGER_CLIENT_SECRET = (os.environ.get("GGULTONGMON_CLIENT_SECRET")
+                         or os.environ.get("BLOGGER_CLIENT_SECRET", ""))
+BLOGGER_REFRESH_TOKEN = (os.environ.get("GGULTONGMON_REFRESH_TOKEN")
+                         or os.environ.get("BLOGGER_REFRESH_TOKEN", ""))
 
 LABELS = [l.strip() for l in LABELS_STR.split(",") if l.strip()]
 
