@@ -349,12 +349,21 @@ async def publish(
         await page.wait_for_selector(".se-component.se-text", timeout=20000)
         await page.wait_for_timeout(1000)
 
-        # 커서 활성화
+        # 커서 활성화 — 에디터 본문 클릭 + 텍스트 입력으로 툴바 활성화
         be = await page.query_selector(".se-component.se-text")
         if be:
             box = await be.bounding_box()
             await page.mouse.click(box['x'] + 50, box['y'] + box['height'] / 2)
+        # 여러 줄 입력해 에디터 충분히 활성화 (이미지 버튼 노출 보장)
         await page.keyboard.type(".", delay=5)
+        await page.keyboard.press("Enter")
+        await page.keyboard.type(".", delay=5)
+        await page.wait_for_timeout(500)
+        # 툴바 이미지 버튼 강제 노출 시도
+        await page.evaluate("""() => {
+            const btn = document.querySelector('.se-image-toolbar-button');
+            if (btn) { btn.style.display = 'block'; btn.style.visibility = 'visible'; }
+        }""")
 
         # ── STEP 5: 이미지 업로드 ───────────────────────────────
         section_comps, image_upload_urls = parse_body_to_sections(body, og_map)

@@ -38,14 +38,32 @@ async def upload_image_file(page, local_path: str) -> dict | None:
     """
     import asyncio
 
-    # 이미지 버튼 클릭
+    # 이미지 버튼 클릭 (없으면 JS로 강제 노출 시도)
     img_btn = await page.query_selector(".se-image-toolbar-button")
     if not img_btn:
-        print(f"    이미지 버튼 없음 → 스킵")
-        return None
-    box = await img_btn.bounding_box()
-    await page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
-    await page.wait_for_timeout(1000)
+        # JS로 툴바 이미지 버튼 강제 클릭 시도
+        clicked = await page.evaluate("""() => {
+            const selectors = [
+                '.se-image-toolbar-button',
+                '[data-action="insertImage"]',
+                '.se-toolbar-btn-image',
+                'button[title="사진"]',
+                'button[aria-label="사진"]',
+            ];
+            for (const sel of selectors) {
+                const btn = document.querySelector(sel);
+                if (btn) { btn.click(); return true; }
+            }
+            return false;
+        }""")
+        if not clicked:
+            print(f"    이미지 버튼 없음 (JS fallback도 실패) → 스킵")
+            return None
+        await page.wait_for_timeout(1000)
+    else:
+        box = await img_btn.bounding_box()
+        await page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+        await page.wait_for_timeout(1000)
 
     fi = await page.query_selector("input[type=file]")
     if not fi:
