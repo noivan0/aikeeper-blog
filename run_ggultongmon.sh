@@ -143,3 +143,18 @@ if [ $_EXIT -ne 0 ]; then
 fi
 
 echo "[$KST] ===== 완료 [blog: $BLOG_KEY] =====" | tee -a "$LOG_FILE"
+
+# 발행 후 GitHub Actions로 쿠팡 링크 shortenUrl 자동 교체
+# (이 서버에서 api-gateway.coupang.com 접근 불가 → Actions(외부)에서 처리)
+GH_PAT="${GITHUB_PAT:-${GH_PAT:-}}"
+if [ -n "$GH_PAT" ]; then
+    echo "[$(date '+%H:%M:%S')] GitHub Actions shortenUrl 교체 트리거..." | tee -a "$LOG_FILE"
+    _TRG_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Authorization: token $GH_PAT" \
+        -H "Accept: application/vnd.github.v3+json" \
+        "https://api.github.com/repos/noivan0/aikeeper-blog/actions/workflows/fix-coupang-links.yml/dispatches" \
+        -d '{"ref":"main"}')
+    echo "[$(date '+%H:%M:%S')] Actions 트리거: HTTP $_TRG_STATUS" | tee -a "$LOG_FILE"
+else
+    echo "[$(date '+%H:%M:%S')] GH_PAT 없음 — Actions 트리거 스킵" | tee -a "$LOG_FILE"
+fi
