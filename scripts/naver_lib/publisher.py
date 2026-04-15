@@ -289,7 +289,7 @@ async def publish(
         if extra_image_urls:
             try:
                 import requests as _req
-                for ei, eurl in enumerate(extra_image_urls[:4]):
+                for ei, eurl in enumerate(extra_image_urls[:15]):
                     try:
                         r = _req.get(eurl, timeout=8, allow_redirects=True,
                                      headers={"Referer": "https://www.naver.com/", "User-Agent": "Mozilla/5.0"})
