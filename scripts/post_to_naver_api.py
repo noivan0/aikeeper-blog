@@ -245,14 +245,16 @@ def parse_body_to_sections(body: str, og_map: dict) -> list:
 
     반환: (컴포넌트 목록, 이미지_업로드_URL_목록)
     """
-    LINK_PAT = re.compile(r'https://link\.coupang\.com/\S+')
+    # 쿠팡 링크 + naver.me(브랜드커넥트) + A 태그 패턴
+    LINK_PAT  = re.compile(r'https://(?:link\.coupang\.com|naver\.me)/\S+')
+    A_TAG_PAT = re.compile(r'<a\s+href=["\']([^"\']+)["\'][^>]*>([^<]*)</a>', re.IGNORECASE)
 
     # 이미지 업로드가 필요한 URL 목록 (순서대로)
     image_upload_urls = []
 
     # 섹션 단위로 줄 묶기
     sections = []   # (type, content)
-    # type: 'lines' | 'link'
+    # type: 'lines' | 'link' | 'link_with_text' | 'image_marker' | 'plain_link'
     current_lines = []
 
     def flush():
@@ -262,19 +264,40 @@ def parse_body_to_sections(body: str, og_map: dict) -> list:
 
     for line in body.split('\n'):
         stripped = line.strip()
+
+        # IMAGE_HERE 마커: extra_image 배치 위치 (소제목 직후)
+        if stripped == 'IMAGE_HERE':
+            flush()
+            sections.append(('image_marker', ''))
+            continue
+
+        # <a href="URL">텍스트</a> → plain_link 처리
+        a_match = A_TAG_PAT.search(stripped)
+        if a_match:
+            a_url  = a_match.group(1).strip()
+            a_text = a_match.group(2).strip() or "지금 확인하기"
+            flush()
+            sections.append(('plain_link', (a_url, a_text)))
+            continue
+
         m = LINK_PAT.search(stripped)
         if m:
-            coupang_url = m.group(0).rstrip('.,)')
-            # 텍스트 + 링크 혼합 줄 (예: "지금 쿠팡에서 확인하기 → https://...")
-            pre_text = stripped[:m.start()].rstrip().rstrip('→').rstrip('->').rstrip()
-            if pre_text and len(pre_text) >= 2:
-                # 텍스트+링크 → para_link 컴포넌트로 처리
+            url = m.group(0).rstrip('.,)')
+            # naver.me 링크 → plain_link (OG카드 없음)
+            if 'naver.me' in url:
+                pre_text = stripped[:m.start()].rstrip().rstrip('→').rstrip('->').rstrip()
+                link_text = pre_text if (pre_text and len(pre_text) >= 2) else "지금 네이버에서 확인하기"
                 flush()
-                sections.append(('link_with_text', (pre_text, coupang_url)))
+                sections.append(('plain_link', (url, link_text)))
             else:
-                # URL 단독 줄 → IMAGE_MARKER/OGLINK
-                flush()
-                sections.append(('link', coupang_url))
+                # 쿠팡 링크: 텍스트+링크 혼합 or URL 단독
+                pre_text = stripped[:m.start()].rstrip().rstrip('→').rstrip('->').rstrip()
+                if pre_text and len(pre_text) >= 2:
+                    flush()
+                    sections.append(('link_with_text', (pre_text, url)))
+                else:
+                    flush()
+                    sections.append(('link', url))
         else:
             current_lines.append(line)
     flush()
@@ -289,6 +312,17 @@ def parse_body_to_sections(body: str, og_map: dict) -> list:
     url_seen_count = {}  # 각 URL이 몇 번 등장했는지
 
     for sec_type, sec_content in sections:
+        if sec_type == 'image_marker':
+            # IMAGE_HERE → IMAGE_HERE_SLOT (extra_image로 나중에 교체)
+            components.append({'_type': 'IMAGE_HERE_SLOT'})
+            continue
+
+        if sec_type == 'plain_link':
+            # naver.me 또는 <a href> → para_link 하이퍼링크
+            url, text = sec_content
+            components.append({'_type': 'TEXT', '_paras': [para_link(text, url)]})
+            continue
+
         if sec_type == 'link_with_text':
             # 텍스트+링크 혼합 → para_link 하이퍼링크 단락 + OG카드
             link_text, url = sec_content
@@ -614,6 +648,9 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
             t = item['_type']
             if t == 'TEXT':
                 final_comps.append(text_comp(item['_paras']))
+            elif t == 'IMAGE_HERE_SLOT':
+                # IMAGE_HERE 마커 위치 — extra_uploaded로 나중에 교체 (placeholder)
+                final_comps.append({'_type': 'IMAGE_HERE_SLOT'})
             elif t == 'IMAGE_MARKER':
                 link = item['_url']
                 if link in uploaded_images:
@@ -683,18 +720,40 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
                         })
                         print(f"    ✅ extra 업로드 완료: {src_url[:60]}")
 
-            # extra 이미지를 본문 중간에 분산 삽입
-            if extra_uploaded:
-                insert_positions = [len(final_comps)//3, 2*len(final_comps)//3]
-                for idx, eu in zip(insert_positions, extra_uploaded):
-                    ic = image_comp(
+            # IMAGE_HERE_SLOT → extra_uploaded 이미지로 교체 (없으면 슬롯 제거)
+            extra_queue = list(extra_uploaded)
+            new_final = []
+            first_img = True
+            for comp in final_comps:
+                if isinstance(comp, dict) and comp.get('_type') == 'IMAGE_HERE_SLOT':
+                    if extra_queue:
+                        eu = extra_queue.pop(0)
+                        new_final.append(image_comp(
+                            src=eu["src"], path=eu["path"],
+                            width=eu["width"], height=eu["height"],
+                            filename=eu["fileName"],
+                            represent=first_img,
+                            file_size=eu["fileSize"]
+                        ))
+                        first_img = False
+                    # else: 슬롯 제거 (텍스트 잔재 방지)
+                else:
+                    new_final.append(comp)
+            final_comps = new_final
+
+            # 남은 extra 이미지 본문 1/3, 2/3 위치에 분산
+            if extra_queue:
+                total = len(final_comps)
+                per = max(total // (len(extra_queue) + 1), 1)
+                for i, eu in enumerate(extra_queue):
+                    pos = min(per * (i + 1), len(final_comps))
+                    final_comps.insert(pos, image_comp(
                         src=eu["src"], path=eu["path"],
                         width=eu["width"], height=eu["height"],
                         filename=eu["fileName"],
                         represent=False, file_size=eu["fileSize"]
-                    )
-                    final_comps.insert(min(idx, len(final_comps)), ic)
-                print(f"  추가 이미지 {len(extra_uploaded)}개 본문 중간 삽입 완료")
+                    ))
+            print(f"  추가 이미지 {len(extra_uploaded)}개 배치 완료 (IMAGE_HERE {len([c for c in final_comps if isinstance(c,dict) and c.get('@ctype')=='image'])}장 삽입)")
 
         doc_str = build_document_model(title, final_comps)
         pop_save = make_pop(auto_save_no=None)
