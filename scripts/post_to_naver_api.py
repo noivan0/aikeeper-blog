@@ -434,10 +434,40 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
             await page.wait_for_timeout(5000)
 
         # Ctrl+S로 자동저장 트리거 → RabbitAutoSaveWrite.naver POST → tokenId 캡처
-        # 실제 발행이 아니므로 "_" 임시 포스팅이 블로그에 남지 않음
+        # 핵심 수정: 팝업 제거 후 재Ctrl+S 실행 (팝업이 POST 자체를 block하므로)
         print("  자동저장(Ctrl+S)으로 tokenId 캡처 시도...")
         await page.keyboard.press("Control+s")
-        await page.wait_for_timeout(4000)  # 자동저장 완료 대기
+        await page.wait_for_timeout(800)
+
+        # Ctrl+S 직후 팝업 즉시 폴링 처리 (15회 × 300ms)
+        for _ in range(15):
+            popup_handled = await page.evaluate("""() => {
+                const btns = document.querySelectorAll('button');
+                for (const b of btns) {
+                    const t = (b.innerText || '').trim();
+                    if (t === '취소' || t === '닫기' || t === '아니요') {
+                        const r = b.getBoundingClientRect();
+                        if (r.width > 0) { b.click(); return true; }
+                    }
+                }
+                return false;
+            }""")
+            if popup_handled:
+                print("  [Ctrl+S 팝업] 취소 처리 ✅ → 재Ctrl+S")
+                await page.wait_for_timeout(500)
+                # 팝업 제거 후 재Ctrl+S (이때 비로소 RabbitAutoSaveWrite POST 발행)
+                await page.keyboard.press("Control+s")
+                await page.wait_for_timeout(800)
+                break
+            await page.wait_for_timeout(300)
+
+        # tokenId 대기 (최대 10s)
+        for _ in range(20):
+            if captured["token_id"]:
+                break
+            await page.wait_for_timeout(500)
+
+        await page.wait_for_timeout(1000)  # 자동저장 완료 대기
 
         token_id  = captured["token_id"]
         se_auth   = captured["se_auth"]
