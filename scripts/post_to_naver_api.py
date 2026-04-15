@@ -349,19 +349,10 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
             "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
         )
 
-        captured = {"token_id": "", "se_auth": "", "se_app_id": ""}
+        # tokenId 제거 — 세션 쿠키에 내재 (2026-04-15 검증)
+        captured = {"se_auth": "", "se_app_id": ""}
 
         async def on_req(req):
-            # RabbitWrite.naver POST → tokenId 추출
-            if "RabbitWrite.naver" in req.url and req.method == "POST":
-                pp = urllib.parse.parse_qs(req.post_data or "", keep_blank_values=True)
-                if pp.get("tokenId"):
-                    captured["token_id"] = pp["tokenId"][0]
-            # RabbitAutoSaveWrite.naver POST → tokenId 추출 (임시 발행 없이 캡처 가능)
-            if "RabbitAutoSaveWrite.naver" in req.url and req.method == "POST":
-                pp = urllib.parse.parse_qs(req.post_data or "", keep_blank_values=True)
-                if pp.get("tokenId") and not captured["token_id"]:
-                    captured["token_id"] = pp["tokenId"][0]
             if "oglink" in req.url and "platform.editor" in req.url:
                 if not captured["se_auth"]:
                     captured["se_auth"]   = req.headers.get("se-authorization", "")
