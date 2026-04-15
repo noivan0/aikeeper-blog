@@ -1,0 +1,141 @@
+{
+  "224248331136": {
+    "title": "2만원짜리 노이즈캔슬링",
+    "status": "error",
+    "affsdp_count": 0,
+    "shorten_count": 0,
+    "pk_map": {}
+  },
+  "224248610160": {
+    "title": "테스트 발행",
+    "status": "error",
+    "affsdp_count": 0,
+    "shorten_count": 0,
+    "pk_map": {}
+  },
+  "224248953492": {
+    "title": "네이버 발행 최종 테스트",
+    "status": "error",
+    "affsdp_count": 0,
+    "shorten_count": 0,
+    "pk_map": {}
+  },
+  "224249075663": {
+    "title": "우산 3개",
+    "status": "error",
+    "affsdp_count": 0,
+    "shorten_count": 0,
+    "pk_map": {}
+  },
+  "224249076941": {
+    "title": "",
+    "status": "error",
+    "affsdp_count": 0,
+    "shorten_count": 0,
+    "pk_map": {}
+  },
+  "224249088770": {
+    "title": "",
+    "status": "error",
+    "affsdp_count": 0,
+    "shorten_count": 0,
+    "pk_map": {}
+  },
+  "224249132131": {
+    "title": "우산 3개 직접",
+    "status": "error",
+    "affsdp_count": 0,
+    "shorten_count": 0,
+    "pk_map": {}
+  },
+  "224249132327": {
+    "title": "",
+    "status": "error",
+    "affsdp_count": 0,
+    "shorten_count": 0,
+    "pk_map": {}
+  },
+  "224249161838": {
+    "title": "",
+    "status": "ok",
+    "affsdp_count": 3,
+    "shorten_count": 0,
+    "pk_map": {
+      "169280610": {
+        "itemId": "484461411",
+        "vendorItemId": "4220116848"
+      },
+      "7572829529": {
+        "itemId": "19975045055",
+        "vendorItemId": "90271557299"
+      },
+      "8049299057": {
+        "itemId": "22568616421",
+        "vendorItemId": "89610481956"
+      }
+    }
+  },
+  "224249231571": {
+    "title": "",
+    "status": "error",
+    "affsdp_count": 0,
+    "shorten_count": 0,
+    "pk_map": {}
+  },
+  "224250986074": {
+    "title": "종이컵",
+    "status": "ok",
+    "affsdp_count": 3,
+    "shorten_count": 0,
+    "pk_map": {
+      "1277818179": {
+        "itemId": "14209966873",
+        "vendorItemId": "81455435703"
+      },
+      "8194763460": {
+        "itemId": "25002359029",
+        "vendorItemId": "92007490356"
+      }
+    }
+  },
+  "224251122015": {
+    "title": "일회용 턱받이",
+    "status": "ok",
+    "affsdp_count": 3,
+    "shorten_count": 0,
+    "pk_map": {
+      "8847719903": {
+        "itemId": "25790484878",
+        "vendorItemId": "92778246762"
+      },
+      "8589999357": {
+        "itemId": "18669340263",
+        "vendorItemId": "85928185196"
+      },
+      "8704720059": {
+        "itemId": "25279677684",
+        "vendorItemId": "92275279376"
+      }
+    }
+  },
+  "224252560342": {
+    "title": "9900원 양말",
+    "status": "ok",
+    "affsdp_count": 3,
+    "shorten_count": 0,
+    "pk_map": {
+      "8734698060": {
+        "itemId": "24694474549",
+        "vendorItemId": "93923247697"
+      },
+      "9396059033": {
+        "itemId": "27905447605",
+        "vendorItemId": "94864208488"
+      },
+      "6522962847": {
+        "itemId": "14459954544",
+        "vendorItemId": "81703402671"
+      }
+    }
+  }
+}
