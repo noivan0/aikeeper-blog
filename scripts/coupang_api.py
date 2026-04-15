@@ -415,12 +415,52 @@ def search_products(keyword: str, limit: int = 5) -> list:
         print(f"  [WARN] 검색 실패 ({keyword}): {e}")
         return []
 
+def _get_deeplink_shorten_urls(coupang_urls: list) -> dict:
+    """
+    쿠팡 파트너스 공식 deeplink API를 사용하여 shortenUrl 일괄 획득.
+    - POST /v2/providers/affiliate_open_api/apis/openapi/deeplink
+    - body: {"coupangUrls": [...]}
+    - 반환: {원본URL: shortenUrl} 딕셔너리
+    - 최대 10개씩 배치 처리
+    """
+    DEEPLINK_PATH = "/v2/providers/affiliate_open_api/apis/openapi/deeplink"
+    result = {}
+
+    if not coupang_urls:
+        return result
+
+    # 최대 10개씩 배치
+    for i in range(0, len(coupang_urls), 10):
+        batch = coupang_urls[i:i + 10]
+        try:
+            resp = _post(DEEPLINK_PATH, {"coupangUrls": batch})
+            data_list = resp.get("data", [])
+            for item in data_list:
+                landing = item.get("landingUrl", "")
+                shorten = item.get("shortenUrl", "")
+                if shorten:
+                    # landingUrl로 원본 URL 매핑
+                    result[landing] = shorten
+                    # 원본 URL도 직접 매핑 (배치 순서 기반 fallback)
+            # 순서 기반 매핑 (landingUrl이 원본과 다를 경우 대비)
+            if len(data_list) == len(batch):
+                for orig_url, item in zip(batch, data_list):
+                    shorten = item.get("shortenUrl", "")
+                    if shorten and orig_url not in result:
+                        result[orig_url] = shorten
+        except Exception as e:
+            print(f"  [WARN] deeplink API 배치 실패: {e}")
+
+    return result
+
+
 def get_products_with_shorten(keyword_or_products, limit: int = 5) -> list:
     """
-    상품 수집 + shortenUrl 설정 통합
+    상품 수집 + shortenUrl 설정 통합 (쿠팡 파트너스 공식 deeplink API 사용)
     - keyword_or_products: str(키워드) 또는 list(이미 수집된 상품)
-    - productUrl에서 itemId/vendorItemId 추출 → 완전한 링크 생성
-    - 추출된 itemId/vendorItemId는 로컬 캐시에 저장 (재조회 방지)
+    - itemId/vendorItemId 추출 → 완전한 쿠팡 URL 구성
+    - deeplink API 일괄 호출 → 공식 shortenUrl(link.coupang.com/a/...) 획득
+    - fallback: deeplink 실패 시 productUrl 유지
     """
     try:
         if isinstance(keyword_or_products, str):
@@ -431,49 +471,71 @@ def get_products_with_shorten(keyword_or_products, limit: int = 5) -> list:
         # 캐시 로드 (한 번만)
         item_id_cache = _load_item_id_cache()
 
+        # 1단계: 각 상품의 itemId/vendorItemId 수집
+        products_needing_deeplink = []  # (product, complete_url) 튜플 목록
+
         for p in products:
-            if p.get("shortenUrl"):
-                continue  # 이미 shortenUrl이 있으면 건너뜀
+            if p.get("shortenUrl") and "link.coupang.com/a/" in p.get("shortenUrl", ""):
+                continue  # 이미 공식 shortenUrl이 있으면 건너뜀
 
             product_url = p.get("productUrl", "#")
             product_id = str(p.get("productId", ""))
 
-            # 1. productUrl 자체에 itemId/vendorItemId가 있는지 확인
+            # itemId/vendorItemId 수집 우선순위:
+            # 1. productUrl에 직접 포함된 경우
             item_id, vendor_item_id = _extract_item_ids_from_url(product_url)
 
+            if not (item_id and vendor_item_id):
+                # 2. 로컬 캐시에서 조회
+                if product_id and product_id in item_id_cache:
+                    cached = item_id_cache[product_id]
+                    item_id = cached["itemId"]
+                    vendor_item_id = cached["vendorItemId"]
+                    print(f"  [캐시] {product_id}: itemId={item_id}")
+
+            if not (item_id and vendor_item_id):
+                # 3. 리다이렉트 추적으로 추출
+                if product_url and product_url != "#":
+                    print(f"  [리다이렉트] {product_id} itemId 추출 중...")
+                    item_id, vendor_item_id = _get_item_ids_via_redirect(product_url)
+                    if item_id and vendor_item_id:
+                        print(f"  [성공] itemId={item_id}, vendorItemId={vendor_item_id}")
+                        if product_id:
+                            _save_item_id_cache(product_id, item_id, vendor_item_id)
+                            item_id_cache[product_id] = {"itemId": item_id, "vendorItemId": vendor_item_id}
+
             if item_id and vendor_item_id:
-                # productUrl이 이미 완전한 링크 → 그대로 사용
-                p["shortenUrl"] = product_url
-                # 캐시에 없으면 저장
+                # 완전한 쿠팡 상품 URL 구성
+                complete_url = (
+                    f"https://www.coupang.com/vp/products/{product_id}"
+                    f"?itemId={item_id}&vendorItemId={vendor_item_id}"
+                )
+                products_needing_deeplink.append((p, complete_url))
+                # 캐시 업데이트
                 if product_id and product_id not in item_id_cache:
                     _save_item_id_cache(product_id, item_id, vendor_item_id)
                     item_id_cache[product_id] = {"itemId": item_id, "vendorItemId": vendor_item_id}
-
-            elif product_id and product_id in item_id_cache:
-                # 2. 로컬 캐시에 itemId/vendorItemId가 있으면 링크 완성
-                cached = item_id_cache[product_id]
-                item_id = cached["itemId"]
-                vendor_item_id = cached["vendorItemId"]
-                p["shortenUrl"] = _build_complete_coupang_link(product_url, item_id, vendor_item_id)
-                print(f"  [캐시] {product_id}: itemId={item_id}, vendorItemId={vendor_item_id}")
-
-            elif product_url and product_url != "#":
-                # 3. 리다이렉트 추적으로 itemId/vendorItemId 추출
-                print(f"  [리다이렉트] {product_id} itemId 추출 중...")
-                item_id, vendor_item_id = _get_item_ids_via_redirect(product_url)
-                if item_id and vendor_item_id:
-                    p["shortenUrl"] = _build_complete_coupang_link(product_url, item_id, vendor_item_id)
-                    print(f"  [성공] itemId={item_id}, vendorItemId={vendor_item_id}")
-                    if product_id:
-                        _save_item_id_cache(product_id, item_id, vendor_item_id)
-                        item_id_cache[product_id] = {"itemId": item_id, "vendorItemId": vendor_item_id}
-                else:
-                    # 4. 추출 실패 → 기존 productUrl 유지 (비치명적 fallback)
-                    print(f"  [FALLBACK] {product_id}: itemId 추출 실패, productUrl 사용")
-                    p["shortenUrl"] = product_url
-
             else:
+                # itemId 확보 불가 → productUrl fallback
+                print(f"  [FALLBACK] {product_id}: itemId 없음, productUrl 사용")
                 p["shortenUrl"] = product_url or "#"
+
+        # 2단계: deeplink API 일괄 호출
+        if products_needing_deeplink:
+            all_complete_urls = [url for _, url in products_needing_deeplink]
+            print(f"  [deeplink] {len(all_complete_urls)}개 상품 shortenUrl 요청 중...")
+            url_to_shorten = _get_deeplink_shorten_urls(all_complete_urls)
+            print(f"  [deeplink] {len(url_to_shorten)}개 shortenUrl 획득")
+
+            for p, complete_url in products_needing_deeplink:
+                shorten = url_to_shorten.get(complete_url)
+                if shorten:
+                    p["shortenUrl"] = shorten
+                    print(f"  [OK] {p.get('productId')}: {shorten}")
+                else:
+                    # deeplink 실패 → productUrl fallback
+                    print(f"  [FALLBACK] {p.get('productId')}: deeplink 실패, productUrl 사용")
+                    p["shortenUrl"] = p.get("productUrl", "#")
 
         return products
     except Exception as e:
