@@ -26,7 +26,7 @@ from playwright.async_api import async_playwright
 
 from .session import load_session, save_session, login_if_needed, dismiss_popups
 from .document import (
-    FS, para, empty_para, text_comp, image_comp, oglink_comp,
+    FS, para, para_link, empty_para, text_comp, image_comp, oglink_comp,
     build_document_model, make_pop
 )
 from .uploader import download_image, upload_image_file
@@ -413,8 +413,7 @@ async def publish(
             elif t == 'PLAIN_LINK':
                 # OG카드 없는 링크 → 텍스트 para로 삽입
                 url = item['_url']
-                from .document import para_link as _para_link
-                final_comps.append(text_comp([_para_link("🔗 상품 링크 바로가기", url)]))
+                final_comps.append(text_comp([para_link("🔗 상품 링크 바로가기", url)]))
 
         # extra 이미지 본문 중간 분산 삽입
         if extra_uploaded:

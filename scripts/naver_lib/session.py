@@ -13,9 +13,9 @@ def load_session(session_file: str | None = None) -> str:
     return session_file or os.environ.get("NAVER_SESSION_FILE", DEFAULT_SESSION_FILE)
 
 
-def save_session(context, session_file: str | None = None):
+async def save_session(context, session_file: str | None = None):
     path = session_file or os.environ.get("NAVER_SESSION_FILE", DEFAULT_SESSION_FILE)
-    return context.storage_state(path=path)
+    await context.storage_state(path=path)
 
 
 async def login_if_needed(page, context, write_url: str,
