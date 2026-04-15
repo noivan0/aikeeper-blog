@@ -42,12 +42,24 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     반환: (components, image_upload_urls)
     """
     # ── 본문 전처리: HTML 태그 완전 제거 (AI 생성 HTML이 텍스트로 출력되는 문제 방지) ──
-    A_TAG_PREPROC = re.compile(r'<a\s+href=["\']([^"\']+)["\'][^>]*>[^<]*</a>', re.IGNORECASE)
+    # 1단계: <span style=...> 등 래퍼 태그로 감싸진 <a href> 처리
+    #   예: <span style="..."><a href="URL">텍스트</a></span>
+    #   → URL만 추출해서 단독 줄로 교체
     def _replace_a_tag(m):
-        return f"\n지금 네이버에서 확인하기 → {m.group(1)}\n"
-    body = A_TAG_PREPROC.sub(_replace_a_tag, body)
-    body = re.sub(r'<[^>]+>', '', body)           # 나머지 HTML 태그 제거
-    body = re.sub(r'^-{3,}$', '', body, flags=re.MULTILINE)  # --- 구분선 제거
+        url = m.group(1).split('"')[0].split("'")[0].strip()  # 혹시 모를 trailing 문자 제거
+        return f"\n지금 네이버에서 확인하기 → {url}\n"
+    # a href 포함된 span 블록 전체 제거 후 URL 보존 (DOTALL로 멀티라인 대응)
+    body = re.sub(r'<span[^>]*>\s*<a\s+href=["\']([^"\']+)["\'][^>]*>[^<]*</a>\s*</span>',
+                  _replace_a_tag, body, flags=re.IGNORECASE | re.DOTALL)
+    # 단독 <a href> 태그 처리
+    body = re.sub(r'<a\s+href=["\']([^"\']+)["\'][^>]*>[^<]*</a>',
+                  _replace_a_tag, body, flags=re.IGNORECASE)
+    # 2단계: 나머지 모든 HTML 태그 제거 (<span>, <b>, <br>, <p>, <div> 등)
+    body = re.sub(r'<[^>]+>', '', body)
+    # 3단계: HTML 엔티티 복원
+    body = body.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&nbsp;', ' ')
+    # 4단계: --- 구분선 제거
+    body = re.sub(r'^-{3,}$', '', body, flags=re.MULTILINE)
 
     LINK_PAT  = re.compile(r'https?://(?:link\.coupang\.com|naver\.me|brand\.naver\.com)\S+')
     A_TAG_PAT = re.compile(r'<a\s+href=["\']([^"\']+)["\'][^>]*>([^<]*)</a>', re.IGNORECASE)
@@ -89,6 +101,9 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
         '🛒', '✅', '⚠', '📌', '🎯', '💡', '🔍', '📊', '🏷', '💰', '👍', '❌', '🔑', '📋', '🎁',
         '🥚', '🔩', '⏱', '🍠', '💬', '🧹', '🔧', '📋', '🏆', '🌟', '💎', '🎪', '🔑', '🛍',
         '🎁', '💝', '🔥', '⚡', '🌈', '🎨', '📱', '🖥', '🏠', '🍳', '🥘', '🧺', '🪣', '🧴',
+        # P005 추가 이모지 (generate_naver_post.py 프롬프트 기반)
+        '📦', '💨', '🔋', '🤲', '🌿', '✍️', '📷', '🎬', '🎮', '🧩', '🪴', '🫖', '🧇', '🥗',
+        '🎀', '🪄', '🔮', '🧸', '🪆', '🌻', '🍀', '🌙', '☀️', '🌊', '🏖', '🏕', '🎭', '🎸',
     )
     components = []
     first_image = True
@@ -139,8 +154,8 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
                     paras.append(para(s, fs=FS["tiny"]))
                     continue
                 is_heading = (
-                    5 <= len(s) <= 45
-                    and not any(s.endswith(e) for e in ('요.', '요!', '요?', '네요.', '다.', '다!', '습니다.', '어요.', '어요!', '더라고요.'))
+                    5 <= len(s) <= 60
+                    and not any(s.endswith(e) for e in ('요.', '요!', '요?', '네요.', '다.', '다!', '습니다.', '어요.', '어요!', '더라고요.', '거든요.', '있어요.', '없어요.'))
                     and (
                         any(s.startswith(em) for em in HEADING_EMOJIS)
                         or '—' in s
@@ -358,6 +373,10 @@ async def publish(
                 result = await upload_image_file(page, local_path)
                 if result:
                     extra_uploaded.append(result)
+                else:
+                    print(f"    ⚠️ 업로드 실패: {local_path}")
+        if not extra_uploaded:
+            print(f"  ⚠️ 추가 이미지 없음 — IMAGE_HERE_SLOT {sum(1 for c in section_comps if c.get('_type') == 'IMAGE_HERE_SLOT')}개 빈 상태로 스킵됨")
 
         # ── STEP 6: documentModel 구성 ──────────────────────────
         final_comps = []
