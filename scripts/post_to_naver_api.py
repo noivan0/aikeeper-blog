@@ -217,9 +217,16 @@ def download_image(url: str, dest_dir: str, idx: int) -> str | None:
         if ext not in ('jpg', 'jpeg', 'png', 'gif', 'webp'):
             ext = 'jpg'
         dest = os.path.join(dest_dir, f"product_{idx}.{ext}")
+        # URL 도메인에 맞는 Referer 자동 선택 (스마트스토어/브랜드커넥트/쿠팡)
+        if 'naver' in url or 'pstatic' in url:
+            referer = 'https://smartstore.naver.com/'
+        elif 'coupang' in url:
+            referer = 'https://www.coupang.com/'
+        else:
+            referer = 'https://www.naver.com/'
         req = Request(url, headers={
-            'User-Agent': 'Mozilla/5.0',
-            'Referer': 'https://www.coupang.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': referer,
         })
         with urlopen(req, timeout=15) as resp, open(dest, 'wb') as f:
             f.write(resp.read())
@@ -530,10 +537,17 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
         extra_local = []
         if extra_image_urls:
             import requests as _req
-            for ei, eurl in enumerate(extra_image_urls[:4]):
+            for ei, eurl in enumerate(extra_image_urls[:15]):  # 최대 15장
                 try:
+                    # URL 도메인에 맞는 Referer 자동 선택
+                    if 'naver' in eurl or 'pstatic' in eurl:
+                        _referer = 'https://smartstore.naver.com/'
+                    elif 'coupang' in eurl:
+                        _referer = 'https://www.coupang.com/'
+                    else:
+                        _referer = 'https://www.naver.com/'
                     r = _req.get(eurl, timeout=8, allow_redirects=True,
-                        headers={"Referer":"https://www.coupang.com/","User-Agent":"Mozilla/5.0"})
+                        headers={"Referer": _referer, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
                     if r.status_code == 200 and len(r.content) > 10000:
                         ext = "jpg"
                         save_path = os.path.join(tmpdir, f"extra_{ei}.{ext}")
