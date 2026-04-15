@@ -3,9 +3,9 @@
 네이버 블로그 API 발행 v6 — 이미지/OG링크/스타일 완전 지원
 ─────────────────────────────────────────────────────────────
 핵심 흐름:
-1. Playwright 에디터 로드 → 쿠팡 링크 입력(se-auth 캡처) → Ctrl+S 자동저장(tokenId 캡처)
-   ※ 임시 발행 없음 — "_" 포스팅이 블로그에 남지 않음
-2. 쿠팡 상품 이미지를 로컬에 다운로드 → #hidden-file input으로 업로드
+1. Playwright 에디터 로드 → 쿠팡 링크 입력(se-auth 캡처)
+   ※ tokenId 불필요 — 세션 쿠키로 발행 (2026-04-15 검증)
+2. 쿠팡 상품 이미지를 로컬에 다운로드 → file input으로 업로드
 3. 업로드 결과(src/path) 수집 → image 컴포넌트 구성
 4. oglink API 호출 → oglinkSign 수집
 5. documentModel JSON 구성 (text + image + oglink 컴포넌트)
@@ -65,7 +65,7 @@ OGLINK_API       = "https://platform.editor.naver.com/api/blogpc001/v1/oglink"
 #   se-fs-(빈값) → 20px (소제목, se-fs-fs19와 동일 크기)
 #   se-fs-fs28 → 23px (대제목)
 # se-fs-fs20 → 11px (절대 사용 금지)
-FS = {"tiny": "fs11", "normal": "fs13", "heading": "fs19", "large": "fs28"}
+FS = {"tiny": "fs11", "normal": "fs16", "heading": "fs20", "large": "fs28"}
 
 
 def _uid():
@@ -94,7 +94,7 @@ def para_link(text: str, url: str) -> dict:
         "id": _uid(),
         "nodes": [{
             "id": _uid(), "value": text,
-            "style": {"fontSizeCode": "fs13", "@ctype": "nodeStyle"},
+            "style": {"fontSizeCode": "fs16", "@ctype": "nodeStyle"},
             "link": {"url": url, "@ctype": "urlLink"},
             "@ctype": "textNode"
         }],
@@ -260,8 +260,16 @@ def parse_body_to_sections(body: str, og_map: dict) -> list:
         m = LINK_PAT.search(stripped)
         if m:
             coupang_url = m.group(0).rstrip('.,)')
-            flush()
-            sections.append(('link', coupang_url))
+            # 텍스트 + 링크 혼합 줄 (예: "지금 쿠팡에서 확인하기 → https://...")
+            pre_text = stripped[:m.start()].rstrip().rstrip('→').rstrip('->').rstrip()
+            if pre_text and len(pre_text) >= 2:
+                # 텍스트+링크 → para_link 컴포넌트로 처리
+                flush()
+                sections.append(('link_with_text', (pre_text, coupang_url)))
+            else:
+                # URL 단독 줄 → IMAGE_MARKER/OGLINK
+                flush()
+                sections.append(('link', coupang_url))
         else:
             current_lines.append(line)
     flush()
@@ -276,7 +284,21 @@ def parse_body_to_sections(body: str, og_map: dict) -> list:
     url_seen_count = {}  # 각 URL이 몇 번 등장했는지
 
     for sec_type, sec_content in sections:
-        if sec_type == 'link':
+        if sec_type == 'link_with_text':
+            # 텍스트+링크 혼합 → para_link 하이퍼링크 단락 + OG카드
+            link_text, url = sec_content
+            link_para = para_link(link_text, url)
+            components.append({'_type': 'TEXT', '_paras': [link_para]})
+            url_seen_count[url] = url_seen_count.get(url, 0) + 1
+            # OG카드도 삽입 (첫 번째만)
+            if url_seen_count[url] == 1:
+                image_upload_urls.append(url)
+                components.append({'_type': 'IMAGE_MARKER', '_url': url, '_is_first': first_image})
+                first_image = False
+            elif url in og_map:
+                components.append({'_type': 'OGLINK', '_url': url})
+
+        elif sec_type == 'link':
             url = sec_content
             url_seen_count[url] = url_seen_count.get(url, 0) + 1
             count = url_seen_count[url]
@@ -679,15 +701,17 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
         await page.evaluate("([d, ps]) => { window.__nv_doc=d; window.__nv_ps=ps; }", [doc_str, pop_save])
 
         autosave_result = await page.evaluate(f"""async () => {{
-            const params = new URLSearchParams();
-            params.append('blogId', {json.dumps(BLOG_ID)});
-            params.append('documentModel', window.__nv_doc);
-            params.append('mediaResources', '{{"image":[],"video":[],"file":[]}}');
-            params.append('populationParams', window.__nv_ps);
+            // URLSearchParams 대신 직접 인코딩 (이모지 보존)
+            const body = [
+                'blogId=' + encodeURIComponent({json.dumps(BLOG_ID)}),
+                'documentModel=' + encodeURIComponent(window.__nv_doc),
+                'mediaResources=' + encodeURIComponent('{{"image":[],"video":[],"file":[]}}'),
+                'populationParams=' + encodeURIComponent(window.__nv_ps)
+            ].join('&');
             const resp = await fetch({json.dumps(AUTOSAVE_URL)}, {{
                 method: 'POST', credentials: 'include',
                 headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
-                body: params.toString()
+                body: body
             }});
             return await resp.json();
         }}""")
@@ -705,17 +729,18 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
         await page.evaluate("([pp]) => { window.__nv_pp=pp; }", [pop_pub])
 
         publish_result = await page.evaluate(f"""async () => {{
-            const params = new URLSearchParams();
-            params.append('blogId', {json.dumps(BLOG_ID)});
-            params.append('documentModel', window.__nv_doc);
-            params.append('mediaResources', '{{"image":[],"video":[],"file":[]}}');
-            params.append('populationParams', window.__nv_pp);
-            params.append('productApiVersion', 'v1');
-            // tokenId 생략 (세션 쿠키로 대체 — 2026-04-15 검증)
+            // encodeURIComponent 직접 사용 (이모지 깨짐 방지)
+            const body = [
+                'blogId=' + encodeURIComponent({json.dumps(BLOG_ID)}),
+                'documentModel=' + encodeURIComponent(window.__nv_doc),
+                'mediaResources=' + encodeURIComponent('{{"image":[],"video":[],"file":[]}}'),
+                'populationParams=' + encodeURIComponent(window.__nv_pp),
+                'productApiVersion=v1'
+            ].join('&');
             const resp = await fetch({json.dumps(RABBIT_WRITE_URL)}, {{
                 method: 'POST', credentials: 'include',
                 headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
-                body: params.toString()
+                body: body
             }});
             const text = await resp.text();
             return {{status: resp.status, body: text.substring(0, 500)}};

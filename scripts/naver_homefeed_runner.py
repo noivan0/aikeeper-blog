@@ -81,17 +81,51 @@ def fetch_atom() -> list:
 
 
 def parse_products_from_content(content: str) -> list:
-    """atom 콘텐츠에서 상품 정보 파싱"""
-    products = []
-    coupang_links = re.findall(r'href=["\']([^"\']*coupang\.com[^"\']*)["\']', content)
-    prices = re.findall(r'(\d{1,3}(?:,\d{3})*)\s*원', content)
-    names = re.findall(r'alt=["\']([^"\']{5,50})["\']', content)
+    """atom 콘텐츠에서 상품 정보 파싱.
 
+    절대 규칙: shortenUrl (link.coupang.com/a/xxxxx) 을 최우선으로 사용.
+    shortenUrl이 없을 때만 AFFSDP 링크 fallback.
+    """
+    import html as _html
+    content = _html.unescape(content)
+
+    # 1순위: link.coupang.com/a/ 형태 shortenUrl (쿠팡 파트너스 단축 URL)
+    shorten_urls = re.findall(r'https://link\.coupang\.com/a/[a-zA-Z0-9]+', content)
+    # 중복 제거 (순서 유지)
+    seen = set()
+    unique_shorten = []
+    for u in shorten_urls:
+        if u not in seen:
+            seen.add(u)
+            unique_shorten.append(u)
+
+    # 2순위: AFFSDP 트래킹 링크 (fallback)
+    affsdp_urls = re.findall(
+        r'https://link\.coupang\.com/re/AFFSDP[^\s"\'<>]*', content
+    )
+    seen2 = set()
+    unique_affsdp = []
+    for u in affsdp_urls:
+        if u not in seen2:
+            seen2.add(u)
+            unique_affsdp.append(u)
+
+    # shortenUrl 우선, 없으면 AFFSDP
+    coupang_links = unique_shorten if unique_shorten else unique_affsdp
+
+    log(f"  링크 파싱: shortenUrl {len(unique_shorten)}개, AFFSDP {len(unique_affsdp)}개 → 사용: {len(coupang_links)}개")
+
+    prices = re.findall(r'(\d{1,3}(?:,\d{3})*)\s*원', content)
+    names  = re.findall(r'alt=["\']([^"\']{5,50})["\']', content)
+
+    products = []
     for i in range(min(3, len(coupang_links))):
+        url = coupang_links[i]
         products.append({
-            "name": names[i] if i < len(names) else f"상품{i+1}",
-            "price": f"{prices[i]}원" if i < len(prices) else "",
-            "coupang_url": coupang_links[i],
+            "name":       names[i] if i < len(names) else f"상품{i+1}",
+            "price":      f"{prices[i]}원" if i < len(prices) else "",
+            "shortenUrl": url,          # 절대 규칙: shortenUrl 사용
+            "coupang_url": url,         # 하위 호환
         })
     return products
 
@@ -117,16 +151,17 @@ def enrich_products_with_extra_images(products: list, topic: str) -> list:
         added = 0
         for e in extras:
             pname = e.get("productName","")
-            purl  = e.get("productUrl","")
             pimg  = e.get("productImage","")
             pprice = e.get("productPrice","")
-            if pname and purl and pname not in existing_names:
+            if pname and pimg and pname not in existing_names:
+                # 이미지 보강 전용: 링크 없이 이미지만 추가 (shortenUrl 없음)
+                # 절대 규칙: shortenUrl이 없으면 링크 삽입 금지
                 products.append({
                     "name": pname[:40],
                     "productName": pname,
                     "price": f"{pprice}원" if pprice else "",
-                    "coupang_url": purl,
-                    "shortenUrl": purl,
+                    "shortenUrl": "",       # 링크 없음 (이미지 보강 전용)
+                    "coupang_url": "",      # 링크 없음
                     "productImage": pimg,
                 })
                 existing_names.add(pname)
@@ -187,14 +222,23 @@ def run_post(post: dict) -> bool:
     log(f"  본문 생성 완료: 제목={title[:40]} / {body_chars}자")
 
     # 2. 네이버 발행
-    # productImage URL 목록 → 추가 이미지로 전달
-    extra_imgs = [p.get("productImage","") for p in products if p.get("productImage","")]
+    # 상품 이미지 최대 수집: productImage + extraImages + otherProductImageUrls
+    extra_imgs = []
+    for p in products:
+        for key in ("productImage", "imageUrl", "representativeProductImageUrl"):
+            img = p.get(key, "")
+            if img and img not in extra_imgs:
+                extra_imgs.append(img)
+        # 추가 이미지 (브랜드커넥트 등)
+        for img in p.get("extraImages", p.get("otherProductImageUrls", []))[:3]:
+            if img and img not in extra_imgs:
+                extra_imgs.append(img)
     env2 = {
         **os.environ,
         "NAVER_TITLE":        title,
         "NAVER_BODY_PATH":    body_path,
         "DISPLAY":            ":99",
-        "EXTRA_IMAGE_URLS":   json.dumps(extra_imgs[:4], ensure_ascii=False),
+        "EXTRA_IMAGE_URLS":   json.dumps(extra_imgs[:8], ensure_ascii=False),
     }
     r2 = subprocess.run(
         [sys.executable, str(Path(__file__).parent / "post_to_naver_api.py")],
@@ -259,7 +303,7 @@ def run_post(post: dict) -> bool:
 def main():
     if LOCK_FILE.exists():
         age = time.time() - LOCK_FILE.stat().st_mtime
-        if age < 600:
+        if age < 1800:  # 30분 TTL (발행 최대 소요 시간 고려)
             log("이미 실행 중 (lock 파일 존재)")
             return
         LOCK_FILE.unlink()
