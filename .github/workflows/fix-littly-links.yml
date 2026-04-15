@@ -15,18 +15,15 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      - name: Fix all Littly AFFSDP links → shortenUrl
+      - name: Fix Littly product links → shortenUrl
         env:
           COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
           COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
-          GGULTONGMON_REFRESH_TOKEN: ${{ secrets.GGULTONGMON_REFRESH_TOKEN }}
-          GGULTONGMON_CLIENT_ID: ${{ secrets.GGULTONGMON_CLIENT_ID }}
-          GGULTONGMON_CLIENT_SECRET: ${{ secrets.GGULTONGMON_CLIENT_SECRET }}
           LITTLY_EMAIL: ${{ secrets.LITTLY_EMAIL }}
           LITTLY_PASSWORD: ${{ secrets.LITTLY_PASSWORD }}
         run: |
           python3 - << 'PYEOF'
-          import hmac, hashlib, json, os, re, sys, time, urllib.parse, urllib.request
+          import hmac, hashlib, json, os, re, time, urllib.parse, urllib.request
           from time import gmtime, strftime
           import requests
 
@@ -34,8 +31,6 @@ jobs:
           SECRET_KEY = os.environ['COUPANG_SECRET_KEY']
           DOMAIN = 'https://api-gateway.coupang.com'
           LITTLY_BASE = 'https://api.litt.ly/v0'
-          LITTLY_EMAIL = os.environ['LITTLY_EMAIL']
-          LITTLY_PASSWORD = os.environ['LITTLY_PASSWORD']
 
           def gen_hmac(method, path, query=''):
               dt = strftime('%y%m%d', gmtime()) + 'T' + strftime('%H%M%S', gmtime()) + 'Z'
@@ -43,7 +38,7 @@ jobs:
               sig = hmac.new(SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()
               return f'CEA algorithm=HmacSHA256, access-key={ACCESS_KEY}, signed-date={dt}, signature={sig}'
 
-          def deeplink(urls):
+          def deeplink_batch(urls):
               path = '/v2/providers/affiliate_open_api/apis/openapi/deeplink'
               auth = gen_hmac('POST', path)
               body = json.dumps({'coupangUrls': urls}).encode('utf-8')
@@ -54,116 +49,106 @@ jobs:
               with urllib.request.urlopen(req, timeout=15) as r:
                   raw = r.read()
                   for enc in ('utf-8', 'euc-kr', 'cp949', 'latin-1'):
-                      try:
-                          return json.loads(raw.decode(enc))
-                      except Exception:
-                          continue
+                      try: return json.loads(raw.decode(enc))
+                      except: continue
               return {}
 
           # 리틀리 로그인
-          r = requests.post(f'{LITTLY_BASE}/auth/login',
-              json={'email': LITTLY_EMAIL, 'password': LITTLY_PASSWORD}, verify=False)
-          token = r.json().get('token', '')
+          email = os.environ['LITTLY_EMAIL']
+          pw = os.environ['LITTLY_PASSWORD']
+          r = requests.post(f'{LITTLY_BASE}/auth/login', json={'email': email, 'password': pw}, verify=False, timeout=10)
+          token = r.json().get('token','')
           print(f'리틀리 로그인: {"OK" if token else "FAIL"}')
           headers = {'Authorization': f'Bearer {token}'}
 
           # 페이지 조회
-          r = requests.get(f'{LITTLY_BASE}/page', headers=headers)
+          r = requests.get(f'{LITTLY_BASE}/page', headers=headers, verify=False, timeout=10)
           page = r.json()
-          page_id = page['id']
+          page_id = page.get('id')
           blocks = page.get('data', {}).get('blocks', [])
-          print(f'page_id: {page_id}, blocks: {len(blocks)}개')
+          print(f'page_id: {page_id}, blocks: {len(blocks)}')
 
           # productLink 블록 찾기
-          prod_block_idx = None
-          prod_block = None
-          for i, b in enumerate(blocks):
+          pl_block = None
+          for b in blocks:
               if b.get('type') == 'productLink':
-                  prod_block_idx = i
-                  prod_block = b
+                  pl_block = b
                   break
 
-          if prod_block is None:
-              print('productLink 블록 없음'); sys.exit(1)
+          if not pl_block:
+              print('productLink 블록 없음'); exit(1)
 
-          links = prod_block.get('links', [])
-          print(f'상품 수: {len(links)}개')
+          links = pl_block.get('links', [])
+          print(f'상품 총 {len(links)}개')
 
-          # AFFSDP 링크에서 pageKey/itemId/vendorItemId 파싱
-          AFFSDP_PAT = re.compile(r'link\.coupang\.com/re/AFFSDP')
-          to_fix = []
-          skip_no_id = []
-
+          # AFFSDP → shortenUrl 교체
+          affsdp_items = []
           for item in links:
-              url = item.get('url', '')
-              if 'link.coupang.com/a/' in url:
-                  print(f'  SKIP (already shortenUrl): {item["title"][:30]}')
-                  continue
-              if 'AFFSDP' not in url:
-                  print(f'  SKIP (not coupang): {item["title"][:30]}')
-                  continue
-              params = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(url).query))
-              pk = params.get('pageKey', '')
-              iid = params.get('itemId', '')
-              vid = params.get('vendorItemId', '')
-              if pk and iid and vid:
-                  to_fix.append((item, pk, iid, vid))
-              else:
-                  skip_no_id.append(item)
-                  print(f'  SKIP (no itemId): {item["title"][:30]}')
+              url = item.get('url','')
+              if 'AFFSDP' in url:
+                  m_pk = re.search(r'pageKey=(\d+)', url)
+                  m_iid = re.search(r'itemId=(\d+)', url)
+                  m_vid = re.search(r'vendorItemId=(\d+)', url)
+                  pk = m_pk.group(1) if m_pk else ''
+                  iid = m_iid.group(1) if m_iid else ''
+                  vid = m_vid.group(1) if m_vid else ''
+                  if pk and iid and vid:
+                      affsdp_items.append({
+                          'item': item,
+                          'coupang_url': f'https://www.coupang.com/vp/products/{pk}?itemId={iid}&vendorItemId={vid}'
+                      })
 
-          print(f'\n변환 대상: {len(to_fix)}개 / 스킵: {len(skip_no_id)}개\n')
+          print(f'교체 대상: {len(affsdp_items)}개')
 
-          # deeplink API 배치 변환 (10개씩)
-          key_to_shorten = {}
-          all_items_urls = [(item, f'https://www.coupang.com/vp/products/{pk}?itemId={iid}&vendorItemId={vid}')
-                            for item, pk, iid, vid in to_fix]
-
-          for i in range(0, len(all_items_urls), 10):
-              batch = all_items_urls[i:i+10]
-              urls = [url for _, url in batch]
+          # deeplink 배치 변환 (10개씩)
+          url_to_shorten = {}
+          all_urls = [x['coupang_url'] for x in affsdp_items]
+          for i in range(0, len(all_urls), 10):
+              batch = all_urls[i:i+10]
               try:
-                  r = deeplink(urls)
-                  for j, d in enumerate(r.get('data', [])):
-                      s = d.get('shortenUrl', '')
-                      item_key = batch[j][0]['key']
+                  r2 = deeplink_batch(batch)
+                  for j, d in enumerate(r2.get('data', [])):
+                      s = d.get('shortenUrl','')
                       if s:
-                          key_to_shorten[item_key] = s
+                          url_to_shorten[batch[j]] = s
+                          print(f'  OK: {batch[j][-40:]} → {s}')
+                      else:
+                          print(f'  SKIP(단종): {batch[j][-40:]}')
               except Exception as e:
-                  print(f'  [WARN] deeplink 배치 실패: {e}')
-              if i + 10 < len(all_items_urls):
-                  time.sleep(0.3)
+                  print(f'  배치 실패: {e}')
+              if i + 10 < len(all_urls):
+                  time.sleep(0.5)
 
-          print(f'shortenUrl 획득: {len(key_to_shorten)}개\n')
+          print(f'\nshortenUrl 획득: {len(url_to_shorten)}개')
 
-          # 블록 업데이트
-          updated = 0
-          for item in links:
-              k = item.get('key', '')
-              if k in key_to_shorten:
-                  old_url = item['url']
-                  item['url'] = key_to_shorten[k]
-                  updated += 1
-                  print(f'  OK: {item["title"][:35]}')
-                  print(f'       → {key_to_shorten[k]}')
+          # links 업데이트
+          changed = 0
+          for x in affsdp_items:
+              shorten = url_to_shorten.get(x['coupang_url'])
+              if shorten:
+                  x['item']['url'] = shorten
+                  changed += 1
 
-          print(f'\n업데이트: {updated}개')
+          print(f'교체 완료: {changed}개')
 
-          # PATCH 요청
-          blocks[prod_block_idx]['links'] = links
-          patch_data = {'data': page['data']}
-          r = requests.patch(f'{LITTLY_BASE}/page/{page_id}',
-              json=patch_data, headers=headers)
-          print(f'PATCH 응답: {r.status_code}')
-          if r.status_code == 200:
-              print('✅ 리틀리 링크 업데이트 완료')
+          # PATCH 저장
+          patch_data = {'data': page.get('data', {})}
+          r3 = requests.patch(
+              f'{LITTLY_BASE}/page/{page_id}',
+              json=patch_data, headers=headers, verify=False, timeout=30
+          )
+          print(f'PATCH 결과: {r3.status_code}')
+          if r3.status_code not in (200, 201, 204):
+              print(f'응답: {r3.text[:300]}')
           else:
-              print(f'❌ 실패: {r.text[:200]}')
+              print('✅ 리틀리 업데이트 완료')
           PYEOF
 
-      - name: Commit log
+      - name: Save results
         run: |
+          echo "completed at $(date -u)" > results/fix_littly_log.txt
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git diff --quiet || git commit -am "chore: littly link fix log"
-          git push origin main || true
+          git add results/fix_littly_log.txt
+          git diff --staged --quiet || git commit -m "chore: fix littly links log"
+          git push origin main
