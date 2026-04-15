@@ -23,7 +23,7 @@ def _docid() -> str:
     return "".join(random.choices(string.digits + string.ascii_uppercase, k=26))
 
 
-def para(text: str, bold: bool = False, fs: str = "fs16") -> dict:
+def para(text: str, bold: bool = False, fs: str = FS["normal"]) -> dict:
     style = {"fontSizeCode": fs, "@ctype": "nodeStyle"}
     if bold:
         style["bold"] = True
@@ -35,12 +35,12 @@ def para(text: str, bold: bool = False, fs: str = "fs16") -> dict:
 
 
 def para_link(text: str, url: str) -> dict:
-    # 링크 텍스트도 본문 폰트(fs16) 적용
+    # 링크 텍스트: 본문 폰트 fs13 (15px)
     return {
         "id": _uid(),
         "nodes": [{
             "id": _uid(), "value": text,
-            "style": {"fontSizeCode": "fs16", "@ctype": "nodeStyle"},
+            "style": {"fontSizeCode": FS["normal"], "@ctype": "nodeStyle"},
             "link": {"url": url, "@ctype": "urlLink"},
             "@ctype": "textNode"
         }],
@@ -49,7 +49,7 @@ def para_link(text: str, url: str) -> dict:
 
 
 def empty_para() -> dict:
-    return para("", fs="fs16")
+    return para("", fs=FS["normal"])  # fs13
 
 
 def text_comp(paras: list) -> dict:

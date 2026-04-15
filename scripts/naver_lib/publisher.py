@@ -41,7 +41,8 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     - OG_MAP 없는 링크(브랜드커넥트) → PLAIN_LINK (텍스트 링크로 처리)
     반환: (components, image_upload_urls)
     """
-    LINK_PAT = re.compile(r'https?://(?:link\.coupang\.com|naver\.me|brand\.naver\.com)\S+')
+    LINK_PAT  = re.compile(r'https?://(?:link\.coupang\.com|naver\.me|brand\.naver\.com)\S+')
+    A_TAG_PAT = re.compile(r'<a\s+href=["\']([^"\']+)["\'][^>]*>([^<]*)</a>', re.IGNORECASE)
 
     image_upload_urls = []
     sections = []
@@ -58,6 +59,14 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
         if stripped == 'IMAGE_HERE':
             flush()
             sections.append(('image_marker', ''))
+            continue
+        # C: <a href="URL">텍스트</a> 패턴 명시 파싱 → PARA_LINK
+        a_match = A_TAG_PAT.search(stripped)
+        if a_match:
+            a_url  = a_match.group(1).strip()
+            a_text = a_match.group(2).strip() or "구매하기"
+            flush()
+            sections.append(('para_link', (a_url, a_text)))
             continue
         m = LINK_PAT.search(stripped)
         if m:
@@ -82,6 +91,12 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
             # IMAGE_HERE: extra_image 배치 예약 (실제 이미지는 STEP5에서 삽입)
             components.append({'_type': 'IMAGE_HERE_SLOT'})
             image_here_idx[0] += 1
+            continue
+
+        if sec_type == 'para_link':
+            # C: <a href="URL">텍스트</a> → urlLink 하이퍼링크 컴포넌트
+            a_url, a_text = sec_content
+            components.append({'_type': 'PARA_LINK', '_url': a_url, '_text': a_text})
             continue
 
         if sec_type == 'link':
@@ -367,10 +382,13 @@ async def publish(
                         link=link,
                         domain=_domain,
                     ))
+            elif t == 'PARA_LINK':
+                # C: <a href> 파싱 결과 → urlLink 하이퍼링크
+                final_comps.append(text_comp([para_link(item['_text'], item['_url'])]))
             elif t == 'PLAIN_LINK':
-                # OG카드 없는 링크 → 텍스트 para로 삽입
+                # URL 단독 줄 → urlLink 하이퍼링크 (텍스트 고정)
                 url = item['_url']
-                final_comps.append(text_comp([para_link("🔗 상품 링크 바로가기", url)]))
+                final_comps.append(text_comp([para_link("🔗 지금 네이버에서 확인하기", url)]))
             elif t == 'IMAGE_HERE_SLOT':
                 # IMAGE_HERE 마커: extra_uploaded 이미지 순서대로 배치 (placeholder)
                 final_comps.append({'_type': 'IMAGE_HERE_SLOT'})
