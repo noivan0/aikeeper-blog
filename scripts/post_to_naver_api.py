@@ -49,7 +49,10 @@ CATEGORY_NO   = int(os.environ.get("NAVER_CATEGORY_NO", "6"))
 POST_TITLE    = os.environ.get("NAVER_TITLE", "")
 BODY_PATH     = os.environ.get("NAVER_BODY_PATH", "")
 PRODUCTS_JSON = os.environ.get("NAVER_PRODUCTS_JSON", "[]")
-SESSION_FILE  = str(Path(__file__).parent.parent / "naver_session.json")
+SESSION_FILE  = os.environ.get(
+    "NAVER_SESSION_FILE",
+    str(Path(__file__).parent.parent / "naver_session.json")
+)
 LOG_PATH      = str(Path(__file__).parent.parent / "results" / "naver_simple_posts.jsonl")
 
 WRITE_URL        = f"https://blog.naver.com/{BLOG_ID}/postwrite?categoryNo={CATEGORY_NO}"

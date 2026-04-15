@@ -21,8 +21,10 @@ load_env()
 BASE_DIR   = Path(__file__).parent.parent
 ATOM_URL   = os.environ.get("GGULTONGMON_ATOM_URL", "https://ggultongmon.allsweep.xyz/atom.xml")
 LOG_FILE   = BASE_DIR / "results" / "naver_homefeed_posts.jsonl"
+TRIED_FILE = BASE_DIR / "results" / "naver_homefeed_tried.jsonl"  # Medium-2: 시도 기록
 LOCK_FILE  = Path("/tmp/naver_homefeed.lock")
-MAX_AGE_DAYS = int(os.environ.get("NAVER_MAX_AGE_DAYS", "7"))
+MAX_AGE_DAYS    = int(os.environ.get("NAVER_MAX_AGE_DAYS", "7"))
+TRIED_BLOCK_HRS = int(os.environ.get("NAVER_TRIED_BLOCK_HRS", "24"))  # 시도 후 재시도 금지 시간
 
 
 def log(msg: str):
@@ -31,6 +33,7 @@ def log(msg: str):
 
 
 def load_published() -> set:
+    """성공 발행 URL 목록 로드."""
     if not LOG_FILE.exists():
         return set()
     urls = set()
@@ -42,6 +45,38 @@ def load_published() -> set:
         except Exception:
             pass
     return urls
+
+
+def load_tried() -> set:
+    """Medium-2: 발행 시도 URL 목록 로드 (TRIED_BLOCK_HRS 이내 시도만)."""
+    if not TRIED_FILE.exists():
+        return set()
+    urls = set()
+    cutoff = datetime.now() - __import__('datetime').timedelta(hours=TRIED_BLOCK_HRS)
+    for line in TRIED_FILE.read_text().splitlines():
+        try:
+            d = json.loads(line)
+            url = d.get("original_url", "")
+            ts_str = d.get("timestamp", "")
+            if not url or not ts_str:
+                continue
+            ts = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+            if ts > cutoff:
+                urls.add(url)
+        except Exception:
+            pass
+    return urls
+
+
+def mark_tried(post_url: str, post_title: str):
+    """Medium-2: 발행 시도 직전 기록 — 재선택 방지."""
+    TRIED_FILE.parent.mkdir(exist_ok=True)
+    with open(TRIED_FILE, "a") as f:
+        f.write(json.dumps({
+            "original_url": post_url,
+            "original_title": post_title,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }, ensure_ascii=False) + "\n")
 
 
 def fetch_atom() -> list:
@@ -177,6 +212,8 @@ def enrich_products_with_extra_images(products: list, topic: str) -> list:
 
 
 def run_post(post: dict) -> bool:
+    # Medium-2: 발행 시도 직전 기록 — 실패해도 TRIED_BLOCK_HRS 동안 재선택 금지
+    mark_tried(post['url'], post['title'])
     log(f"  홈판 포스트 생성 시작: {post['title'][:50]}")
 
     products = parse_products_from_content(post['content'])
@@ -250,13 +287,12 @@ def run_post(post: dict) -> bool:
     if r2.stderr:
         print(r2.stderr)
 
-    # 발행 성공 여부를 stdout에서 URL 직접 추출
+    # Medium-1: stdout 전체에서 URL 추출 — findall + max(key=len) 으로 잘림 방지
     naver_url = ""
     if r2.returncode == 0:
-        # stdout에서 발행된 네이버 URL 추출
-        _url_match = re.search(r'https?://blog\.naver\.com/\S+', r2.stdout)
-        if _url_match:
-            naver_url = _url_match.group(0).rstrip(".,;)")
+        _all_urls = re.findall(r'https?://blog\.naver\.com/\S+', r2.stdout)
+        if _all_urls:
+            naver_url = max(_all_urls, key=len).rstrip(".,;)\n\r")
 
     if r2.returncode == 0 and naver_url:
         # homefeed 로그에 기록
@@ -312,13 +348,15 @@ def main():
     try:
         log("=== 네이버 홈판 크로스포스팅 시작 ===")
         published = load_published()
-        log(f"이미 발행된 포스팅: {len(published)}개")
+        tried     = load_tried()
+        skip_urls = published | tried
+        log(f"이미 발행된 포스팅: {len(published)}개 | 최근 시도: {len(tried)}개")
 
         posts = fetch_atom()
         log(f"atom.xml: {len(posts)}개 포스팅")
 
-        # 미발행 포스팅 선택
-        new_posts = [p for p in posts if p['url'] not in published]
+        # 미발행 + 미시도 포스팅 선택 (Medium-2: tried 목록도 제외)
+        new_posts = [p for p in posts if p['url'] not in skip_urls]
         if not new_posts:
             log("발행할 새 포스팅 없음")
             return
