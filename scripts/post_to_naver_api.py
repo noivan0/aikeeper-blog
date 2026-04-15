@@ -433,52 +433,13 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
         else:
             await page.wait_for_timeout(5000)
 
-        # Ctrl+S로 자동저장 트리거 → RabbitAutoSaveWrite.naver POST → tokenId 캡처
-        # 핵심 수정: 팝업 제거 후 재Ctrl+S 실행 (팝업이 POST 자체를 block하므로)
-        print("  자동저장(Ctrl+S)으로 tokenId 캡처 시도...")
-        await page.keyboard.press("Control+s")
-        await page.wait_for_timeout(800)
+        # se-auth 캡처는 OGLink 요청에서 자동으로 됨 (product_links 입력 시)
+        # tokenId는 세션 쿠키에 내재 → Ctrl+S 불필요 (2026-04-15 검증)
 
-        # Ctrl+S 직후 팝업 즉시 폴링 처리 (15회 × 300ms)
-        for _ in range(15):
-            popup_handled = await page.evaluate("""() => {
-                const btns = document.querySelectorAll('button');
-                for (const b of btns) {
-                    const t = (b.innerText || '').trim();
-                    if (t === '취소' || t === '닫기' || t === '아니요') {
-                        const r = b.getBoundingClientRect();
-                        if (r.width > 0) { b.click(); return true; }
-                    }
-                }
-                return false;
-            }""")
-            if popup_handled:
-                print("  [Ctrl+S 팝업] 취소 처리 ✅ → 재Ctrl+S")
-                await page.wait_for_timeout(500)
-                # 팝업 제거 후 재Ctrl+S (이때 비로소 RabbitAutoSaveWrite POST 발행)
-                await page.keyboard.press("Control+s")
-                await page.wait_for_timeout(800)
-                break
-            await page.wait_for_timeout(300)
-
-        # tokenId 대기 (최대 10s)
-        for _ in range(20):
-            if captured["token_id"]:
-                break
-            await page.wait_for_timeout(500)
-
-        await page.wait_for_timeout(1000)  # 자동저장 완료 대기
-
-        token_id  = captured["token_id"]
         se_auth   = captured["se_auth"]
         se_app_id = captured["se_app_id"]
-        print(f"  tokenId: {'있음' if token_id else '없음'}")
-        print(f"  se-auth: {'있음' if se_auth else '없음'}")
-
-        if not token_id:
-            print("  ❌ tokenId 캡처 실패 (자동저장 미작동) — 발행 중단")
-            await browser.close()
-            return None
+        print(f"  se-auth: {'있음' if se_auth else '없음 (OG카드 없는 발행)'}")
+        # tokenId는 세션 쿠키에 내재 → 별도 캡처 불필요 (2026-04-15 검증)
 
         # ── 2단계: 쿠팡 썸네일 다운로드 ───────────────────────────────
         # 먼저 oglink API로 썸네일 URL 수집
@@ -748,8 +709,9 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
         print(f"  ✅ autoSaveNo={auto_save_no}")
 
         # ── 7단계: 발행 ────────────────────────────────────────────────
+        # 확인된 사실 (2026-04-15): tokenId는 세션 쿠키에 내재 → 생략 가능
         pop_pub = make_pop(auto_save_no=auto_save_no)
-        await page.evaluate("([pp, t]) => { window.__nv_pp=pp; window.__nv_t=t; }", [pop_pub, token_id])
+        await page.evaluate("([pp]) => { window.__nv_pp=pp; }", [pop_pub])
 
         publish_result = await page.evaluate(f"""async () => {{
             const params = new URLSearchParams();
@@ -758,7 +720,7 @@ async def publish(title: str, body: str, product_links: list, extra_image_urls: 
             params.append('mediaResources', '{{"image":[],"video":[],"file":[]}}');
             params.append('populationParams', window.__nv_pp);
             params.append('productApiVersion', 'v1');
-            params.append('tokenId', window.__nv_t);
+            // tokenId 생략 (세션 쿠키로 대체 — 2026-04-15 검증)
             const resp = await fetch({json.dumps(RABBIT_WRITE_URL)}, {{
                 method: 'POST', credentials: 'include',
                 headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},

@@ -175,17 +175,9 @@ async def publish(
             "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
         )
 
-        captured = {"token_id": "", "se_auth": "", "se_app_id": ""}
+        captured = {"se_auth": "", "se_app_id": ""}
 
         async def on_req(req):
-            if "RabbitAutoSaveWrite.naver" in req.url and req.method == "POST":
-                pp = urllib.parse.parse_qs(req.post_data or "", keep_blank_values=True)
-                if pp.get("tokenId") and not captured["token_id"]:
-                    captured["token_id"] = pp["tokenId"][0]
-            if "RabbitWrite.naver" in req.url and req.method == "POST":
-                pp = urllib.parse.parse_qs(req.post_data or "", keep_blank_values=True)
-                if pp.get("tokenId"):
-                    captured["token_id"] = pp["tokenId"][0]
             if "oglink" in req.url and "platform.editor" in req.url:
                 if not captured["se_auth"]:
                     captured["se_auth"] = req.headers.get("se-authorization", "")
@@ -219,76 +211,26 @@ async def publish(
             return None
         await page.wait_for_timeout(1000)
 
-        # ── STEP 1: tokenId + se-auth 캡처 ──────────────────────
-        # 제목 활성화 (더미 "_" 입력)
-        tc = await page.query_selector(".se-title-text")
-        if tc:
-            box = await tc.bounding_box()
-            await page.mouse.click(box['x'] + 50, box['y'] + box['height'] / 2)
-        await page.keyboard.type("_", delay=10)
-
-        # 본문에 쿠팡 링크 입력 → OG카드 트리거 → se-auth 캡처
-        be = await page.query_selector(".se-component.se-text")
-        if be:
-            box = await be.bounding_box()
-            await page.mouse.click(box['x'] + 50, box['y'] + box['height'] / 2)
-
+        # ── STEP 1: se-auth 캡처 (쿠팡 링크 있을 때만) ───────────
+        # 확인된 사실: tokenId는 세션 쿠키로 대체 가능 → 캡처 불필요
+        # se-auth: OGLink API 헤더에서 캡처 (쿠팡 링크 없으면 OG카드도 없음)
         if _product_links:
+            # 본문에 쿠팡 링크 타이핑 → OGLink 요청 트리거 → se-auth 캡처
+            be = await page.query_selector(".se-component.se-text")
+            if be:
+                box = await be.bounding_box()
+                await page.mouse.click(box['x'] + 50, box['y'] + box['height'] / 2)
             await page.keyboard.type(_product_links[0], delay=5)
             await page.keyboard.press("Enter")
             print("  se-auth 캡처 대기 (9s)...")
             await page.wait_for_timeout(9000)
         else:
-            # 쿠팡 링크 없을 때 (P005 브랜드커넥트): Ctrl+S로 바로 tokenId 캡처
-            await page.wait_for_timeout(3000)
+            # P005 브랜드커넥트 등 OG카드 없는 경우: 에디터 활성화만
+            await page.wait_for_timeout(2000)
 
-        # ── STEP 1-b: Ctrl+S로 tokenId 캡처 ─────────────────────
-        # 기존 버그: Ctrl+S → 팝업 뜨면 tokenId POST 자체가 안 날아감
-        # 수정: Ctrl+S 전에 팝업 먼저 제거 → Ctrl+S → 응답 대기
-        print("  Ctrl+S tokenId 캡처 시도...")
-        await page.keyboard.press("Control+s")
-        await page.wait_for_timeout(800)
-
-        # Ctrl+S 직후 팝업 즉시 처리 (폴링)
-        popup_cleared = False
-        for _ in range(15):
-            handled = await page.evaluate("""() => {
-                const btns = document.querySelectorAll('button');
-                for (const b of btns) {
-                    const t = (b.innerText || '').trim();
-                    if (t === '취소' || t === '닫기' || t === '아니요') {
-                        const r = b.getBoundingClientRect();
-                        if (r.width > 0) { b.click(); return true; }
-                    }
-                }
-                return false;
-            }""")
-            if handled:
-                print("  [Ctrl+S 팝업] 취소 처리 ✅")
-                popup_cleared = True
-                await page.wait_for_timeout(500)
-                # 팝업 제거 후 다시 Ctrl+S
-                await page.keyboard.press("Control+s")
-                await page.wait_for_timeout(800)
-                break
-            await page.wait_for_timeout(300)
-
-        # tokenId 대기 (최대 10s)
-        for _ in range(20):
-            if captured["token_id"]:
-                break
-            await page.wait_for_timeout(500)
-
-        token_id  = captured["token_id"]
         se_auth   = captured["se_auth"]
         se_app_id = captured["se_app_id"]
-        print(f"  tokenId: {'있음' if token_id else '없음'}")
-        print(f"  se-auth: {'있음' if se_auth else '없음'}")
-
-        if not token_id:
-            print("  ❌ tokenId 캡처 실패 — 발행 중단")
-            await browser.close()
-            return None
+        print(f"  se-auth: {'있음' if se_auth else '없음 (OG카드 없는 발행)'}")
 
         # ── STEP 2: OGLink 수집 (쿠팡 링크만) ──────────────────
         og_map: dict[str, dict] = {}
@@ -442,8 +384,9 @@ async def publish(
         print(f"  ✅ autoSaveNo={auto_save_no}")
 
         # ── STEP 8: 발행 ────────────────────────────────────────
+        # 확인된 사실: tokenId는 세션 쿠키에 내재 → 빈 문자열로도 발행 성공
         pop_pub = make_pop(category_no=category_no, auto_save_no=auto_save_no)
-        publish_result = await rabbit_write(page, blog_id, doc_str, pop_pub, token_id)
+        publish_result = await rabbit_write(page, blog_id, doc_str, pop_pub, "")
         print(f"  발행: {publish_result.get('status')} | {publish_result.get('body','')[:100]}")
 
         await save_session(context, _session)

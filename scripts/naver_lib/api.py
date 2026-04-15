@@ -59,14 +59,18 @@ async def autosave(page, blog_id: str, doc_str: str, pop_str: str) -> dict | Non
     return None
 
 
-async def rabbit_write(page, blog_id: str, doc_str: str, pop_str: str, token_id: str) -> dict:
+async def rabbit_write(page, blog_id: str, doc_str: str, pop_str: str, token_id: str = "") -> dict:
     """
     RabbitWrite.naver 호출 (실제 발행).
     반환: {"status": int, "body": str}
+
+    확인된 사실 (2026-04-15):
+    - tokenId는 세션 쿠키에 내재되어 있어 명시적 전송 불필요
+    - tokenId 파라미터를 생략해도 발행 성공
     """
     await page.evaluate(
-        "([pp, t]) => { window.__nv_pp=pp; window.__nv_t=t; }",
-        [pop_str, token_id]
+        "([d, pp]) => { window.__nv_doc=d; window.__nv_pp=pp; }",
+        [doc_str, pop_str]
     )
     result = await page.evaluate(f"""async () => {{
         const params = new URLSearchParams();
@@ -75,7 +79,7 @@ async def rabbit_write(page, blog_id: str, doc_str: str, pop_str: str, token_id:
         params.append('mediaResources', '{{"image":[],"video":[],"file":[]}}');
         params.append('populationParams', window.__nv_pp);
         params.append('productApiVersion', 'v1');
-        params.append('tokenId', window.__nv_t);
+        // tokenId: 세션 쿠키에 내재 → 생략 가능 (2026-04-15 확인)
         const resp = await fetch({json.dumps(RABBIT_WRITE_URL)}, {{
             method: 'POST', credentials: 'include',
             headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
