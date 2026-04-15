@@ -23,7 +23,7 @@ import googleapiclient.discovery
 from coupang_api import _post
 
 # ── 설정 ─────────────────────────────────────────────────────────────────
-BLOG_ID = '4422596386410826373'
+BLOG_ID = os.environ.get('GGULTONGMON_BLOG_ID', '4422596386410826373')
 DEEPLINK_PATH = "/v2/providers/affiliate_open_api/apis/openapi/deeplink"
 AFFSDP_PATTERN = re.compile(r'https://link\.coupang\.com/re/AFFSDP\?[^"<\s\']+')
 

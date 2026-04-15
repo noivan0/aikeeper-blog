@@ -15,7 +15,7 @@ load_env()
 import google.oauth2.credentials
 import googleapiclient.discovery
 
-BLOG_ID = '4422596386410826373'
+BLOG_ID = os.environ.get('GGULTONGMON_BLOG_ID', '4422596386410826373')
 LOG_FILE = Path(__file__).parent.parent / 'results' / 'fix_links_log.jsonl'
 LOG_FILE.parent.mkdir(exist_ok=True)
 

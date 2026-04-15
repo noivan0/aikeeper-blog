@@ -8,6 +8,10 @@ import random
 import string
 
 # 폰트 사이즈 코드 (네이버 SE 실측 기반)
+# normal=16pt(본문), heading=20pt(소제목) — 노이반님 지시 2026-04-15
+# 네이버 SE 실제 렌더링 기준 (2026-04-12 역공학 확정)
+# fs11=13px(파트너스고지), fs13=15px(본문), fs19=20px(소제목), fs28=23px(대제목)
+# ⚠️ fs16/fs20 사용 금지: fs20=11px로 렌더링됨
 FS = {"tiny": "fs11", "normal": "fs13", "heading": "fs19", "large": "fs28"}
 
 
@@ -31,11 +35,12 @@ def para(text: str, bold: bool = False, fs: str = "fs16") -> dict:
 
 
 def para_link(text: str, url: str) -> dict:
+    # 링크 텍스트도 본문 폰트(fs16) 적용
     return {
         "id": _uid(),
         "nodes": [{
             "id": _uid(), "value": text,
-            "style": {"fontSizeCode": "fs13", "@ctype": "nodeStyle"},
+            "style": {"fontSizeCode": "fs16", "@ctype": "nodeStyle"},
             "link": {"url": url, "@ctype": "urlLink"},
             "@ctype": "textNode"
         }],

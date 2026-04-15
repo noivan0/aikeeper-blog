@@ -181,7 +181,18 @@ def main():
     print(f"[INFO] 상품 {len(products)}개 준비 완료")
     for p in products:
         print(f"       [{p.get('rank','-')}] {p['productName'][:40]} / {int(p['productPrice']):,}원 / {p.get('shortenUrl','')[:50]}")
-    
+
+    # ── shortenUrl 강제 검증 (쿠팡 파트너스 규칙) ──────────────────
+    # shortenUrl 없는 상품은 발행 차단 (productUrl 노출 금지)
+    missing_shorten = [p for p in products if not p.get("shortenUrl")]
+    if missing_shorten:
+        print(f"[WARN] shortenUrl 없는 상품 {len(missing_shorten)}개 — 해당 상품 제외")
+        products = [p for p in products if p.get("shortenUrl")]
+    if not products:
+        print(f"[ERROR] shortenUrl 있는 상품이 없음 — 발행 차단 (쿠팡 파트너스 규칙)")
+        sys.exit(1)
+    print(f"[INFO] shortenUrl 검증 완료: {len(products)}개 상품 발행 진행")
+
     # 2. 포스트 생성
     print(f"[INFO] Claude 포스트 생성 중...")
     post_data = generate_post(

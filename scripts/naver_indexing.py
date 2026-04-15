@@ -29,7 +29,7 @@ ATOM_URL           = f"{BLOG_URL}/atom.xml"
 BLOGGER_CLIENT_ID     = os.environ.get("BLOGGER_CLIENT_ID", "")
 BLOGGER_CLIENT_SECRET = os.environ.get("BLOGGER_CLIENT_SECRET", "")
 BLOGGER_REFRESH_TOKEN = os.environ.get("BLOGGER_REFRESH_TOKEN", "")
-BLOG_ID               = "3598676904202320050"
+BLOG_ID               = os.environ.get("ALLSWEEP_BLOG_ID", "3598676904202320050")
 
 
 def get_blogger_token() -> str:

@@ -12,7 +12,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
 BLOG_URL = "https://aikeeper.allsweep.xyz"
-BLOG_ID  = "3598676904202320050"
+BLOG_ID  = os.environ.get("ALLSWEEP_BLOG_ID", "3598676904202320050")
 
 
 def get_credentials():

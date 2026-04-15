@@ -1526,7 +1526,8 @@ def load_blogger_titles_today():
         if not access_token:
             return titles
 
-        BLOG_ID_LOCAL = "3598676904202320050"
+        # ALLSWEEP_BLOG_ID: allsweep.xyz 블로그 ID (환경변수 우선)
+        BLOG_ID_LOCAL = os.environ.get("ALLSWEEP_BLOG_ID", "3598676904202320050")
         today   = datetime.date.today().isoformat()
         start_t = urllib.parse.quote(f"{today}T00:00:00+09:00")
         end_t   = urllib.parse.quote(f"{today}T23:59:59+09:00")

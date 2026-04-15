@@ -54,6 +54,11 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
 
     for line in body.split('\n'):
         stripped = line.strip()
+        # IMAGE_HERE 마커: 소제목 직후 이미지 배치 위치 표시
+        if stripped == 'IMAGE_HERE':
+            flush()
+            sections.append(('image_marker', ''))
+            continue
         m = LINK_PAT.search(stripped)
         if m:
             url = m.group(0).rstrip('.,)')
@@ -68,7 +73,17 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     first_image = True
     url_seen_count: dict[str, int] = {}
 
+    # IMAGE_HERE 마커 카운트 (extra_image 배치용)
+    image_here_count = sum(1 for t, _ in sections if t == 'image_marker')
+    image_here_idx = [0]  # mutable counter
+
     for sec_type, sec_content in sections:
+        if sec_type == 'image_marker':
+            # IMAGE_HERE: extra_image 배치 예약 (실제 이미지는 STEP5에서 삽입)
+            components.append({'_type': 'IMAGE_HERE_SLOT'})
+            image_here_idx[0] += 1
+            continue
+
         if sec_type == 'link':
             url = sec_content
             url_seen_count[url] = url_seen_count.get(url, 0) + 1
@@ -356,18 +371,43 @@ async def publish(
                 # OG카드 없는 링크 → 텍스트 para로 삽입
                 url = item['_url']
                 final_comps.append(text_comp([para_link("🔗 상품 링크 바로가기", url)]))
+            elif t == 'IMAGE_HERE_SLOT':
+                # IMAGE_HERE 마커: extra_uploaded 이미지 순서대로 배치 (placeholder)
+                final_comps.append({'_type': 'IMAGE_HERE_SLOT'})
 
-        # extra 이미지 본문 중간 분산 삽입
-        if extra_uploaded:
-            positions = [len(final_comps) // 3, 2 * len(final_comps) // 3]
-            for idx, eu in zip(positions, extra_uploaded):
+        # IMAGE_HERE_SLOT을 extra_uploaded 이미지로 교체
+        # 소제목 직후 배치: IMAGE_HERE_SLOT 위치에 실제 이미지 삽입
+        extra_queue = list(extra_uploaded)
+        new_final = []
+        for comp in final_comps:
+            if isinstance(comp, dict) and comp.get('_type') == 'IMAGE_HERE_SLOT' and extra_queue:
+                eu = extra_queue.pop(0)
+                new_final.append(image_comp(
+                    src=eu["src"], path=eu["path"],
+                    width=eu["width"], height=eu["height"],
+                    filename=eu["fileName"],
+                    represent=(len(new_final) == 0),  # 첫 번째 이미지만 대표
+                    file_size=eu["fileSize"]
+                ))
+            else:
+                new_final.append(comp)
+        final_comps = new_final
+
+        # 남은 extra 이미지 본문 중간 분산 삽입 (IMAGE_HERE_SLOT 소화 후 남은 것)
+        if extra_queue:
+            # IMAGE_HERE_SLOT으로 이미 소화된 이미지 제외한 나머지를 분산
+            real_comps = [c for c in final_comps if not (isinstance(c, dict) and c.get('@ctype') == 'image')]
+            total = len(final_comps)
+            per = max(total // (len(extra_queue) + 1), 1)
+            for i, eu in enumerate(extra_queue):
+                pos = min(per * (i + 1), len(final_comps))
                 ic = image_comp(
                     src=eu["src"], path=eu["path"],
                     width=eu["width"], height=eu["height"],
                     filename=eu["fileName"],
                     represent=False, file_size=eu["fileSize"]
                 )
-                final_comps.insert(min(idx, len(final_comps)), ic)
+                final_comps.insert(pos, ic)
 
         doc_str = build_document_model(title, final_comps, category_no=category_no)
         pop_save = make_pop(category_no=category_no, auto_save_no=None)
