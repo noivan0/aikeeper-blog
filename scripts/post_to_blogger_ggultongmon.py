@@ -405,48 +405,43 @@ def main():
             print(f"  ℹ️  litt.ly 등록 스킵 (비치명적): {_le}")
 
     # 4-4. 텔레그램 상품 이미지 전달 (비치명적)
-    if carousel_dir:
+    # GitHub Pages에 업로드된 slide_03_product.jpg URL로 sendPhoto (파일 의존 제거)
+    if products and post_url:
         try:
-            import urllib.request as _ur, urllib.parse as _up
+            import urllib.request as _ur, urllib.parse as _up, json as _tg_json
             _tg_token   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
             _tg_chat_id = os.environ.get("TELEGRAM_CHAT_ID", "420793033")
             if _tg_token:
-                from pathlib import Path as _P2
-                # 상품 이미지 전송 (상품 수 기준 가변)
-                _emoji_nums = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣"]
-                _prod_count = len(products) if products else 4
+                # GitHub Pages URL 목록에서 product 슬라이드만 추출
+                _all_gh_urls = _tg_json.loads(os.environ.get("CAROUSEL_IMAGE_URLS", "[]"))
+                _prod_urls = [u for u in _all_gh_urls if u and "product" in u]
+                # fallback: carousel_dir 타임스탬프로 직접 구성
+                if not _prod_urls and carousel_dir:
+                    from pathlib import Path as _PL3
+                    _dir_name3 = _PL3(carousel_dir).name
+                    _gh_base3  = os.environ.get("GITHUB_PAGES_BASE", "https://noivan0.github.io/aikeeper-blog")
+                    _prod_urls = [
+                        f"{_gh_base3}/carousel/{_dir_name3}/slide_0{i+3}_product.jpg"
+                        for i in range(len(products))
+                    ]
+                _emoji_nums = ["1\ufe0f\u20e3", "2\ufe0f\u20e3", "3\ufe0f\u20e3", "4\ufe0f\u20e3", "5\ufe0f\u20e3"]
                 _sent = 0
-                for i in range(1, _prod_count + 1):
-                    _img = _P2(carousel_dir) / f"_prod{i}.jpg"
-                    if not _img.exists():
-                        continue
-                    _img_data = _img.read_bytes()
-                    # 상품명 추출
-                    _prod_name = products[i-1].get("productName", products[i-1].get("name", "")) if i-1 < len(products) else ""
-                    _emoji = _emoji_nums[i-1] if i-1 < len(_emoji_nums) else f"{i}."
+                for i, _purl in enumerate(_prod_urls):
+                    _prod_name = products[i].get("productName", products[i].get("name", "")) if i < len(products) else ""
+                    _emoji = _emoji_nums[i] if i < len(_emoji_nums) else f"{i+1}."
                     _photo_caption = f"{_emoji} {_prod_name}"
-                    _boundary = "----FormBoundary7MA4YWxkTrZu0gW"
-                    _body = (
-                        f"--{_boundary}\r\n"
-                        f'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
-                        f"{_tg_chat_id}\r\n"
-                        f"--{_boundary}\r\n"
-                        f'Content-Disposition: form-data; name="caption"\r\n\r\n'
-                        f"{_photo_caption}\r\n"
-                        f"--{_boundary}\r\n"
-                        f'Content-Disposition: form-data; name="photo"; filename="_prod{i}.jpg"\r\n'
-                        f"Content-Type: image/jpeg\r\n\r\n"
-                    ).encode() + _img_data + f"\r\n--{_boundary}--\r\n".encode()
-                    _req = _ur.Request(
+                    _data = _up.urlencode({
+                        "chat_id": _tg_chat_id,
+                        "photo":   _purl,
+                        "caption": _photo_caption,
+                    }).encode()
+                    _ur.urlopen(_ur.Request(
                         f"https://api.telegram.org/bot{_tg_token}/sendPhoto",
-                        data=_body,
-                        headers={"Content-Type": f"multipart/form-data; boundary={_boundary}"},
-                        method="POST"
-                    )
-                    _ur.urlopen(_req, timeout=15)
+                        data=_data,
+                    ), timeout=15)
                     _sent += 1
                 # 포스트 링크 별도 메시지
-                _caption = f"[꿀통몬] {TOPIC[:60]}\n{post_url}"
+                _caption = f"[ggultongmon] {TOPIC[:60]}\n{post_url}"
                 _data = _up.urlencode({"chat_id": _tg_chat_id, "text": _caption}).encode()
                 _ur.urlopen(_ur.Request(
                     f"https://api.telegram.org/bot{_tg_token}/sendMessage",
