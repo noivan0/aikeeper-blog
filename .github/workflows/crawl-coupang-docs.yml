@@ -1,51 +1,89 @@
-name: Crawl Coupang Deeplink Docs
+name: Crawl Coupang Partners API Docs
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
-      - name: Install
-        run: pip install playwright && python -m playwright install chromium --with-deps
-      - name: Crawl Deeplink + Rate Limit
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          python -m playwright install chromium --with-deps
+
+      - name: Crawl Partners API Docs
         run: |
           python3 - << 'PYEOF'
-          import asyncio
-          from playwright.async_api import async_playwright
+          from playwright.sync_api import sync_playwright
+          import json, os, re
 
-          async def main():
-              async with async_playwright() as p:
-                  browser = await p.chromium.launch()
-                  page = await browser.new_page()
-                  
-                  # deeplink API 문서 페이지
-                  urls = [
-                      "https://partners.coupang.com/#help/open-api/api/deeplink",
-                      "https://partners.coupang.com/#help/open-api/api/deeplink-v2",
-                      "https://partners.coupang.com/#help/open-api",
-                  ]
-                  
-                  for url in urls:
-                      try:
-                          await page.goto(url, timeout=20000)
-                          await page.wait_for_timeout(4000)
-                          txt = await page.inner_text("body")
-                          print(f"\n=== URL: {url} ===")
-                          print(f"길이: {len(txt)}자")
-                          # rate limit, 제한, limit 관련 내용 찾기
-                          lines = txt.split('\n')
-                          for i, l in enumerate(lines):
-                              if any(k in l.lower() for k in ['rate', 'limit', '제한', '횟수', '초과', '분당', '시간당', 'quota', 'throttle', '100']):
-                                  start = max(0, i-2)
-                                  end = min(len(lines), i+5)
-                                  context = '\n'.join(lines[start:end])
-                                  print(f"\n[RATE LIMIT 관련]\n{context}")
-                          print(txt[:6000])
-                      except Exception as e:
-                          print(f"FAIL {url}: {e}")
-                  
-                  await browser.close()
+          results = {}
           
-          asyncio.run(main())
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              page = browser.new_page()
+              
+              # 메인 오픈 API 페이지
+              page.goto("https://partners.coupang.com/#help/open-api", wait_until="networkidle", timeout=30000)
+              page.wait_for_timeout(5000)
+              
+              # 메뉴 링크 수집
+              links = page.evaluate("""() => {
+                  const anchors = document.querySelectorAll('a[href*="open-api"]');
+                  return Array.from(anchors).map(a => ({text: a.innerText.trim(), href: a.href}))
+                      .filter(l => l.href && l.text);
+              }""")
+              print(f"메뉴 링크 {len(links)}개 발견")
+              
+              # 각 페이지 크롤링
+              visited = set()
+              base = "https://partners.coupang.com"
+              
+              # 주요 API 페이지들
+              api_pages = [
+                  ("open-api", "오픈 API 개요"),
+                  ("open-api/product-search", "상품 검색"),
+                  ("open-api/deeplink", "딥링크 API"),
+                  ("open-api/best-sellers", "베스트셀러"),
+                  ("open-api/categories", "카테고리"),
+              ]
+              
+              for slug, name in api_pages:
+                  url = f"{base}/#help/{slug}"
+                  if url in visited:
+                      continue
+                  visited.add(url)
+                  
+                  try:
+                      page.goto(url, wait_until="networkidle", timeout=20000)
+                      page.wait_for_timeout(3000)
+                      text = page.evaluate("document.querySelector('.content, main, #content, .help-content') ? document.querySelector('.content, main, #content, .help-content').innerText : document.body.innerText")
+                      results[name] = text[:5000] if text else "내용 없음"
+                      print(f"\n=== {name} ({url}) ===")
+                      print(text[:2000] if text else "내용 없음")
+                  except Exception as e:
+                      print(f"  오류: {e}")
+              
+              browser.close()
+          
+          # 결과 저장
+          os.makedirs("coupang_api_docs", exist_ok=True)
+          with open("coupang_api_docs/api_reference.json", "w", encoding="utf-8") as f:
+              json.dump(results, f, ensure_ascii=False, indent=2)
+          print("\n\n결과 저장 완료: coupang_api_docs/api_reference.json")
           PYEOF
+
+      - name: Commit and Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add coupang_api_docs/
+          git diff --staged --quiet || git commit -m "docs: coupang partners API reference crawled"
+          git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/noivan0/aikeeper-blog.git main
