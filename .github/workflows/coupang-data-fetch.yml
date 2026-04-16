@@ -117,7 +117,7 @@ jobs:
           access = os.environ['COUPANG_ACCESS_KEY']
           secret = os.environ['COUPANG_SECRET_KEY']
 
-          DEEPLINK_PATH = '/v2/providers/affiliate_open_api/apis/openapi/deeplink'
+          DEEPLINK_PATH = '/v2/providers/affiliate_open_api/apis/openapi/v1/deeplink'  # 공식 문서 명시 경로
 
           def make_deeplink_auth():
               dt = strftime('%y%m%d', gmtime()) + 'T' + strftime('%H%M%S', gmtime()) + 'Z'
@@ -150,13 +150,13 @@ jobs:
                       for item in data_list:
                           orig = item.get('originalUrl', '')
                           shorten = item.get('shortenUrl', '')
-                          if shorten and 'link.coupang.com/a/' in shorten and orig:
+                          if shorten and ('link.coupang.com/a/' in shorten or 'coupa.ng/' in shorten) and orig:
                               result[orig] = shorten
                       # 2차: 순서 기반 fallback
                       for idx, orig_url in enumerate(coupang_urls):
                           if orig_url not in result and idx < len(data_list):
                               shorten = data_list[idx].get('shortenUrl', '')
-                              if shorten and 'link.coupang.com/a/' in shorten:
+                              if shorten and ('link.coupang.com/a/' in shorten or 'coupa.ng/' in shorten):
                                   result[orig_url] = shorten
               except Exception as e:
                   print(f'  [ERROR] deeplink API 호출 실패: {e}', file=sys.stderr)
@@ -209,7 +209,7 @@ jobs:
 
               for p, complete_url in batch:
                   shorten = url_to_shorten.get(complete_url)
-                  if shorten and 'link.coupang.com/a/' in shorten:
+                  if shorten and ('link.coupang.com/a/' in shorten or 'coupa.ng/' in shorten):
                       p['shortenUrl'] = shorten
                       success_count += 1
                   else:
