@@ -8,47 +8,73 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install playwright
-        run: pip install playwright && playwright install chromium --with-deps
+        run: pip install playwright requests && playwright install chromium --with-deps
 
-      - name: Crawl all subpages via navigation
+      - name: Research UGC AI Video Tools
         run: |
           python3 - << 'PYEOF'
-          import asyncio
+          import asyncio, requests, re, json
           from playwright.async_api import async_playwright
+
+          TOOLS = {
+              "Kling AI": "https://klingai.com/pricing",
+              "Luma Dream Machine": "https://lumalabs.ai/dream-machine",
+              "Pika Labs": "https://pika.art",
+              "Runway ML": "https://runwayml.com/pricing",
+              "HeyGen": "https://www.heygen.com/pricing",
+              "Synthesia": "https://www.synthesia.io/pricing",
+              "CapCut AI": "https://www.capcut.com/tools/ai-video-generator",
+              "InVideo AI": "https://invideo.io/pricing/",
+              "Canva AI Video": "https://www.canva.com/features/ai-video-generator/",
+              "D-ID": "https://www.d-id.com/pricing/",
+              "Hedra": "https://www.hedra.com/pricing",
+              "Steve AI": "https://www.steve.ai/pricing",
+              "Veed.io": "https://www.veed.io/pricing",
+              "Pictory": "https://pictory.ai/pricing",
+              "Descript": "https://www.descript.com/pricing",
+          }
 
           async def main():
               async with async_playwright() as p:
                   browser = await p.chromium.launch()
                   page = await browser.new_page()
 
-                  # 메인 페이지 로드
-                  await page.goto("https://partners.coupang.com/#help/open-api", timeout=30000)
-                  await page.wait_for_timeout(5000)
-
-                  # 사이드바 메뉴 링크 수집
-                  nav_links = await page.evaluate("""() => {
-                      const links = document.querySelectorAll('nav a, aside a, [class*="sidebar"] a, [class*="menu"] a, [class*="nav"] a');
-                      return [...links].map(a => ({text: a.innerText?.trim(), href: a.href}))
-                          .filter(l => l.text && l.href && l.href.includes('open-api'));
-                  }""")
-                  print(f"사이드바 링크: {len(nav_links)}개")
-                  for l in nav_links:
-                      print(f"  [{l['text'][:30]}] {l['href'][:80]}")
-
-                  # 각 링크 클릭하여 내용 수집
-                  all_docs = {}
-                  for link in nav_links[:20]:
+                  results = {}
+                  for name, url in TOOLS.items():
                       try:
-                          await page.goto(link['href'], timeout=20000)
+                          await page.goto(url, timeout=20000, wait_until='domcontentloaded')
                           await page.wait_for_timeout(3000)
                           text = await page.evaluate("() => document.body.innerText")
-                          all_docs[link['text']] = text
-                          print(f"\n=== {link['text']} ({len(text)}자) ===")
-                          print(text[:2000])
+                          
+                          # 무료 플랜 정보 추출
+                          free_lines = []
+                          for line in text.split('\n'):
+                              line = line.strip()
+                              if line and any(k in line.lower() for k in [
+                                  'free', 'starter', '$0', 'no credit', 'trial',
+                                  'per month', 'credits', 'videos per', 'generate'
+                              ]) and len(line) < 200:
+                                  free_lines.append(line)
+                          
+                          results[name] = {
+                              'url': url,
+                              'free_plan': free_lines[:8]
+                          }
+                          print(f"\n=== {name} ===")
+                          for l in free_lines[:6]:
+                              print(f"  {l}")
                       except Exception as e:
-                          print(f"오류: {link['text']}: {e}")
+                          print(f"=== {name}: ERROR {e} ===")
+                          results[name] = {'url': url, 'error': str(e)}
 
                   await browser.close()
+
+                  # 결과 요약
+                  print("\n\n====== 무료 가용 도구 요약 ======")
+                  for name, data in results.items():
+                      plans = data.get('free_plan', [])
+                      has_free = any('free' in p.lower() or '$0' in p for p in plans)
+                      print(f"  {'✅' if has_free else '❌'} {name}: {'무료 플랜 있음' if has_free else '유료만'}")
 
           asyncio.run(main())
           PYEOF
