@@ -78,6 +78,138 @@ jobs:
           mkdir -p posts-ggultongmon
           python3 scripts/find_topics_ggultongmon.py
 
+      - name: shortenUrl 발급 (deeplink API)
+        id: deeplink
+        env:
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+          PRODUCTS_JSON: ${{ steps.topic.outputs.products_json }}
+        run: |
+          python3 - << 'PYEOF'
+          # Actions 환경(외부망 접근 가능)에서 deeplink API 직접 호출
+          # → 발행 전 모든 상품에 link.coupang.com/a/... 형태의 shortenUrl 확보
+          import hmac, hashlib, json, os, re, sys, time
+          import urllib.request, urllib.parse
+          from time import gmtime, strftime
+
+          ACCESS_KEY = os.environ.get('COUPANG_ACCESS_KEY', '')
+          SECRET_KEY = os.environ.get('COUPANG_SECRET_KEY', '')
+          DOMAIN     = 'https://api-gateway.coupang.com'
+          DEEPLINK_PATH = '/v2/providers/affiliate_open_api/apis/openapi/deeplink'
+          SUB_ID     = 'ggultongmon'
+
+          def gen_hmac(method, path, query=''):
+              dt = strftime('%y%m%d', gmtime()) + 'T' + strftime('%H%M%S', gmtime()) + 'Z'
+              msg = dt + method + path + query
+              sig = hmac.new(SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()
+              return f'CEA algorithm=HmacSHA256, access-key={ACCESS_KEY}, signed-date={dt}, signature={sig}'
+
+          def deeplink_batch(urls):
+              """최대 10개씩 배치로 shortenUrl 발급. 반환: {originalUrl: shortenUrl}"""
+              if not urls: return {}
+              auth = gen_hmac('POST', DEEPLINK_PATH)
+              body = json.dumps({'coupangUrls': urls, 'subId': SUB_ID}).encode()
+              req  = urllib.request.Request(
+                  DOMAIN + DEEPLINK_PATH, data=body, method='POST',
+                  headers={'Authorization': auth, 'Content-Type': 'application/json;charset=UTF-8'}
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as r:
+                      resp = json.loads(r.read())
+              except Exception as e:
+                  print(f'  [deeplink] 오류: {e}', flush=True)
+                  return {}
+
+              data = resp.get('data', [])
+              result = {}
+              # 1차: originalUrl 기반 매핑
+              for item in data:
+                  orig    = item.get('originalUrl', '') or item.get('landingUrl', '')
+                  shorten = item.get('shortenUrl', '')
+                  if shorten and orig:
+                      result[orig] = shorten
+              # 2차: 순서 기반 fallback
+              for i, url in enumerate(urls):
+                  if url not in result and i < len(data):
+                      shorten = data[i].get('shortenUrl', '')
+                      if shorten:
+                          result[url] = shorten
+              return result
+
+          def extract_item_ids(url):
+              m = re.search(r'itemId=(\d+).*?vendorItemId=(\d+)', url)
+              if m: return m.group(1), m.group(2)
+              m2 = re.search(r'vendorItemId=(\d+).*?itemId=(\d+)', url)
+              if m2: return m2.group(2), m2.group(1)
+              return None, None
+
+          prods_raw = os.environ.get('PRODUCTS_JSON', '[]')
+          try:
+              products = json.loads(prods_raw) if prods_raw else []
+          except Exception:
+              products = []
+
+          if not products:
+              print('상품 없음 — deeplink 스킵', flush=True)
+              with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
+                  f.write(f'products_json={prods_raw}\n')
+              sys.exit(0)
+
+          # 이미 공식 shortenUrl 있는 상품 제외
+          needs = [p for p in products
+                   if not (p.get('shortenUrl','') and 'link.coupang.com/a/' in p.get('shortenUrl',''))]
+          print(f'총 {len(products)}개 상품 / deeplink 필요: {len(needs)}개', flush=True)
+
+          if needs:
+              # productUrl에서 itemId/vendorItemId 추출 → 완전한 쿠팡 URL 구성
+              url_map = {}  # complete_url → product
+              for p in needs:
+                  pid = str(p.get('productId', ''))
+                  purl = p.get('productUrl', '')
+                  item_id, vendor_id = extract_item_ids(purl)
+                  if item_id and vendor_id:
+                      complete = f'https://www.coupang.com/vp/products/{pid}?itemId={item_id}&vendorItemId={vendor_id}'
+                  else:
+                      # itemId 없으면 productId만으로 시도 (deeplink API가 처리)
+                      complete = f'https://www.coupang.com/vp/products/{pid}' if pid else purl
+                  if complete and complete != 'https://www.coupang.com/vp/products/':
+                      url_map[complete] = p
+
+              all_urls = list(url_map.keys())
+              shorten_map = {}
+              for i in range(0, len(all_urls), 10):
+                  batch = all_urls[i:i+10]
+                  result = deeplink_batch(batch)
+                  shorten_map.update(result)
+                  print(f'  배치 {i//10+1}: {len(result)}/{len(batch)}개 shortenUrl 획득', flush=True)
+                  if i + 10 < len(all_urls):
+                      time.sleep(0.3)
+
+              # 상품에 shortenUrl 적용
+              ok, fail = 0, 0
+              for url, p in url_map.items():
+                  shorten = shorten_map.get(url, '')
+                  if shorten:
+                      p['shortenUrl'] = shorten
+                      ok += 1
+                      print(f"  ✅ {p.get('productName','')[:30]}: {shorten}", flush=True)
+                  else:
+                      fail += 1
+                      print(f"  ❌ shortenUrl 없음: {p.get('productName','')[:30]}", flush=True)
+
+              print(f'\nshortenUrl 확보: {ok}개 성공 / {fail}개 실패', flush=True)
+
+          # GITHUB_OUTPUT에 갱신된 products_json 기록
+          updated_json = json.dumps(products, ensure_ascii=False)
+          gh_output = os.environ.get('GITHUB_OUTPUT', '')
+          if gh_output:
+              with open(gh_output, 'a') as f:
+                  # GitHub Actions output은 multiline 불가 → base64 인코딩
+                  import base64
+                  encoded = base64.b64encode(updated_json.encode()).decode()
+                  f.write(f'products_json_b64={encoded}\n')
+          PYEOF
+
       - name: 포스트 생성 및 발행
         id: post
         env:
@@ -87,9 +219,31 @@ jobs:
           CATEGORY: ${{ steps.topic.outputs.category }}
           LABELS: ${{ steps.topic.outputs.labels }}
           META_DESC: ${{ steps.topic.outputs.meta_desc }}
+          PRODUCTS_JSON_B64: ${{ steps.deeplink.outputs.products_json_b64 }}
           PRODUCTS_JSON: ${{ steps.topic.outputs.products_json }}
           POSTS_OUTPUT_DIR: posts-ggultongmon
-        run: python3 scripts/post_to_blogger_ggultongmon.py
+        run: |
+          python3 - << 'PYEOF'
+          import os, json, base64, subprocess, sys
+
+          # deeplink step에서 shortenUrl 적용된 products_json 우선 사용
+          b64 = os.environ.get('PRODUCTS_JSON_B64', '')
+          if b64:
+              try:
+                  products_json = base64.b64decode(b64).decode()
+                  prods = json.loads(products_json)
+                  ok_count = sum(1 for p in prods if 'link.coupang.com/a/' in p.get('shortenUrl',''))
+                  print(f'[INFO] deeplink 적용 products 사용: {len(prods)}개 (shortenUrl 확보: {ok_count}개)', flush=True)
+                  os.environ['PRODUCTS_JSON'] = products_json
+              except Exception as e:
+                  print(f'[WARN] products_json_b64 파싱 실패: {e} — 원본 사용', flush=True)
+
+          result = subprocess.run(
+              [sys.executable, 'scripts/post_to_blogger_ggultongmon.py'],
+              env=os.environ.copy()
+          )
+          sys.exit(result.returncode)
+          PYEOF
 
       - name: Google Indexing API
         continue-on-error: true
