@@ -572,14 +572,16 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
 
 
 def enrich_with_shorten(products: list) -> list:
-    """선택된 상품에 shortenUrl 추가.
-    bestcategories의 productUrl은 이미 link.coupang.com/re/AFFSDP?lptag=... 형태의
-    affiliate 링크이므로 deeplink API 없이 그대로 shortenUrl로 사용.
+    """선택된 상품에서 AFFSDP 가짜 shortenUrl 제거.
+    link.coupang.com/re/AFFSDP 는 공식 shortenUrl이 아님.
+    실제 deeplink API 호출은 post_to_blogger_ggultongmon.py에서 수행.
+    여기서는 잘못된 값이 들어오지 않도록 shortenUrl 필드를 비워 둔다.
     """
     for p in products:
-        if not p.get("shortenUrl"):
-            # productUrl이 이미 affiliate 링크 (link.coupang.com/re/...)
-            p["shortenUrl"] = p.get("productUrl", "#")
+        current = p.get("shortenUrl", "")
+        # 공식 shortenUrl(link.coupang.com/a/...) 이 아니면 제거
+        if current and "link.coupang.com/a/" not in current:
+            del p["shortenUrl"]
     return products
 
 

@@ -171,6 +171,17 @@ def main():
                 p.setdefault("rank", i + 1)
                 p["productPrice"] = int(float(p.get("productPrice", 0)))
             print(f"[INFO] bestcategories 상품 {len(products)}개 사용")
+            # ── deeplink API로 공식 shortenUrl(link.coupang.com/a/...) 획득 ──
+            # find_topics 단계에서 AFFSDP URL이 shortenUrl에 들어온 경우 강제 교체
+            needs_deeplink = [
+                p for p in products
+                if not (p.get("shortenUrl") and "link.coupang.com/a/" in p.get("shortenUrl", ""))
+            ]
+            if needs_deeplink:
+                print(f"[INFO] deeplink API 호출: {len(needs_deeplink)}개 상품 shortenUrl 갱신")
+                products = get_products_with_shorten(products, limit=len(products))
+            else:
+                print(f"[INFO] 모든 상품 공식 shortenUrl 보유 — deeplink 스킵")
         except Exception as e:
             print(f"[WARN] products_json 파싱 실패 ({e}), 키워드 검색으로 fallback")
             products = get_products_with_shorten(SEARCH_KW, limit=5)
@@ -183,13 +194,20 @@ def main():
         print(f"       [{p.get('rank','-')}] {p['productName'][:40]} / {int(p['productPrice']):,}원 / {p.get('shortenUrl','')[:50]}")
 
     # ── shortenUrl 강제 검증 (쿠팡 파트너스 규칙) ──────────────────
-    # shortenUrl 없는 상품은 발행 차단 (productUrl 노출 금지)
-    missing_shorten = [p for p in products if not p.get("shortenUrl")]
+    # link.coupang.com/a/... 형태의 공식 shortenUrl이 없으면 발행 차단
+    missing_shorten = [
+        p for p in products
+        if not (p.get("shortenUrl") and "link.coupang.com/a/" in p.get("shortenUrl", ""))
+    ]
     if missing_shorten:
-        print(f"[WARN] shortenUrl 없는 상품 {len(missing_shorten)}개 — 해당 상품 제외")
-        products = [p for p in products if p.get("shortenUrl")]
+        names = [p.get("productName", "")[:20] for p in missing_shorten]
+        print(f"[WARN] 공식 shortenUrl 없는 상품 {len(missing_shorten)}개 제외: {names}")
+        products = [
+            p for p in products
+            if p.get("shortenUrl") and "link.coupang.com/a/" in p.get("shortenUrl", "")
+        ]
     if not products:
-        print(f"[ERROR] shortenUrl 있는 상품이 없음 — 발행 차단 (쿠팡 파트너스 규칙)")
+        print(f"[ERROR] 공식 shortenUrl(link.coupang.com/a/...) 있는 상품이 없음 — 발행 차단")
         sys.exit(1)
     print(f"[INFO] shortenUrl 검증 완료: {len(products)}개 상품 발행 진행")
 
