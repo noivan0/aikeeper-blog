@@ -105,7 +105,10 @@ jobs:
               return f'CEA algorithm=HmacSHA256, access-key={ACCESS_KEY}, signed-date={dt}, signature={sig}'
 
           def deeplink_batch(urls):
-              """최대 10개씩 배치로 shortenUrl 발급. 반환: {originalUrl: shortenUrl}"""
+              """최대 10개씩 배치로 shortenUrl 발급. 반환: {originalUrl: shortenUrl}
+              Rate limit: 1분당 100회 (공식 API 응답 확인, 2026-04-16)
+              3회 초과 시 파트너스 이용 제한 → 오류 시 즉시 중단
+              """
               if not urls: return {}
               auth = gen_hmac('POST', DEEPLINK_PATH)
               body = json.dumps({'coupangUrls': urls, 'subId': SUB_ID}).encode()
@@ -119,6 +122,13 @@ jobs:
               except Exception as e:
                   print(f'  [deeplink] 오류: {e}', flush=True)
                   return {}
+              
+              # rate limit 체크 (1분당 100회, 3회 초과 시 파트너스 제한)
+              r_msg = resp.get('rMessage', '')
+              if '초과' in r_msg or 'rate' in r_msg.lower():
+                  print(f'  ⚠️ Rate limit 초과: {r_msg[:100]}', flush=True)
+                  print(f'  ⛔ deeplink 호출 중단 — 파트너스 이용 제한 방지', flush=True)
+                  import sys; sys.exit(0)  # 성공 코드로 종료 (이후 캐시 사용)
 
               data = resp.get('data', [])
               result = {}
@@ -183,7 +193,7 @@ jobs:
                   shorten_map.update(result)
                   print(f'  배치 {i//10+1}: {len(result)}/{len(batch)}개 shortenUrl 획득', flush=True)
                   if i + 10 < len(all_urls):
-                      time.sleep(0.3)
+                      time.sleep(1.0)  # rate limit 대응: 1분100회 → 배치당 1초 딜레이
 
               # 상품에 shortenUrl 적용
               ok, fail = 0, 0
