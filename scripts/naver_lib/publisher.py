@@ -157,6 +157,7 @@ async def publish(
     naver_id: str | None = None,
     naver_pw: str | None = None,
     product_info: dict | None = None,  # P005 brand_card fallback용 상품 정보
+    shorten_url_override: str | None = None,  # OG카드 클릭 시 이동 URL (naver.me)
 ) -> str | None:
     """
     네이버 블로그 발행 메인 함수.
@@ -383,12 +384,14 @@ async def publish(
                         _domain = urlparse(link).netloc
                     except Exception:
                         _domain = "link.coupang.com"
+                    # shorten_url_override: 카드 클릭 시 naver.me로 이동 (노이반님 원칙)
+                    card_link = shorten_url_override if shorten_url_override else link
                     final_comps.append(oglink_comp(
                         og_sign=og["oglinkSign"],
                         title=og["title"],
                         desc=og["description"],
                         thumb_url=og["thumb_url"],
-                        link=link,
+                        link=card_link,
                         domain=_domain,
                     ))
             elif t == 'PARA_LINK':
@@ -405,12 +408,14 @@ async def publish(
                         _domain = _up(url).netloc
                     except Exception:
                         _domain = "naver.me"
+                    # shorten_url_override: 카드 클릭 시 naver.me로 이동 (노이반님 원칙)
+                    _card_link = shorten_url_override if shorten_url_override else url
                     final_comps.append(oglink_comp(
                         og_sign=og["oglinkSign"],
                         title=og["title"],
                         desc=og["description"],
                         thumb_url=og["thumb_url"],
-                        link=url,
+                        link=_card_link,
                         domain=_domain,
                     ))
                 elif product_info:
