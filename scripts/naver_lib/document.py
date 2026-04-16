@@ -26,20 +26,29 @@ def _docid() -> str:
 
 
 def para(text: str, bold: bool = False, fs: str = FS["normal"], color: str = FONT_COLOR, align: str = "center") -> dict:
-    # align: "center" (기본, banidad 스타일) | "left" | "right"
+    """
+    SE 에디터 paragraph 컴포넌트.
+    align: "center" (기본, banidad 스타일) | "left" | "right"
+    align="center"만 paragraph에 align 속성 추가 (left/right는 SE 기본값 사용).
+    """
     style = {"fontSizeCode": fs, "color": color, "@ctype": "nodeStyle"}
     if bold:
         style["bold"] = True
-    return {
+    paragraph = {
         "id": _uid(),
         "nodes": [{"id": _uid(), "value": text, "style": style, "@ctype": "textNode"}],
-        "align": align,
         "@ctype": "paragraph"
     }
+    if align == "center":
+        paragraph["align"] = "center"
+    elif align == "right":
+        paragraph["align"] = "right"
+    # left는 SE 기본값이므로 align 속성 생략
+    return paragraph
 
 
 def para_link(text: str, url: str) -> dict:
-    # 링크 텍스트: 본문 폰트 fs16 + 검은색
+    # 링크 텍스트: 본문 폰트 fs15 + 검은색
     return {
         "id": _uid(),
         "nodes": [{
