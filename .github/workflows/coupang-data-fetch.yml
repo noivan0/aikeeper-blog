@@ -226,17 +226,14 @@ jobs:
           PYEOF
 
       - name: Commit and Push
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:$GH_PAT@github.com/noivan0/aikeeper-blog.git"
           git add coupang_cache/
           if git diff --staged --quiet; then
             echo "변경사항 없음 — 커밋 스킵"
           else
             git commit -m "chore: coupang cache update $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-            git push origin main
+            git push
             echo "✅ Push 완료"
           fi
