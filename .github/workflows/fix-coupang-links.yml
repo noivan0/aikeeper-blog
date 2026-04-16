@@ -59,7 +59,7 @@ jobs:
                   return {}
               path = '/v2/providers/affiliate_open_api/apis/openapi/deeplink'
               auth = gen_hmac('POST', path)
-              body = json.dumps({'coupangUrls': urls}).encode('utf-8')
+              body = json.dumps({'coupangUrls': urls, 'subId': 'ggultongmon'}).encode('utf-8')
               req = urllib.request.Request(
                   DOMAIN + path, data=body, method='POST',
                   headers={'Authorization': auth, 'Content-Type': 'application/json;charset=UTF-8'}
@@ -118,7 +118,9 @@ jobs:
               return posts
 
           def parse_affsdp_urls(content):
-              """AFFSDP URL 목록 파싱. 중복 제거, 원본 URL -> coupang product URL 매핑 반환."""
+              """AFFSDP URL 목록 파싱. 중복 제거, 원본 AFFSDP URL -> coupang product URL 매핑 반환.
+              deeplink API 스펙: productId만 있는 단순 URL 사용 (itemId/vendorItemId 불필요)
+              """
               affsdp_to_product = {}
               for raw in AFFSDP_PAT.findall(content):
                   url = raw.replace('&amp;', '&').split('"')[0].split("'")[0].rstrip(');,')
@@ -126,14 +128,10 @@ jobs:
                       continue
                   params = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(url).query))
                   pk = params.get('pageKey', '')
-                  iid = params.get('itemId', '')
-                  vid = params.get('vendorItemId', '')
-                  if pk and iid and vid:
-                      product_url = f'https://www.coupang.com/vp/products/{pk}?itemId={iid}&vendorItemId={vid}'
-                  elif pk:
-                      product_url = f'https://www.coupang.com/vp/products/{pk}'
-                  else:
+                  if not pk:
                       continue
+                  # deeplink API: productId만으로 단순 URL (itemId/vendorItemId 없이)
+                  product_url = f'https://www.coupang.com/vp/products/{pk}'
                   affsdp_to_product[url] = product_url
               return affsdp_to_product
 
