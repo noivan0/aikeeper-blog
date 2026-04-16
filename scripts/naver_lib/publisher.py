@@ -27,7 +27,7 @@ from playwright.async_api import async_playwright
 from .session import load_session, save_session, login_if_needed, dismiss_popups
 from .document import (
     FS, para, para_link, empty_para, text_comp, image_comp, oglink_comp,
-    build_document_model, make_pop
+    brand_card_comp, build_document_model, make_pop
 )
 from .uploader import download_image, upload_image_file
 from .api import oglink_fetch, autosave, rabbit_write
@@ -195,6 +195,8 @@ async def publish(
     session_file: str | None = None,
     naver_id: str | None = None,
     naver_pw: str | None = None,
+    product_info: dict | None = None,   # P005 브랜드커넥트 카드형 링크용 상품 정보
+    shorten_url_override: str | None = None,  # 개선-1: OG카드 클릭 시 이동 URL override (naver.me)
 ) -> str | None:
     """
     네이버 블로그 발행 메인 함수.
@@ -281,38 +283,48 @@ async def publish(
             return None
         await page.wait_for_timeout(1000)
 
-        # ── STEP 1: se-auth 캡처 (쿠팡 링크 있을 때만) ───────────
+        # ── STEP 1: se-auth 캡처 (쿠팡 링크 또는 naver.me 링크 있을 때) ──
         # 확인된 사실: tokenId는 세션 쿠키로 대체 가능 → 캡처 불필요
-        # se-auth: OGLink API 헤더에서 캡처 (쿠팡 링크 없으면 OG카드도 없음)
-        if _product_links:
-            # 본문에 쿠팡 링크 타이핑 → OGLink 요청 트리거 → se-auth 캡처
+        # se-auth: OGLink API 헤더에서 캡처
+        # P005: naver.me 링크도 oglink API로 카드 생성 시도
+        import re as _re
+        _naver_me_links = list({
+            m.group(0).rstrip('.,)')
+            for m in _re.finditer(r'https://naver\.me/\S+', body)
+        })
+        _trigger_link = (_product_links or _naver_me_links or [None])[0]
+
+        if _trigger_link:
+            # 링크 타이핑 → OGLink 요청 트리거 → se-auth 캡처
             be = await page.query_selector(".se-component.se-text")
             if be:
                 box = await be.bounding_box()
                 await page.mouse.click(box['x'] + 50, box['y'] + box['height'] / 2)
-            await page.keyboard.type(_product_links[0], delay=5)
+            await page.keyboard.type(_trigger_link, delay=5)
             await page.keyboard.press("Enter")
             print("  se-auth 캡처 대기 (9s)...")
             await page.wait_for_timeout(9000)
         else:
-            # P005 브랜드커넥트 등 OG카드 없는 경우: 에디터 활성화만
+            # 링크 없는 경우: 에디터 활성화만
             await page.wait_for_timeout(2000)
 
         se_auth   = captured["se_auth"]
         se_app_id = captured["se_app_id"]
         print(f"  se-auth: {'있음' if se_auth else '없음 (OG카드 없는 발행)'}")
 
-        # ── STEP 2: OGLink 수집 (쿠팡 링크만) ──────────────────
+        # ── STEP 2: OGLink 수집 (쿠팡 링크 + naver.me 링크) ─────
         og_map: dict[str, dict] = {}
-        if _product_links and se_auth:
-            print(f"  OG카드 수집 ({len(_product_links)}개)...")
-            for link in _product_links:
-                og = await oglink_fetch(page, link, se_auth, se_app_id)
-                if og:
-                    og_map[link] = og
-                    print(f"    ✅ OG: {og['title'][:35]}")
-                else:
-                    print(f"    ⚠️ OG 실패: {link[:50]}")
+        if se_auth:
+            all_og_links = list(dict.fromkeys(_product_links + _naver_me_links))
+            if all_og_links:
+                print(f"  OG카드 수집 ({len(all_og_links)}개: 쿠팡 {len(_product_links)}개 + naver.me {len(_naver_me_links)}개)...")
+                for link in all_og_links:
+                    og = await oglink_fetch(page, link, se_auth, se_app_id)
+                    if og:
+                        og_map[link] = og
+                        print(f"    ✅ OG카드: {og['title'][:35]}")
+                    else:
+                        print(f"    ⚠️ OG 실패 (하이퍼링크로 대체): {link[:50]}")
 
         # ── STEP 3: 썸네일 다운로드 ─────────────────────────────
         thumb_local: dict[str, str] = {}
@@ -434,22 +446,57 @@ async def publish(
                         _domain = urlparse(link).netloc
                     except Exception:
                         _domain = "link.coupang.com"
+                    # 개선-1: shorten_url_override가 있으면 카드 클릭 → naver.me로 이동
+                    card_link = shorten_url_override if shorten_url_override else link
                     final_comps.append(oglink_comp(
                         og_sign=og["oglinkSign"],
                         title=og["title"],
                         desc=og["description"],
                         thumb_url=og["thumb_url"],
-                        link=link,
+                        link=card_link,
                         domain=_domain,
                     ))
             elif t == 'PARA_LINK':
                 # C: <a href> 파싱 결과 → urlLink 하이퍼링크
                 final_comps.append(text_comp([para_link(item['_text'], item['_url'])]))
             elif t == 'PLAIN_LINK':
-                # URL 단독 줄 → urlLink 하이퍼링크 (P004 방식: fs16 검은색 하이퍼링크)
+                # URL 단독 줄 → oglink 카드 (OG 성공 시) → brand_card → 하이퍼링크 순 우선
                 url = item['_url']
-                link_text = "👉 지금 네이버에서 확인하기"
-                final_comps.append(text_comp([para_link(link_text, url)]))
+                if url in og_map:
+                    # naver.me OGLink 성공 → 실제 oglink 카드 컴포넌트
+                    og = og_map[url]
+                    try:
+                        from urllib.parse import urlparse as _up
+                        _domain = _up(url).netloc
+                    except Exception:
+                        _domain = "naver.me"
+                    final_comps.append(empty_para())
+                    final_comps.append(oglink_comp(
+                        og_sign=og["oglinkSign"],
+                        title=og["title"],
+                        desc=og["description"],
+                        thumb_url=og["thumb_url"],
+                        link=url,
+                        domain=_domain,
+                    ))
+                    final_comps.append(empty_para())
+                elif product_info:
+                    # OGLink 실패 + 상품 정보 있음 → brand_card_comp (카드형 텍스트 박스)
+                    p_name  = product_info.get("productName", "")[:30]
+                    p_price = product_info.get("discountedPrice") or product_info.get("salePrice", 0)
+                    p_disc  = product_info.get("discountedRate", 0)
+                    price_str = f"{p_price:,}원" if p_price else ""
+                    disc_str  = f" ({p_disc}% 할인)" if p_disc else ""
+                    desc = f"{price_str}{disc_str}" if price_str else "지금 바로 확인하세요"
+                    final_comps.append(empty_para())
+                    final_comps.append(brand_card_comp(
+                        title=p_name, desc=desc, thumb_url="", link=url
+                    ))
+                    final_comps.append(empty_para())
+                else:
+                    # 기본: 하이퍼링크 텍스트
+                    link_text = "👉 지금 네이버에서 확인하기"
+                    final_comps.append(text_comp([para_link(link_text, url)]))
             elif t == 'IMAGE_HERE_SLOT':
                 # IMAGE_HERE 마커: extra_uploaded 이미지 순서대로 배치 (placeholder)
                 final_comps.append({'_type': 'IMAGE_HERE_SLOT'})
@@ -457,12 +504,21 @@ async def publish(
         # IMAGE_HERE_SLOT을 extra_uploaded 이미지로 교체
         # 소제목 직후 배치: IMAGE_HERE_SLOT 위치에 실제 이미지 삽입
         # 문제 2 수정: IMAGE_HERE_SLOT → 이미지 있으면 삽입, 없으면 제거 (절대 텍스트로 남기지 않음)
+        # ── IMAGE_HERE_SLOT → 이미지 교체 + 가독성 빈줄 추가 ──────
+        # banidad 스타일: 이미지 앞뒤 빈줄 + 텍스트 컴포넌트 사이 빈줄
         extra_queue = list(extra_uploaded)
         new_final = []
+        prev_type = None
         for comp in final_comps:
-            if isinstance(comp, dict) and comp.get('_type') == 'IMAGE_HERE_SLOT':
+            c_type = comp.get('@ctype') if isinstance(comp, dict) else None
+            is_slot = isinstance(comp, dict) and comp.get('_type') == 'IMAGE_HERE_SLOT'
+
+            if is_slot:
                 if extra_queue:
                     eu = extra_queue.pop(0)
+                    # 이미지 앞 빈줄 (이전이 텍스트인 경우)
+                    if prev_type == 'text':
+                        new_final.append(empty_para())
                     new_final.append(image_comp(
                         src=eu["src"], path=eu["path"],
                         width=eu["width"], height=eu["height"],
@@ -470,9 +526,16 @@ async def publish(
                         represent=(len(new_final) == 0),
                         file_size=eu["fileSize"]
                     ))
-                # else: 이미지 없으면 그냥 스킵 (IMAGE_HERE_SLOT 제거)
+                    # 이미지 뒤 빈줄
+                    new_final.append(empty_para())
+                    prev_type = 'image'
+                # else: 이미지 없으면 스킵
             else:
+                # 텍스트 컴포넌트 사이 빈줄 (문단 간격)
+                if c_type == 'text' and prev_type == 'text':
+                    new_final.append(empty_para())
                 new_final.append(comp)
+                prev_type = c_type or prev_type
         final_comps = new_final
 
         # 남은 extra 이미지 본문 중간 분산 삽입 (IMAGE_HERE_SLOT 소화 후 남은 것)
