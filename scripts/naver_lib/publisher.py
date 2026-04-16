@@ -547,7 +547,7 @@ async def publish(
                         _domain = _up(url).netloc
                     except Exception:
                         _domain = "naver.me"
-                    final_comps.append(empty_para())
+                    final_comps.append(text_comp([empty_para()]))
                     final_comps.append(oglink_comp(
                         og_sign=og["oglinkSign"],
                         title=og["title"],
@@ -556,7 +556,7 @@ async def publish(
                         link=url,
                         domain=_domain,
                     ))
-                    final_comps.append(empty_para())
+                    final_comps.append(text_comp([empty_para()]))
                 elif product_info:
                     # OGLink 실패 + 상품 정보 있음 → brand_card_comp (카드형 텍스트 박스)
                     p_name  = product_info.get("productName", "")[:30]
@@ -565,11 +565,11 @@ async def publish(
                     price_str = f"{p_price:,}원" if p_price else ""
                     disc_str  = f" ({p_disc}% 할인)" if p_disc else ""
                     desc = f"{price_str}{disc_str}" if price_str else "지금 바로 확인하세요"
-                    final_comps.append(empty_para())
+                    final_comps.append(text_comp([empty_para()]))
                     final_comps.append(brand_card_comp(
                         title=p_name, desc=desc, thumb_url="", link=url
                     ))
-                    final_comps.append(empty_para())
+                    final_comps.append(text_comp([empty_para()]))
                 else:
                     # 기본: 하이퍼링크 텍스트
                     link_text = "👉 지금 네이버에서 확인하기"
@@ -588,7 +588,7 @@ async def publish(
             if is_slot:
                 if extra_queue:
                     eu = extra_queue.pop(0)
-                    new_final.append(empty_para())   # 이미지 앞 빈줄 1개
+                    new_final.append(text_comp([empty_para()]))   # 이미지 앞 빈줄 1개
                     new_final.append(image_comp(
                         src=eu["src"], path=eu["path"],
                         width=eu["width"], height=eu["height"],
@@ -596,7 +596,7 @@ async def publish(
                         represent=(len(new_final) == 0),
                         file_size=eu["fileSize"]
                     ))
-                    new_final.append(empty_para())   # 이미지 뒤 빈줄 1개
+                    new_final.append(text_comp([empty_para()]))   # 이미지 뒤 빈줄 1개
                 # else: 이미지 없으면 슬롯 스킵
             else:
                 new_final.append(comp)
@@ -647,29 +647,32 @@ async def publish(
                     break
             print(f"  최종 documentModel: {len(doc_str)}자")
 
-        # ── STEP 7: 자동저장 (3단계 폴백) ─────────────────────
-        # 업로드된 이미지 정보 수집 (mediaResources에 포함)
+        # ── STEP 7: 자동저장 ─────────────────────────────────────
+        # 핵심: autosave blogId는 반드시 세션 계정 ID(_id)와 일치해야 함
+        # prosweep 등 팀블로그는 세션 계정(kjjhad)으로 autosave → 성공
+        # blog_id(prosweep)로 autosave하면 권한 불일치 → UNKNOWN 오류
+        autosave_blog_id = _id  # 세션 계정 ID (kjjhad)
+        print(f"  autosave blogId: {autosave_blog_id} (세션 계정) / publish blogId: {blog_id}")
         all_uploaded = list(uploaded_images.values()) + list(extra_uploaded)
-        save_result = await autosave(page, blog_id, doc_str, pop_save, uploaded_images=all_uploaded)
+        save_result = await autosave(page, autosave_blog_id, doc_str, pop_save, uploaded_images=all_uploaded)
         auto_save_no = None
 
         if save_result:
             auto_save_no = save_result.get("autoSaveNo")
             print(f"  ✅ autoSaveNo={auto_save_no}")
         else:
-            # 폴백 1: 이미지 없는 minimal 버전으로 재시도
+            # 폴백: 이미지 없는 minimal 버전으로 재시도
             print(f"  ⚠️ 자동저장 실패 — 이미지 컴포넌트 제거 후 재시도")
             minimal_comps = [c for c in final_comps if not (isinstance(c, dict) and c.get('@ctype') == 'image')]
             minimal_doc = build_document_model(title, minimal_comps, category_no=category_no)
             print(f"  minimal documentModel: {len(minimal_doc)}자, 컴포넌트 {len(minimal_comps)+1}개")
-            save_result2 = await autosave(page, blog_id, minimal_doc, pop_save, uploaded_images=None)
+            save_result2 = await autosave(page, autosave_blog_id, minimal_doc, pop_save, uploaded_images=None)
             if save_result2:
                 auto_save_no = save_result2.get("autoSaveNo")
-                doc_str = minimal_doc        # 이미지 없는 버전으로 발행
+                doc_str = minimal_doc
                 final_comps = minimal_comps
                 print(f"  ✅ 이미지 제거 후 자동저장 성공: autoSaveNo={auto_save_no}")
             else:
-                # 폴백 2: autoSaveNo=None으로 직접 발행 시도
                 print(f"  ⚠️ 이미지 제거 후도 실패 — autoSaveNo=None으로 직접 발행 시도")
 
         # ── STEP 8: 발행 ────────────────────────────────────────
