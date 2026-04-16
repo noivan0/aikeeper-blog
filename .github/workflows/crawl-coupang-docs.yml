@@ -1,0 +1,54 @@
+name: Crawl Coupang API Docs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install playwright
+        run: pip install playwright && playwright install chromium --with-deps
+
+      - name: Crawl all subpages via navigation
+        run: |
+          python3 - << 'PYEOF'
+          import asyncio
+          from playwright.async_api import async_playwright
+
+          async def main():
+              async with async_playwright() as p:
+                  browser = await p.chromium.launch()
+                  page = await browser.new_page()
+
+                  # 메인 페이지 로드
+                  await page.goto("https://partners.coupang.com/#help/open-api", timeout=30000)
+                  await page.wait_for_timeout(5000)
+
+                  # 사이드바 메뉴 링크 수집
+                  nav_links = await page.evaluate("""() => {
+                      const links = document.querySelectorAll('nav a, aside a, [class*="sidebar"] a, [class*="menu"] a, [class*="nav"] a');
+                      return [...links].map(a => ({text: a.innerText?.trim(), href: a.href}))
+                          .filter(l => l.text && l.href && l.href.includes('open-api'));
+                  }""")
+                  print(f"사이드바 링크: {len(nav_links)}개")
+                  for l in nav_links:
+                      print(f"  [{l['text'][:30]}] {l['href'][:80]}")
+
+                  # 각 링크 클릭하여 내용 수집
+                  all_docs = {}
+                  for link in nav_links[:20]:
+                      try:
+                          await page.goto(link['href'], timeout=20000)
+                          await page.wait_for_timeout(3000)
+                          text = await page.evaluate("() => document.body.innerText")
+                          all_docs[link['text']] = text
+                          print(f"\n=== {link['text']} ({len(text)}자) ===")
+                          print(text[:2000])
+                      except Exception as e:
+                          print(f"오류: {link['text']}: {e}")
+
+                  await browser.close()
+
+          asyncio.run(main())
+          PYEOF
