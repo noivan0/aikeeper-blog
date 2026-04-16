@@ -30,32 +30,59 @@ async def oglink_fetch(page, link: str, se_auth: str, se_app_id: str) -> dict | 
     return None
 
 
-async def autosave(page, blog_id: str, doc_str: str, pop_str: str) -> dict | None:
+async def autosave(page, blog_id: str, doc_str: str, pop_str: str,
+                   uploaded_images: list | None = None) -> dict | None:
     """
     RabbitAutoSaveWrite.naver 호출.
     성공 시 {"autoSaveNo": ...} 포함 dict 반환, 실패 시 None.
+    uploaded_images: [{"src":..., "path":..., "fileName":...}, ...] 업로드된 이미지 정보
     """
+    # mediaResources: 업로드된 이미지 정보 포함 시 성공률 개선
+    if uploaded_images:
+        media_res = json.dumps({
+            "image": [
+                {"src": ui.get("src", ""), "path": ui.get("path", ""),
+                 "fileName": ui.get("fileName", "")}
+                for ui in uploaded_images
+            ],
+            "video": [],
+            "file": []
+        }, ensure_ascii=False)
+    else:
+        media_res = '{"image":[],"video":[],"file":[]}'
+
     await page.evaluate(
-        "([d, ps]) => { window.__nv_doc=d; window.__nv_ps=ps; }",
-        [doc_str, pop_str]
+        "([d, ps, mr]) => { window.__nv_doc=d; window.__nv_ps=ps; window.__nv_mr=mr; }",
+        [doc_str, pop_str, media_res]
     )
     result = await page.evaluate(f"""async () => {{
         const params = new URLSearchParams();
         params.append('blogId', {json.dumps(blog_id)});
         params.append('documentModel', window.__nv_doc);
-        params.append('mediaResources', '{{"image":[],"video":[],"file":[]}}');
+        params.append('mediaResources', window.__nv_mr);
         params.append('populationParams', window.__nv_ps);
         const resp = await fetch({json.dumps(AUTOSAVE_URL)}, {{
             method: 'POST', credentials: 'include',
             headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
             body: params.toString()
         }});
-        return await resp.json();
+        const text = await resp.text();
+        return {{status: resp.status, body: text.substring(0, 2000)}};
     }}""")
 
-    if result and result.get("isSuccess"):
-        return result.get("result", {})
-    print(f"  ❌ 자동저장 실패: {result}")
+    # 상세 로깅 (HTTP 상태코드 + 응답 본문)
+    http_status = result.get("status", 0) if result else 0
+    raw_body = result.get("body", "") if result else ""
+    print(f"  [autosave raw] status={http_status} body={raw_body[:500]}")
+
+    try:
+        parsed = json.loads(raw_body)
+    except Exception:
+        parsed = None
+
+    if parsed and parsed.get("isSuccess"):
+        return parsed.get("result", {})
+    print(f"  ❌ 자동저장 실패: {parsed or raw_body[:200]}")
     return None
 
 

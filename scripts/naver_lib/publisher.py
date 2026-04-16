@@ -219,7 +219,7 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
             for line in sec_content:
                 s = line.strip()
                 if not s:
-                    paras.extend(empty_paras(2))  # banidad 스타일: 빈 줄 2개로 시각적 여백
+                    paras.append(empty_para())  # 빈 줄 1개 (2개→1개: documentModel 크기 제한)
                     continue
                 if '파트너스 활동' in s or s.startswith('📢') or (s.startswith('#') and s.count('#') >= 3):
                     paras.append(para(s, fs=FS["tiny"]))
