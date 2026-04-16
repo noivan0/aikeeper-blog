@@ -231,6 +231,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${GH_PAT}@github.com/noivan0/aikeeper-blog.git
           git add coupang_cache/
           git diff --staged --quiet || git commit -m "chore: coupang cache update $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
           git push origin main
