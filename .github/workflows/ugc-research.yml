@@ -1,0 +1,70 @@
+name: UGC Research
+
+on:
+  workflow_dispatch:
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Research free AI video tools for UGC
+        run: |
+          python3 - << 'PYEOF'
+          import urllib.request, json
+
+          tools = {
+              "Kling AI": "https://klingai.com",
+              "Pika Labs": "https://pika.art",
+              "RunwayML": "https://runwayml.com",
+              "HeyGen": "https://www.heygen.com",
+              "Luma AI": "https://lumalabs.ai",
+              "Hedra": "https://www.hedra.com",
+              "Captions AI": "https://www.captions.ai",
+              "CapCut": "https://www.capcut.com",
+              "Veed.io": "https://www.veed.io",
+              "Invideo AI": "https://invideo.io",
+              "Synthesia": "https://www.synthesia.io",
+              "D-ID": "https://www.d-id.com",
+          }
+
+          for name, url in tools.items():
+              try:
+                  req = urllib.request.Request(
+                      url + "/pricing" if "pricing" not in url else url,
+                      headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                  )
+                  with urllib.request.urlopen(req, timeout=8) as r:
+                      text = r.read().decode('utf-8', errors='replace')
+                      # 무료 플랜 정보 추출
+                      import re
+                      free_info = []
+                      for line in text.split('\n'):
+                          clean = re.sub(r'<[^>]+>', '', line).strip()
+                          if clean and any(k in clean.lower() for k in ['free', 'starter', '$0', 'trial', 'no credit']):
+                              if len(clean) > 5 and len(clean) < 200:
+                                  free_info.append(clean)
+                      print(f"\n=== {name} ({url}) ===")
+                      if free_info:
+                          for info in free_info[:5]:
+                              print(f"  {info}")
+                      else:
+                          print(f"  상태: HTTP {r.status} | 무료 플랜 정보 없음")
+              except Exception as e:
+                  print(f"=== {name}: {e} ===")
+
+          # Flowith + Seedance 분석
+          print("\n\n=== 링크 분석 결과 ===")
+          print("""
+링크 1 (spwfeijen): MakeUGC.ai 사용 사례
+- $1로 AI UGC 광고 생성
+- 제품 → AI 배우 → 광고 영상 자동화
+- 이커머스 광고에 특화
+- 유사 서비스: MakeUGC, VEED, Invideo
+
+링크 2 (flowith): Seedance 2.0 + Canvas Cowork
+- 텍스트 프롬프트 → 영상 자동 생성
+- 20개 영상을 하나의 캔버스에서 배치 생성
+- 오픈소스: npx skills add flowith-ai/canvas-cowork
+- 1백만 뷰 여행 vlog 자동 생성 사례
+""")
+          PYEOF
