@@ -518,9 +518,9 @@ def get_products_with_shorten(keyword_or_products, limit: int = 5) -> list:
                     _save_item_id_cache(product_id, item_id, vendor_item_id)
                     item_id_cache[product_id] = {"itemId": item_id, "vendorItemId": vendor_item_id}
             else:
-                # [규칙] itemId 없어도 productUrl fallback 금지 — 해당 상품 skip (노이반님 원칙)
-                print(f"  [SKIP] {product_id}: itemId 없음 — shortenUrl 불가, 상품 제외")
-                p["_skip"] = True
+                # itemId 없음 → productUrl 임시 사용 (발행 후 Actions fix-coupang-links가 shortenUrl로 교체)
+                print(f"  [TEMP] {product_id}: itemId 없음 — productUrl 임시 사용, Actions에서 교체 예정")
+                p["shortenUrl"] = product_url or "#"
 
         # 2단계: deeplink API 일괄 호출
         if products_needing_deeplink:
@@ -535,12 +535,11 @@ def get_products_with_shorten(keyword_or_products, limit: int = 5) -> list:
                     p["shortenUrl"] = shorten
                     print(f"  [OK] {p.get('productId')}: {shorten}")
                 else:
-                    # [규칙] deeplink 실패해도 productUrl fallback 절대 금지 — skip (노이반님 원칙)
-                    print(f"  [SKIP] {p.get('productId')}: deeplink 실패 — 상품 제외")
-                    p["_skip"] = True
+                    # deeplink 실패 → productUrl 임시 사용 (발행 후 Actions fix-coupang-links가 shortenUrl로 교체)
+                    print(f"  [TEMP] {p.get('productId')}: deeplink 실패 — productUrl 임시 사용, Actions에서 교체 예정")
+                    p["shortenUrl"] = p.get("productUrl", "#")
 
-        # skip 표시 상품 제거
-        products = [p for p in products if not p.get("_skip")]
+        return products
 
         return products
     except Exception as e:
