@@ -1,0 +1,40 @@
+name: Coupang API Docs Crawler
+on:
+  workflow_dispatch:
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: pip install playwright requests && playwright install chromium
+
+      - name: Crawl Coupang Partners API Docs
+        run: |
+          python3 - << 'PYEOF'
+          import subprocess, json, time
+          from playwright.sync_api import sync_playwright
+
+          DOCS_URLS = [
+              "https://partners.coupang.com/#help/open-api",
+              "https://partners.coupang.com/#help/open-api/product-search",
+              "https://partners.coupang.com/#help/open-api/deeplink",
+              "https://partners.coupang.com/#help/open-api/best-sellers",
+          ]
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              for url in DOCS_URLS:
+                  page = browser.new_page()
+                  page.goto(url, wait_until="networkidle", timeout=30000)
+                  page.wait_for_timeout(3000)
+                  content = page.content()
+                  text = page.evaluate("document.body.innerText")
+                  slug = url.split("#")[-1].replace("/", "_")
+                  with open(f"/tmp/coupang_doc_{slug}.txt", "w") as f:
+                      f.write(text)
+                  print(f"=== {url} ===")
+                  print(text[:3000])
+                  print()
+                  page.close()
+              browser.close()
+          PYEOF
