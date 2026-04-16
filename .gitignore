@@ -12,7 +12,6 @@ naver_session.json
 naver_session_backup.json
 
 # 캐시 (자동생성)
-coupang_cache/
 
 # 임시 결과 (불필요한 파일들)
 results/affsdp_links.json
