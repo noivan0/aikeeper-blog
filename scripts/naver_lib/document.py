@@ -7,12 +7,12 @@ import json
 import random
 import string
 
-# 폰트 사이즈 코드 (네이버 SE 실측 기반)
-# normal=15pt(본문), heading=19pt(소제목) — 2026-04-16 수정
-# 네이버 SE 실제 렌더링 기준 (2026-04-12 역공학 확정)
-# fs11=11pt, fs13=13pt, fs15=15pt, fs16=16pt(실제 11px 렌더링 버그), fs19=19pt(소제목), fs28=28pt
-# 검색 상위 100개 분석: fs15가 1116회 사용 = 실제 15pt 안전 코드 (fs16은 11px 버그)
-FS = {"tiny": "fs11", "normal": "fs15", "heading": "fs19", "large": "fs28"}
+# 폰트 사이즈 코드 (네이버 SE 실측 기반 — 2026-04-16 직접 확인 확정)
+# 실제 발행 포스팅 CSS 실측:
+#   se-fs-fs11=11px / se-fs-fs13=13px / se-fs-fs16=16px / se-fs-fs19=19px
+#   fs15 = CSS 클래스 미정의 → 기본값 11px로 렌더링 (버그 아님, 정의 안 됨)
+# 노이반님 지시 (2026-04-16): 본문 16pt, 소제목 19pt, 검은색
+FS = {"tiny": "fs11", "normal": "fs16", "heading": "fs19", "large": "fs28"}
 # 폰트 색상: 검은색 (#000000)
 FONT_COLOR = "#000000"
 
