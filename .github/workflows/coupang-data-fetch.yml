@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
           persist-credentials: true
 
       - name: Fetch Coupang Best Categories
@@ -231,7 +231,7 @@ jobs:
 
       - name: Commit and Push
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -240,6 +240,6 @@ jobs:
             echo "변경사항 없음 — 커밋 스킵"
           else
             git commit -m "chore: coupang cache update $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-            git push
+            git push https://x-access-token:$GH_PAT@github.com/noivan0/aikeeper-blog.git main
             echo "✅ Push 완료"
           fi
