@@ -433,9 +433,10 @@ async def publish(
                 # C: <a href> 파싱 결과 → urlLink 하이퍼링크
                 final_comps.append(text_comp([para_link(item['_text'], item['_url'])]))
             elif t == 'PLAIN_LINK':
-                # URL 단독 줄 → urlLink 하이퍼링크 (텍스트 고정)
+                # URL 단독 줄 → urlLink 하이퍼링크 (P004 방식: 텍스트 + URL 모두 표시)
                 url = item['_url']
-                final_comps.append(text_comp([para_link("🔗 지금 네이버에서 확인하기", url)]))
+                link_text = f"👉 지금 네이버에서 확인하기 → {url}"
+                final_comps.append(text_comp([para_link(link_text, url)]))
             elif t == 'IMAGE_HERE_SLOT':
                 # IMAGE_HERE 마커: extra_uploaded 이미지 순서대로 배치 (placeholder)
                 final_comps.append({'_type': 'IMAGE_HERE_SLOT'})

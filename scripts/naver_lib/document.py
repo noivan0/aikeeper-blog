@@ -8,11 +8,13 @@ import random
 import string
 
 # 폰트 사이즈 코드 (네이버 SE 실측 기반)
-# normal=16pt(본문), heading=20pt(소제목) — 노이반님 지시 2026-04-15
+# normal=16pt(본문), heading=19pt(소제목) — 노이반님 지시 2026-04-16
 # 네이버 SE 실제 렌더링 기준 (2026-04-12 역공학 확정)
-# fs11=13px(파트너스고지), fs13=15px(본문), fs19=20px(소제목), fs28=23px(대제목)
-# ⚠️ fs16/fs20 사용 금지: fs20=11px로 렌더링됨
-FS = {"tiny": "fs11", "normal": "fs13", "heading": "fs19", "large": "fs28"}
+# fs11=11pt, fs13=13pt, fs15=15pt, fs16=16pt(본문), fs19=19pt(소제목), fs28=28pt
+# 검색 상위 100개 분석: fs16이 1783회로 가장 많이 쓰이는 본문 폰트 (naver_format_guide_v2.md)
+FS = {"tiny": "fs11", "normal": "fs16", "heading": "fs19", "large": "fs28"}
+# 폰트 색상: 검은색 (#000000)
+FONT_COLOR = "#000000"
 
 
 def _uid() -> str:
@@ -23,8 +25,8 @@ def _docid() -> str:
     return "".join(random.choices(string.digits + string.ascii_uppercase, k=26))
 
 
-def para(text: str, bold: bool = False, fs: str = FS["normal"]) -> dict:
-    style = {"fontSizeCode": fs, "@ctype": "nodeStyle"}
+def para(text: str, bold: bool = False, fs: str = FS["normal"], color: str = FONT_COLOR) -> dict:
+    style = {"fontSizeCode": fs, "color": color, "@ctype": "nodeStyle"}
     if bold:
         style["bold"] = True
     return {
@@ -35,12 +37,12 @@ def para(text: str, bold: bool = False, fs: str = FS["normal"]) -> dict:
 
 
 def para_link(text: str, url: str) -> dict:
-    # 링크 텍스트: 본문 폰트 fs13 (15px)
+    # 링크 텍스트: 본문 폰트 fs16 + 검은색
     return {
         "id": _uid(),
         "nodes": [{
             "id": _uid(), "value": text,
-            "style": {"fontSizeCode": FS["normal"], "@ctype": "nodeStyle"},
+            "style": {"fontSizeCode": FS["normal"], "color": FONT_COLOR, "@ctype": "nodeStyle"},
             "link": {"url": url, "@ctype": "urlLink"},
             "@ctype": "textNode"
         }],
@@ -49,7 +51,7 @@ def para_link(text: str, url: str) -> dict:
 
 
 def empty_para() -> dict:
-    return para("", fs=FS["normal"])  # fs13
+    return para("", fs=FS["normal"])  # fs16
 
 
 def text_comp(paras: list) -> dict:
