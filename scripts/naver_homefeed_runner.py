@@ -145,10 +145,15 @@ def parse_products_from_content(content: str) -> list:
             seen2.add(u)
             unique_affsdp.append(u)
 
-    # shortenUrl 우선, 없으면 AFFSDP
-    coupang_links = unique_shorten if unique_shorten else unique_affsdp
+    # [절대 규칙] shortenUrl(link.coupang.com/a/...)만 사용 — AFFSDP fallback 완전 금지
+    # shortenUrl 없으면 해당 포스팅 크로스포스팅 건너뜀 (AFFSDP 사용 절대 금지)
+    coupang_links = unique_shorten  # AFFSDP fallback 제거
 
-    log(f"  링크 파싱: shortenUrl {len(unique_shorten)}개, AFFSDP {len(unique_affsdp)}개 → 사용: {len(coupang_links)}개")
+    log(f"  링크 파싱: shortenUrl {len(unique_shorten)}개, AFFSDP {len(unique_affsdp)}개(사용 안 함) → 사용: {len(coupang_links)}개")
+
+    if not coupang_links:
+        log(f"  [차단] 공식 shortenUrl 없음 — AFFSDP({len(unique_affsdp)}개) 사용 금지, 크로스포스팅 스킵")
+        return []   # 빈 목록 반환 → 상위에서 스킵 처리
 
     prices = re.findall(r'(\d{1,3}(?:,\d{3})*)\s*원', content)
     names  = re.findall(r'alt=["\']([^"\']{5,50})["\']', content)
@@ -159,7 +164,7 @@ def parse_products_from_content(content: str) -> list:
         products.append({
             "name":       names[i] if i < len(names) else f"상품{i+1}",
             "price":      f"{prices[i]}원" if i < len(prices) else "",
-            "shortenUrl": url,          # 절대 규칙: shortenUrl 사용
+            "shortenUrl": url,          # 절대 규칙: link.coupang.com/a/... 형태만
             "coupang_url": url,         # 하위 호환
         })
     return products
