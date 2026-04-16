@@ -1,0 +1,62 @@
+name: Deeplink Single Test
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test deeplink API (1회)
+        env:
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+        run: |
+          python3 - << 'PYEOF'
+          import hmac, hashlib, json, os, urllib.request
+          from time import gmtime, strftime
+
+          ACCESS_KEY = os.environ['COUPANG_ACCESS_KEY']
+          SECRET_KEY = os.environ['COUPANG_SECRET_KEY']
+          DOMAIN = 'https://api-gateway.coupang.com'
+          DEEPLINK = '/v2/providers/affiliate_open_api/apis/openapi/deeplink'
+
+          def gen_hmac(method, path):
+              dt = strftime('%y%m%d', gmtime()) + 'T' + strftime('%H%M%S', gmtime()) + 'Z'
+              msg = dt + method + path
+              sig = hmac.new(SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()
+              return f'CEA algorithm=HmacSHA256, access-key={ACCESS_KEY}, signed-date={dt}, signature={sig}'
+
+          # 테스트용 상품 URL (쿠팡 인기 상품)
+          test_url = 'https://www.coupang.com/vp/products/7332483521?itemId=18874521830&vendorItemId=86052882741'
+
+          body = json.dumps({'coupangUrls': [test_url], 'subId': 'ggultongmon'}).encode()
+          auth = gen_hmac('POST', DEEPLINK)
+          req = urllib.request.Request(
+              DOMAIN + DEEPLINK, data=body, method='POST',
+              headers={'Authorization': auth, 'Content-Type': 'application/json;charset=UTF-8'}
+          )
+
+          print(f'deeplink API 호출: {test_url[:60]}')
+          try:
+              with urllib.request.urlopen(req, timeout=15) as r:
+                  resp = json.loads(r.read())
+                  rCode = resp.get('rCode', '?')
+                  rMsg = resp.get('rMessage', '')
+                  data = resp.get('data', [])
+
+                  print(f'rCode: {rCode}')
+                  print(f'rMessage: {rMsg}')
+
+                  if rCode == '0' and data:
+                      shorten = data[0].get('shortenUrl', '없음')
+                      original = data[0].get('originalUrl', '없음')
+                      print(f'✅ shortenUrl 발급 성공!')
+                      print(f'  originalUrl: {original}')
+                      print(f'  shortenUrl: {shorten}')
+                  elif '초과' in rMsg or 'rate' in rMsg.lower():
+                      print(f'⚠️ Rate limit 초과: {rMsg}')
+                  else:
+                      print(f'❌ 실패: {resp}')
+          except Exception as e:
+              print(f'오류: {e}')
+          PYEOF
