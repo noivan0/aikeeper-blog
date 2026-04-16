@@ -1,17 +1,16 @@
-name: Crawl Coupang Full API Docs
+name: Crawl Coupang API Docs
+
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install
-        run: pip install playwright && python -m playwright install chromium --with-deps
-      - name: Crawl Full API Docs
+      - name: Install dependencies
+        run: pip install playwright && playwright install chromium
+
+      - name: Crawl Coupang Partners API Docs
         run: |
           python3 - << 'PYEOF'
           import asyncio, json
@@ -22,48 +21,27 @@ jobs:
                   browser = await p.chromium.launch()
                   page = await browser.new_page()
                   
-                  # 메인 페이지
+                  print("=== 쿠팡 파트너스 API 문서 크롤링 ===")
                   await page.goto("https://partners.coupang.com/#help/open-api", timeout=30000)
                   await page.wait_for_timeout(5000)
                   
-                  # 사이드 메뉴 모든 링크 수집
-                  links = await page.query_selector_all("a[href]")
-                  menu_links = []
-                  for l in links:
-                      href = await l.get_attribute("href") or ""
-                      text = (await l.inner_text()).strip()
-                      if href and ("#help" in href or "api" in href.lower()):
-                          menu_links.append((text, href))
+                  text = await page.evaluate("() => document.body.innerText")
+                  print(f"페이지 길이: {len(text)}자")
                   
-                  print("=== 메뉴 링크 전체 ===")
-                  for t, h in menu_links:
-                      print(f"  [{t}] {h}")
+                  # API 섹션 찾기
+                  lines = text.split('\n')
+                  for i, line in enumerate(lines):
+                      if any(k in line.lower() for k in ['deeplink','rate','limit','quota','횟수','한도','초과']):
+                          print(f"L{i}: {line[:200]}")
                   
-                  # 각 하위 페이지 방문
-                  base = "https://partners.coupang.com"
-                  visited_pages = {}
-                  
-                  for text, href in menu_links:
-                      if not href.startswith("http"):
-                          url = base + href
-                      else:
-                          url = href
-                      
-                      if url in visited_pages:
-                          continue
-                          
-                      try:
-                          await page.goto(url, timeout=20000)
-                          await page.wait_for_timeout(3000)
-                          content = await page.inner_text("body")
-                          visited_pages[url] = content
-                          print(f"\n=== PAGE: {text} ({url}) ===")
-                          print(content[:4000])
-                          print("---END---")
-                      except Exception as e:
-                          print(f"SKIP {url}: {e}")
-                  
+                  # 전체 텍스트 저장
+                  with open('api_docs.txt', 'w') as f:
+                      f.write(text)
+                  print("저장 완료")
                   await browser.close()
 
           asyncio.run(main())
           PYEOF
+
+      - name: Upload docs
+        run: cat api_docs.txt | head -500
