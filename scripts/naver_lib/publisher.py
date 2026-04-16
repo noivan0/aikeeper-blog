@@ -110,6 +110,8 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     body = re.sub(r'<span[^>]*>\s*<a\s+href=["\']([^"\']+)["\'][^>]*>[^<]*</a>\s*</span>',
                   _replace_a_tag, body, flags=re.IGNORECASE | re.DOTALL)
     # 단독 <a href> 태그 처리
+    # 연속 빈 줄 압축 (3개 이상 → 2개) — paragraph 수 폭증 방지
+    body = re.sub(r'\n{3,}', '\n\n', body)
     body = re.sub(r'<a\s+href=["\']([^"\']+)["\'][^>]*>[^<]*</a>',
                   _replace_a_tag, body, flags=re.IGNORECASE)
     # 2단계: 나머지 모든 HTML 태그 제거 (<span>, <b>, <br>, <p>, <div> 등)
@@ -219,7 +221,9 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
             for line in sec_content:
                 s = line.strip()
                 if not s:
-                    paras.append(empty_para())  # 빈 줄 1개 (2개→1개: documentModel 크기 제한)
+                    # 빈 줄: documentModel 크기 절감 위해 연속 빈줄만 1개로 제한
+                    if paras and paras[-1].get('nodes', [{}])[0].get('value', 'X') != '':
+                        paras.append(empty_para())
                     continue
                 if '파트너스 활동' in s or s.startswith('📢') or (s.startswith('#') and s.count('#') >= 3):
                     paras.append(para(s, fs=FS["tiny"]))
