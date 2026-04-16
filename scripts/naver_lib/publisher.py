@@ -77,7 +77,8 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
             current_lines.append(line)
     flush()
 
-    HEADING_EMOJIS = ('🛒', '✅', '⚠', '📌', '🎯', '💡', '🔍', '📊', '🏷', '💰', '👍', '❌', '🔑', '📋', '🎁')
+    HEADING_EMOJIS = ('🛒', '✅', '⚠', '📌', '🎯', '💡', '🔍', '📊', '🏷', '💰', '👍', '❌', '🔑', '📋', '🎁',
+                      '🛍', '💬', '🔧', '📦', '⭐', '🌟', '💫', '🏆', '🎪', '📝', '🚀', '💎', '🎉', '👉')
     components = []
     first_image = True
     url_seen_count: dict[str, int] = {}
