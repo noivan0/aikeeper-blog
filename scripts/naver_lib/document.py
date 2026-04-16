@@ -149,3 +149,17 @@ def make_pop(category_no: int = 6, auto_save_no=None) -> str:
         },
         "editorSource": "be1Cpvv4FXCRGUPtcaiPhQ=="
     }, ensure_ascii=False, separators=(',', ':'))
+
+
+def brand_card_comp(title: str, desc: str, thumb_url: str, link: str) -> dict:
+    """
+    브랜드커넥트 상품 카드 컴포넌트.
+    OGLink sign 없이 구현 — 상품명 + 설명 + 링크 버튼 텍스트 조합.
+    """
+    return text_comp([
+        para("━" * 20, fs=FS["tiny"]),
+        para(title, bold=True, fs=FS["heading"]),
+        para(desc, fs=FS["normal"]),
+        para_link("👉 지금 네이버에서 확인하기 →", link),
+        para("━" * 20, fs=FS["tiny"]),
+    ])

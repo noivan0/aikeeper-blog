@@ -27,7 +27,7 @@ from playwright.async_api import async_playwright
 from .session import load_session, save_session, login_if_needed, dismiss_popups
 from .document import (
     FS, para, para_link, empty_para, text_comp, image_comp, oglink_comp,
-    build_document_model, make_pop
+    brand_card_comp, build_document_model, make_pop
 )
 from .uploader import download_image, upload_image_file
 from .api import oglink_fetch, autosave, rabbit_write
@@ -156,6 +156,7 @@ async def publish(
     session_file: str | None = None,
     naver_id: str | None = None,
     naver_pw: str | None = None,
+    product_info: dict | None = None,  # P005 brand_card fallback용 상품 정보
 ) -> str | None:
     """
     네이버 블로그 발행 메인 함수.
@@ -387,9 +388,37 @@ async def publish(
                 # C: <a href> 파싱 결과 → urlLink 하이퍼링크
                 final_comps.append(text_comp([para_link(item['_text'], item['_url'])]))
             elif t == 'PLAIN_LINK':
-                # URL 단독 줄 → urlLink 하이퍼링크 (텍스트 고정)
+                # URL 단독 줄 → OG카드 (og_map에 있으면) 또는 brand_card 또는 하이퍼링크
                 url = item['_url']
-                final_comps.append(text_comp([para_link("🔗 지금 네이버에서 확인하기", url)]))
+                # og_map에 naver.me 또는 smartstore URL이 있으면 OG카드 우선
+                if url in og_map:
+                    og = og_map[url]
+                    try:
+                        from urllib.parse import urlparse as _up
+                        _domain = _up(url).netloc
+                    except Exception:
+                        _domain = "naver.me"
+                    final_comps.append(oglink_comp(
+                        og_sign=og["oglinkSign"],
+                        title=og["title"],
+                        desc=og["description"],
+                        thumb_url=og["thumb_url"],
+                        link=url,
+                        domain=_domain,
+                    ))
+                elif product_info:
+                    # OG카드 없음 + 상품 정보 있음 → brand_card_comp (카드형)
+                    p_name  = product_info.get("productName", "")[:30]
+                    p_price = product_info.get("discountedPrice") or product_info.get("salePrice", 0)
+                    p_disc  = product_info.get("discountedRate", 0)
+                    price_str = f"{p_price:,}원" if p_price else ""
+                    disc_str  = f" ({p_disc}% 할인)" if p_disc else ""
+                    desc = f"{price_str}{disc_str}" if price_str else "지금 바로 확인하세요"
+                    final_comps.append(brand_card_comp(
+                        title=p_name, desc=desc, thumb_url="", link=url
+                    ))
+                else:
+                    final_comps.append(text_comp([para_link("🔗 지금 네이버에서 확인하기", url)]))
             elif t == 'IMAGE_HERE_SLOT':
                 # IMAGE_HERE 마커: extra_uploaded 이미지 순서대로 배치 (placeholder)
                 final_comps.append({'_type': 'IMAGE_HERE_SLOT'})
