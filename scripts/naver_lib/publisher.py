@@ -33,6 +33,64 @@ from .uploader import download_image, upload_image_file
 from .api import oglink_fetch, autosave, rabbit_write
 
 
+def _split_long_line(text: str, target_len: int = 50) -> list[str]:
+    """
+    긴 줄(100자 이상)을 자연스러운 위치에서 2~3줄로 분리.
+    쉼표, 마침표, 조사/어미 단위로 끊음.
+    banidad 스타일: 짧은 줄 단위로 줄바꿈.
+    """
+    if len(text) <= target_len:
+        return [text]
+
+    # 분리 기준 패턴 (우선순위 순)
+    split_markers = [
+        r'(?<=[.!?])\s+',           # 문장 끝 후 공백
+        r'(?<=[,，])\s+',           # 쉼표 후 공백
+        r'(?<=요\.)\s+',             # ~요. 후 공백
+        r'(?<=다\.)\s+',             # ~다. 후 공백
+        r'(?<=어요\.)\s+',           # ~어요. 후 공백
+        r'(?<=더라고요\.)\s+',       # ~더라고요. 후
+        r'(?<=거든요\.)\s+',         # ~거든요. 후
+        r'(?<=[는은이가을를에서])\s+', # 조사 후 공백
+    ]
+
+    import re as _re
+    for pattern in split_markers:
+        parts = _re.split(pattern, text)
+        if len(parts) >= 2:
+            # 적절한 길이로 재조합
+            result = []
+            current = ""
+            for part in parts:
+                if not current:
+                    current = part
+                elif len(current) + len(part) + 1 <= target_len * 2:
+                    current += " " + part
+                else:
+                    result.append(current)
+                    current = part
+            if current:
+                result.append(current)
+            if len(result) >= 2:
+                return result
+
+    # 패턴 분리 실패 시 단순 글자 수로 분리
+    chunks = []
+    while len(text) > target_len * 2:
+        # 가장 가까운 공백에서 끊기
+        cut = target_len * 2
+        space_pos = text.rfind(' ', target_len, cut)
+        if space_pos > 0:
+            chunks.append(text[:space_pos].strip())
+            text = text[space_pos:].strip()
+        else:
+            chunks.append(text[:cut])
+            text = text[cut:]
+    if text:
+        chunks.append(text)
+    return chunks if chunks else [text]
+
+
 def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     """
     본문 → SE 컴포넌트 목록 변환.
@@ -176,7 +234,15 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
                     )
                 )
                 if is_heading:
-                    paras.append(para(s, bold=True, fs=FS["heading"]))
+                    # 소제목: 중앙 정렬 (banidad 스타일)
+                    paras.append(para(s, bold=True, fs=FS["heading"], align="center"))
+                elif len(s) >= 100:
+                    # 긴 줄(100자 이상): 자동으로 2~3줄로 split하여 가독성 향상
+                    # 자연스러운 위치(쉼표, 마침표, 조사 뒤)에서 분리
+                    split_lines = _split_long_line(s)
+                    for sl in split_lines:
+                        if sl.strip():
+                            paras.append(para(sl.strip(), fs=FS["normal"]))
                 else:
                     paras.append(para(s, fs=FS["normal"]))
             if paras:
