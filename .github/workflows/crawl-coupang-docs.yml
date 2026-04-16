@@ -1,19 +1,17 @@
-name: Crawl Coupang API Docs
-
+name: Crawl Coupang Deeplink Docs
 on:
-  workflow_dispatch:
-
+  workflow_dispatch: {}
 jobs:
   crawl:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Install dependencies
-        run: pip install playwright && playwright install chromium
-
-      - name: Crawl Coupang Partners API Docs
+      - name: Install
+        run: pip install playwright && python -m playwright install chromium --with-deps
+      - name: Crawl Deeplink + Rate Limit
         run: |
           python3 - << 'PYEOF'
-          import asyncio, json
+          import asyncio
           from playwright.async_api import async_playwright
 
           async def main():
@@ -21,27 +19,33 @@ jobs:
                   browser = await p.chromium.launch()
                   page = await browser.new_page()
                   
-                  print("=== 쿠팡 파트너스 API 문서 크롤링 ===")
-                  await page.goto("https://partners.coupang.com/#help/open-api", timeout=30000)
-                  await page.wait_for_timeout(5000)
+                  # deeplink API 문서 페이지
+                  urls = [
+                      "https://partners.coupang.com/#help/open-api/api/deeplink",
+                      "https://partners.coupang.com/#help/open-api/api/deeplink-v2",
+                      "https://partners.coupang.com/#help/open-api",
+                  ]
                   
-                  text = await page.evaluate("() => document.body.innerText")
-                  print(f"페이지 길이: {len(text)}자")
+                  for url in urls:
+                      try:
+                          await page.goto(url, timeout=20000)
+                          await page.wait_for_timeout(4000)
+                          txt = await page.inner_text("body")
+                          print(f"\n=== URL: {url} ===")
+                          print(f"길이: {len(txt)}자")
+                          # rate limit, 제한, limit 관련 내용 찾기
+                          lines = txt.split('\n')
+                          for i, l in enumerate(lines):
+                              if any(k in l.lower() for k in ['rate', 'limit', '제한', '횟수', '초과', '분당', '시간당', 'quota', 'throttle', '100']):
+                                  start = max(0, i-2)
+                                  end = min(len(lines), i+5)
+                                  context = '\n'.join(lines[start:end])
+                                  print(f"\n[RATE LIMIT 관련]\n{context}")
+                          print(txt[:6000])
+                      except Exception as e:
+                          print(f"FAIL {url}: {e}")
                   
-                  # API 섹션 찾기
-                  lines = text.split('\n')
-                  for i, line in enumerate(lines):
-                      if any(k in line.lower() for k in ['deeplink','rate','limit','quota','횟수','한도','초과']):
-                          print(f"L{i}: {line[:200]}")
-                  
-                  # 전체 텍스트 저장
-                  with open('api_docs.txt', 'w') as f:
-                      f.write(text)
-                  print("저장 완료")
                   await browser.close()
-
+          
           asyncio.run(main())
           PYEOF
-
-      - name: Upload docs
-        run: cat api_docs.txt | head -500
