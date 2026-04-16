@@ -625,6 +625,30 @@ async def publish(
 
         print(f"  documentModel: {len(doc_str)}자, 컴포넌트 {len(final_comps)+1}개")
 
+        # documentModel 크기 제한: 50,000자 초과 시 이미지 컴포넌트 순차 제거
+        # 네이버 autosave/RabbitWrite: ~50KB 초과 → UNKNOWN 오류
+        MAX_DOC_SIZE = 50000
+        if len(doc_str) > MAX_DOC_SIZE:
+            print(f"  ⚠️ documentModel 크기 초과 ({len(doc_str)}자 > {MAX_DOC_SIZE}자) — 이미지 축소 시작")
+            # 이미지 컴포넌트를 뒤에서부터 제거
+            img_ctypes = {"image", "@ctype"}
+            for attempt in range(5):
+                # IMAGE_HERE_SLOT 제거 또는 뒤쪽 이미지 컴포넌트 제거
+                removed = False
+                for i in range(len(final_comps) - 1, -1, -1):
+                    c = final_comps[i]
+                    if isinstance(c, dict) and c.get("@ctype") == "image":
+                        final_comps.pop(i)
+                        removed = True
+                        break
+                if not removed:
+                    break
+                doc_str = build_document_model(title, final_comps, category_no=category_no)
+                print(f"  이미지 1장 제거 → {len(doc_str)}자, 컴포넌트 {len(final_comps)+1}개")
+                if len(doc_str) <= MAX_DOC_SIZE:
+                    break
+            print(f"  최종 documentModel: {len(doc_str)}자")
+
         # ── STEP 7: 자동저장 (실패해도 직접 발행으로 폴백) ─────
         save_result = await autosave(page, blog_id, doc_str, pop_save)
         auto_save_no = None
