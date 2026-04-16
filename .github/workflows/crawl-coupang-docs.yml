@@ -1,89 +1,71 @@
-name: Crawl Coupang Partners API Docs
+name: Crawl Coupang API Docs
+
 on:
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_PAT }}
+      - name: Install dependencies
+        run: pip install playwright && playwright install chromium --with-deps
 
-      - name: Install Playwright
-        run: |
-          pip install playwright
-          python -m playwright install chromium --with-deps
-
-      - name: Crawl Partners API Docs
+      - name: Crawl all API pages
         run: |
           python3 - << 'PYEOF'
-          from playwright.sync_api import sync_playwright
-          import json, os, re
+          import asyncio, json
+          from playwright.async_api import async_playwright
 
-          results = {}
-          
-          with sync_playwright() as p:
-              browser = p.chromium.launch(headless=True)
-              page = browser.new_page()
-              
-              # 메인 오픈 API 페이지
-              page.goto("https://partners.coupang.com/#help/open-api", wait_until="networkidle", timeout=30000)
-              page.wait_for_timeout(5000)
-              
-              # 메뉴 링크 수집
-              links = page.evaluate("""() => {
-                  const anchors = document.querySelectorAll('a[href*="open-api"]');
-                  return Array.from(anchors).map(a => ({text: a.innerText.trim(), href: a.href}))
-                      .filter(l => l.href && l.text);
-              }""")
-              print(f"메뉴 링크 {len(links)}개 발견")
-              
-              # 각 페이지 크롤링
-              visited = set()
-              base = "https://partners.coupang.com"
-              
-              # 주요 API 페이지들
-              api_pages = [
-                  ("open-api", "오픈 API 개요"),
-                  ("open-api/product-search", "상품 검색"),
-                  ("open-api/deeplink", "딥링크 API"),
-                  ("open-api/best-sellers", "베스트셀러"),
-                  ("open-api/categories", "카테고리"),
-              ]
-              
-              for slug, name in api_pages:
-                  url = f"{base}/#help/{slug}"
-                  if url in visited:
-                      continue
-                  visited.add(url)
+          API_PAGES = [
+              "https://partners.coupang.com/#help/open-api",
+              "https://partners.coupang.com/#help/open-api/api/deeplink",
+              "https://partners.coupang.com/#help/open-api/api/deeplink-v2",
+              "https://partners.coupang.com/#help/open-api/api/bestcategory-products",
+              "https://partners.coupang.com/#help/open-api/api/search-products",
+              "https://partners.coupang.com/#help/open-api/getting-started",
+              "https://partners.coupang.com/#help/open-api/api/error-code",
+          ]
+
+          async def crawl_page(page, url):
+              await page.goto(url, timeout=30000)
+              await page.wait_for_timeout(4000)
+              return await page.evaluate("() => document.body.innerText")
+
+          async def main():
+              async with async_playwright() as p:
+                  browser = await p.chromium.launch()
+                  context = await browser.new_context()
+                  page = await context.new_page()
                   
-                  try:
-                      page.goto(url, wait_until="networkidle", timeout=20000)
-                      page.wait_for_timeout(3000)
-                      text = page.evaluate("document.querySelector('.content, main, #content, .help-content') ? document.querySelector('.content, main, #content, .help-content').innerText : document.body.innerText")
-                      results[name] = text[:5000] if text else "내용 없음"
-                      print(f"\n=== {name} ({url}) ===")
-                      print(text[:2000] if text else "내용 없음")
-                  except Exception as e:
-                      print(f"  오류: {e}")
-              
-              browser.close()
-          
-          # 결과 저장
-          os.makedirs("coupang_api_docs", exist_ok=True)
-          with open("coupang_api_docs/api_reference.json", "w", encoding="utf-8") as f:
-              json.dump(results, f, ensure_ascii=False, indent=2)
-          print("\n\n결과 저장 완료: coupang_api_docs/api_reference.json")
+                  all_content = {}
+                  for url in API_PAGES:
+                      print(f"\n=== {url} ===")
+                      try:
+                          text = await crawl_page(page, url)
+                          all_content[url] = text
+                          print(f"길이: {len(text)}자")
+                          # 중요 섹션 출력
+                          for line in text.split('\n'):
+                              line = line.strip()
+                              if line and any(k in line.lower() for k in [
+                                  'rate','limit','quota','횟수','한도','초과','허용','제한',
+                                  'deeplink','shorten','error','오류','400','401','403',
+                                  'request per','per minute','per second','per hour',
+                                  '분당','시간당','일당','초당'
+                              ]):
+                                  print(f"  >> {line[:200]}")
+                      except Exception as e:
+                          print(f"오류: {e}")
+                  
+                  # 전체 저장
+                  with open('full_docs.txt', 'w') as f:
+                      for url, text in all_content.items():
+                          f.write(f"\n{'='*60}\n{url}\n{'='*60}\n{text}\n")
+                  print("\n\n전체 문서 저장 완료")
+                  await browser.close()
+
+          asyncio.run(main())
           PYEOF
 
-      - name: Commit and Push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add coupang_api_docs/
-          git diff --staged --quiet || git commit -m "docs: coupang partners API reference crawled"
-          git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/noivan0/aikeeper-blog.git main
+      - name: Show full docs
+        run: cat full_docs.txt
