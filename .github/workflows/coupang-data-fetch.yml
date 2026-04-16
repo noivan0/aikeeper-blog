@@ -63,19 +63,20 @@ jobs:
                   try:
                       with urllib.request.urlopen(req, timeout=15) as r:
                           raw = r.read()
+                          print(f'  cat {cat_id} HTTP OK, 응답크기={len(raw)} (방식{"B" if with_q else "A"})')
                           for enc in ['utf-8', 'euc-kr', 'cp949', 'latin-1']:
                               try:
                                   data = json.loads(raw.decode(enc))
+                                  print(f'  cat {cat_id} 파싱OK: rCode={data.get("rCode")} 상품={len(data.get("data",[]))}개')
                                   if data.get('rCode') == '0':
-                                      print(f'  cat {cat_id} 성공 (방식{"B" if with_q else "A"}): {len(data.get("data",[]))}개')
                                       return data.get('data', [])
                                   else:
-                                      print(f'  cat {cat_id} rCode={data.get("rCode")} (방식{"B" if with_q else "A"})', file=sys.stderr)
+                                      print(f'  cat {cat_id} rMessage={data.get("rMessage","")} (방식{"B" if with_q else "A"})', file=sys.stderr)
                                   break
-                              except Exception:
-                                  continue
+                              except Exception as de:
+                                  print(f'  cat {cat_id} 디코드실패({enc}): {de}', file=sys.stderr)
                   except Exception as e:
-                      print(f'  cat {cat_id} 연결실패 (방식{"B" if with_q else "A"}): {e}', file=sys.stderr)
+                      print(f'  cat {cat_id} 연결실패: {e}', file=sys.stderr)
               return []
 
           cats_str = os.environ.get('INPUT_CATEGORIES', '1001,1002,1010,1011,1012,1013,1015,1016,1017,1018,1019,1020')
