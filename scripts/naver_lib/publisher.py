@@ -580,23 +580,16 @@ async def publish(
                 final_comps.append({'_type': 'IMAGE_HERE_SLOT'})
 
         # IMAGE_HERE_SLOT을 extra_uploaded 이미지로 교체
-        # 소제목 직후 배치: IMAGE_HERE_SLOT 위치에 실제 이미지 삽입
-        # 문제 2 수정: IMAGE_HERE_SLOT → 이미지 있으면 삽입, 없으면 제거 (절대 텍스트로 남기지 않음)
-        # ── IMAGE_HERE_SLOT → 이미지 교체 + 가독성 빈줄 추가 ──────
-        # banidad 스타일: 이미지 앞뒤 빈줄 + 텍스트 컴포넌트 사이 빈줄
+        # ⚠️ 빈줄 자동 삽입 제거 — 컴포넌트 수 폭증 방지 (96개 → 14개 목표)
+        # 이미지 앞뒤 빈줄만 유지, 텍스트 간 빈줄은 AI 생성 본문에서 처리
         extra_queue = list(extra_uploaded)
         new_final = []
-        prev_type = None
         for comp in final_comps:
-            c_type = comp.get('@ctype') if isinstance(comp, dict) else None
             is_slot = isinstance(comp, dict) and comp.get('_type') == 'IMAGE_HERE_SLOT'
-
             if is_slot:
                 if extra_queue:
                     eu = extra_queue.pop(0)
-                    # 이미지 앞 빈줄 (이전이 텍스트인 경우)
-                    if prev_type == 'text':
-                        new_final.append(empty_para())
+                    new_final.append(empty_para())   # 이미지 앞 빈줄 1개
                     new_final.append(image_comp(
                         src=eu["src"], path=eu["path"],
                         width=eu["width"], height=eu["height"],
@@ -604,16 +597,10 @@ async def publish(
                         represent=(len(new_final) == 0),
                         file_size=eu["fileSize"]
                     ))
-                    # 이미지 뒤 빈줄
-                    new_final.append(empty_para())
-                    prev_type = 'image'
-                # else: 이미지 없으면 스킵
+                    new_final.append(empty_para())   # 이미지 뒤 빈줄 1개
+                # else: 이미지 없으면 슬롯 스킵
             else:
-                # 텍스트 컴포넌트 사이 빈줄 (문단 간격)
-                if c_type == 'text' and prev_type == 'text':
-                    new_final.append(empty_para())
                 new_final.append(comp)
-                prev_type = c_type or prev_type
         final_comps = new_final
 
         # 남은 extra 이미지 본문 중간 분산 삽입 (IMAGE_HERE_SLOT 소화 후 남은 것)
