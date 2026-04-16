@@ -7,14 +7,12 @@ import json
 import random
 import string
 
-# 폰트 사이즈 코드 (네이버 SE 실측 기반 — 2026-04-16 직접 확인 확정)
-# 실제 발행 포스팅 CSS 실측:
-#   se-fs-fs11=11px / se-fs-fs13=13px / se-fs-fs16=16px / se-fs-fs19=19px
-#   fs15 = CSS 클래스 미정의 → 기본값 11px로 렌더링 (버그 아님, 정의 안 됨)
-# 노이반님 지시 (2026-04-16): 본문 16pt, 소제목 19pt, 검은색
-FS = {"tiny": "fs11", "normal": "fs16", "heading": "fs19", "large": "fs28"}
-# 폰트 색상: 검은색 (#000000)
-FONT_COLOR = "#000000"
+# 폰트 사이즈 코드 (네이버 SE 실측 기반)
+# normal=16pt(본문), heading=20pt(소제목) — 노이반님 지시 2026-04-15
+# 네이버 SE 실제 렌더링 기준 (2026-04-12 역공학 확정)
+# fs11=13px(파트너스고지), fs13=15px(본문), fs19=20px(소제목), fs28=23px(대제목)
+# ⚠️ fs16/fs20 사용 금지: fs20=11px로 렌더링됨
+FS = {"tiny": "fs11", "normal": "fs13", "heading": "fs19", "large": "fs28"}
 
 
 def _uid() -> str:
@@ -25,36 +23,24 @@ def _docid() -> str:
     return "".join(random.choices(string.digits + string.ascii_uppercase, k=26))
 
 
-def para(text: str, bold: bool = False, fs: str = FS["normal"], color: str = FONT_COLOR, align: str = "left") -> dict:
-    """
-    SE 에디터 paragraph 컴포넌트.
-    align: "left" (기본, SE 기본값 = 속성 생략) | "center" | "right"
-    좌측 정렬이 기본 — 중앙 정렬은 documentModel 크기 증가 + 가독성 저하
-    2026-04-16: banidad 스타일 분석 결과 좌측 정렬 + 16pt 본문이 표준
-    """
-    style = {"fontSizeCode": fs, "color": color, "@ctype": "nodeStyle"}
+def para(text: str, bold: bool = False, fs: str = FS["normal"]) -> dict:
+    style = {"fontSizeCode": fs, "@ctype": "nodeStyle"}
     if bold:
         style["bold"] = True
-    paragraph = {
+    return {
         "id": _uid(),
         "nodes": [{"id": _uid(), "value": text, "style": style, "@ctype": "textNode"}],
         "@ctype": "paragraph"
     }
-    # left는 SE 기본값이므로 align 속성 생략 (크기 절약)
-    if align == "center":
-        paragraph["align"] = "center"
-    elif align == "right":
-        paragraph["align"] = "right"
-    return paragraph
 
 
 def para_link(text: str, url: str) -> dict:
-    # 링크 텍스트: 본문 폰트 fs15 + 검은색
+    # 링크 텍스트: 본문 폰트 fs13 (15px)
     return {
         "id": _uid(),
         "nodes": [{
             "id": _uid(), "value": text,
-            "style": {"fontSizeCode": FS["normal"], "color": FONT_COLOR, "@ctype": "nodeStyle"},
+            "style": {"fontSizeCode": FS["normal"], "@ctype": "nodeStyle"},
             "link": {"url": url, "@ctype": "urlLink"},
             "@ctype": "textNode"
         }],
@@ -63,12 +49,7 @@ def para_link(text: str, url: str) -> dict:
 
 
 def empty_para() -> dict:
-    return para("", fs=FS["normal"])  # fs15
-
-
-def empty_paras(n: int = 2) -> list:
-    """문단 사이 n개 빈 줄 (banidad 스타일 — 시각적 여백)."""
-    return [para("", fs=FS["normal"]) for _ in range(n)]
+    return para("", fs=FS["normal"])  # fs13
 
 
 def text_comp(paras: list) -> dict:
@@ -101,22 +82,6 @@ def image_comp(src: str, path: str, width: int, height: int,
         "ai": False,
         "@ctype": "image"
     }
-
-
-def brand_card_comp(title: str, desc: str, thumb_url: str, link: str) -> dict:
-    """
-    브랜드커넥트 상품 카드 컴포넌트 (OGLink sign 없이 구현).
-    naver.me 링크용 — 이미지 + 제목 + 설명 + 링크 텍스트 조합.
-    SE editor의 text 컴포넌트에 이미지 블록 + 링크 버튼 텍스트를 묶어 카드처럼 표시.
-    """
-    # 빈 줄 + [카드 헤더 박스 텍스트] + 구매 링크 텍스트 형태로 카드 구현
-    return text_comp([
-        para("━" * 20, fs=FS["tiny"]),
-        para(title, bold=True, fs=FS["heading"]),
-        para(desc, fs=FS["normal"]),
-        para_link("👉 지금 네이버에서 확인하기 →", link),
-        para("━" * 20, fs=FS["tiny"]),
-    ])
 
 
 def oglink_comp(og_sign: str, title: str, desc: str,
