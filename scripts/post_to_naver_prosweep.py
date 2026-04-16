@@ -1405,7 +1405,20 @@ async def main():
         sys.exit(1)
 
     labels = [l.strip() for l in LABELS_STR.split(",") if l.strip()] if LABELS_STR else []
-    coupang_links = [l for l in COUPANG_LINKS.split("|") if l.strip()] if COUPANG_LINKS else []
+    coupang_links_raw = [l for l in COUPANG_LINKS.split("|") if l.strip()] if COUPANG_LINKS else []
+
+    # ── [규칙] 제품 링크는 반드시 shortenUrl(link.coupang.com/a/...) 사용 ──
+    # 원본 URL(www.coupang.com) / AFFSDP URL(link.coupang.com/re/...) 절대 금지
+    coupang_links = []
+    for lnk in coupang_links_raw:
+        if "link.coupang.com/a/" in lnk:
+            coupang_links.append(lnk)
+        else:
+            print(f"  [차단] 비공식 링크 제외 (shortenUrl 아님): {lnk[:60]}")
+
+    if coupang_links_raw and not coupang_links:
+        print(f"  [WARN] COUPANG_LINKS에 공식 shortenUrl(link.coupang.com/a/...) 없음 — 링크 없이 진행")
+
     coupang_prices = [p for p in COUPANG_PRICES.split("|") if p.strip()] if COUPANG_PRICES else []
     coupang_images = [u for u in COUPANG_IMAGES.split("|") if u.strip()] if COUPANG_IMAGES else []
 
@@ -1416,7 +1429,12 @@ async def main():
             product_data = json.loads(PRODUCT_DATA_STR)
             print(f"  ✅ PRODUCT_DATA 수신: {len(product_data)}개 상품")
             for i, p in enumerate(product_data):
-                print(f"     [{i+1}] {p.get('name','')[:40]} / {p.get('price','')}")
+                link = p.get("link", "")
+                # product_data 내 링크도 shortenUrl 검증
+                if link and "link.coupang.com/a/" not in link:
+                    print(f"  [차단] product_data[{i}] 비공식 링크 제외: {link[:60]}")
+                    p["link"] = ""
+                print(f"     [{i+1}] {p.get('name','')[:40]} / {p.get('price','')} / {p.get('link','')[:40]}")
         except Exception as e:
             print(f"  [warn] PRODUCT_DATA 파싱 실패: {e}")
 
