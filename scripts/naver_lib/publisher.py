@@ -406,10 +406,11 @@ async def publish(
                 if local:
                     thumb_local[link] = local
 
-        # extra_image_urls 다운로드 (최대 6장 제한 — documentModel payload 크기 제한)
+        # extra_image_urls 다운로드 (최대 4장 제한 — documentModel payload 크기 제한)
         # 네이버 RabbitAutoSaveWrite: payload ~100KB 초과 시 UNKNOWN 오류
-        # 이미지 1장 업로드 후 document 반영 크기 ~15KB → 6장 = ~90KB (안전)
-        MAX_EXTRA_IMGS = 6
+        # 이미지 1장 업로드 후 document 반영 크기 ~15KB → 4장 = ~60KB (안전)
+        # 기존 6장에서 4장으로 축소 (95KB → UNKNOWN 오류 방지)
+        MAX_EXTRA_IMGS = 4
         extra_local = []
         if extra_image_urls:
             try:
@@ -624,17 +625,18 @@ async def publish(
 
         print(f"  documentModel: {len(doc_str)}자, 컴포넌트 {len(final_comps)+1}개")
 
-        # ── STEP 7: 자동저장 ────────────────────────────────────
+        # ── STEP 7: 자동저장 (실패해도 직접 발행으로 폴백) ─────
         save_result = await autosave(page, blog_id, doc_str, pop_save)
-        if not save_result:
-            await browser.close()
-            return None
-
-        auto_save_no = save_result.get("autoSaveNo")
-        print(f"  ✅ autoSaveNo={auto_save_no}")
+        auto_save_no = None
+        if save_result:
+            auto_save_no = save_result.get("autoSaveNo")
+            print(f"  ✅ autoSaveNo={auto_save_no}")
+        else:
+            print(f"  ⚠️ 자동저장 실패 — autoSaveNo=None으로 직접 발행 시도 (폴백)")
 
         # ── STEP 8: 발행 ────────────────────────────────────────
         # 확인된 사실: tokenId는 세션 쿠키에 내재 → 빈 문자열로도 발행 성공
+        # autoSaveNo=None이어도 RabbitWrite 발행 시도 가능
         pop_pub = make_pop(category_no=category_no, auto_save_no=auto_save_no)
         publish_result = await rabbit_write(page, blog_id, doc_str, pop_pub, "")
         print(f"  발행: {publish_result.get('status')} | {publish_result.get('body','')[:100]}")
