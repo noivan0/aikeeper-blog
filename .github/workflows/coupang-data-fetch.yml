@@ -235,6 +235,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${GH_PAT}@github.com/noivan0/aikeeper-blog.git
           git add coupang_cache/
           if git diff --staged --quiet; then
             echo "변경사항 없음 — 커밋 스킵"
