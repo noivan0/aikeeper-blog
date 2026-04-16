@@ -1,55 +1,69 @@
-name: Crawl Coupang Partners API Docs
+name: Crawl Coupang Full API Docs
 on:
   workflow_dispatch: {}
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install Playwright
+      - name: Install
         run: pip install playwright && python -m playwright install chromium --with-deps
-      - name: Crawl API Docs
+      - name: Crawl Full API Docs
         run: |
           python3 - << 'PYEOF'
-          import asyncio
+          import asyncio, json
           from playwright.async_api import async_playwright
 
           async def main():
               async with async_playwright() as p:
                   browser = await p.chromium.launch()
                   page = await browser.new_page()
+                  
+                  # 메인 페이지
                   await page.goto("https://partners.coupang.com/#help/open-api", timeout=30000)
                   await page.wait_for_timeout(5000)
                   
-                  txt = await page.inner_text("body")
-                  print("=== MAIN PAGE ===")
-                  print(txt[:3000])
-                  
-                  # deeplink 탭 클릭
-                  links = await page.query_selector_all("a, button, li")
+                  # 사이드 메뉴 모든 링크 수집
+                  links = await page.query_selector_all("a[href]")
+                  menu_links = []
                   for l in links:
-                      t = await l.inner_text()
-                      if "deeplink" in t.lower() or "shorten" in t.lower():
-                          print(f"FOUND: {t.strip()}")
-                          await l.click()
-                          await page.wait_for_timeout(2000)
-                          sub_txt = await page.inner_text("body")
-                          print("=== DEEPLINK PAGE ===")
-                          print(sub_txt[:5000])
-                          break
+                      href = await l.get_attribute("href") or ""
+                      text = (await l.inner_text()).strip()
+                      if href and ("#help" in href or "api" in href.lower()):
+                          menu_links.append((text, href))
+                  
+                  print("=== 메뉴 링크 전체 ===")
+                  for t, h in menu_links:
+                      print(f"  [{t}] {h}")
+                  
+                  # 각 하위 페이지 방문
+                  base = "https://partners.coupang.com"
+                  visited_pages = {}
+                  
+                  for text, href in menu_links:
+                      if not href.startswith("http"):
+                          url = base + href
+                      else:
+                          url = href
+                      
+                      if url in visited_pages:
+                          continue
+                          
+                      try:
+                          await page.goto(url, timeout=20000)
+                          await page.wait_for_timeout(3000)
+                          content = await page.inner_text("body")
+                          visited_pages[url] = content
+                          print(f"\n=== PAGE: {text} ({url}) ===")
+                          print(content[:4000])
+                          print("---END---")
+                      except Exception as e:
+                          print(f"SKIP {url}: {e}")
                   
                   await browser.close()
 
           asyncio.run(main())
           PYEOF
-      - name: Save results
-        run: |
-          echo "완료" >> results/api_docs_crawl.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add results/ || true
-          git diff --staged --quiet || git commit -m "chore: coupang api docs crawl result"
-          git push origin main || true
