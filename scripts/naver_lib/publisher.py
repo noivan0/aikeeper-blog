@@ -243,38 +243,45 @@ async def publish(
             return None
         await page.wait_for_timeout(1000)
 
-        # ── STEP 1: se-auth 캡처 (쿠팡 링크 있을 때만) ───────────
-        # 확인된 사실: tokenId는 세션 쿠키로 대체 가능 → 캡처 불필요
-        # se-auth: OGLink API 헤더에서 캡처 (쿠팡 링크 없으면 OG카드도 없음)
-        if _product_links:
-            # 본문에 쿠팡 링크 타이핑 → OGLink 요청 트리거 → se-auth 캡처
+        # ── STEP 1: se-auth 캡처 (쿠팡 링크 또는 naver.me 링크) ──
+        # se-auth: OGLink API 헤더에서 캡처 → OG카드 생성에 필요
+        # P005: naver.me 링크도 oglink API로 OG카드 생성 가능 (2026-04-16 확인)
+        import re as _re
+        _naver_me_links = list(dict.fromkeys(
+            m.group(0).rstrip('.,)')
+            for m in _re.finditer(r'https://naver\.me/\S+', body)
+        ))
+        _trigger_link = (_product_links + _naver_me_links + [None])[0]
+
+        if _trigger_link:
             be = await page.query_selector(".se-component.se-text")
             if be:
                 box = await be.bounding_box()
                 await page.mouse.click(box['x'] + 50, box['y'] + box['height'] / 2)
-            await page.keyboard.type(_product_links[0], delay=5)
+            await page.keyboard.type(_trigger_link, delay=5)
             await page.keyboard.press("Enter")
-            print("  se-auth 캡처 대기 (9s)...")
-            await page.wait_for_timeout(9000)
+            print(f"  se-auth 캡처 대기 (최대 15s)...")
+            await page.wait_for_timeout(15000)
         else:
-            # P005 브랜드커넥트 등 OG카드 없는 경우: 에디터 활성화만
             await page.wait_for_timeout(2000)
 
         se_auth   = captured["se_auth"]
         se_app_id = captured["se_app_id"]
         print(f"  se-auth: {'있음' if se_auth else '없음 (OG카드 없는 발행)'}")
 
-        # ── STEP 2: OGLink 수집 (쿠팡 링크만) ──────────────────
+        # ── STEP 2: OGLink 수집 (쿠팡 + naver.me) ───────────────
         og_map: dict[str, dict] = {}
-        if _product_links and se_auth:
-            print(f"  OG카드 수집 ({len(_product_links)}개)...")
-            for link in _product_links:
-                og = await oglink_fetch(page, link, se_auth, se_app_id)
-                if og:
-                    og_map[link] = og
-                    print(f"    ✅ OG: {og['title'][:35]}")
-                else:
-                    print(f"    ⚠️ OG 실패: {link[:50]}")
+        if se_auth:
+            _all_og_targets = list(dict.fromkeys(_product_links + _naver_me_links))
+            if _all_og_targets:
+                print(f"  OG카드 수집 ({len(_all_og_targets)}개)...")
+                for link in _all_og_targets:
+                    og = await oglink_fetch(page, link, se_auth, se_app_id)
+                    if og:
+                        og_map[link] = og
+                        print(f"    ✅ OG카드: {og['title'][:40]}")
+                    else:
+                        print(f"    ⚠️ OG 실패 → 텍스트링크로 대체: {link[:50]}")
 
         # ── STEP 3: 썸네일 다운로드 ─────────────────────────────
         thumb_local: dict[str, str] = {}
