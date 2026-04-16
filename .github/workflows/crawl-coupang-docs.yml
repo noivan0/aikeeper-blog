@@ -1,55 +1,80 @@
-name: Crawl Partners API Playground
+name: Crawl Coupang Partners API Docs
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
-      - name: Install
-        run: pip install playwright && python -m playwright install chromium --with-deps
-      - name: Crawl API Playground and FAQ
-        run: |
-          python3 - << 'PYEOF'
-          import asyncio
-          from playwright.async_api import async_playwright
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
 
-          async def main():
-              async with async_playwright() as p:
-                  browser = await p.chromium.launch()
-                  page = await browser.new_page()
-                  
-                  # FAQ 페이지
-                  faq_urls = [
-                      "https://partners.coupang.com/#help/open-api/faq",
-                      "https://partners.coupang.com/#help/open-api/api/deeplink",
-                      "https://partners.coupang.com/#help/open-api/guide",
-                  ]
-                  
-                  for url in faq_urls:
-                      await page.goto(url, timeout=20000)
-                      await page.wait_for_timeout(5000)
-                      
-                      # 클릭 가능한 탭/메뉴 찾기
-                      all_items = await page.query_selector_all("li, a, button, .tab, [role='tab']")
-                      for item in all_items:
-                          txt = (await item.inner_text()).strip()
-                          if any(k in txt.lower() for k in ['faq', '자주', '묻는', '플레이', 'playground', 'deeplink', '딥링크', 'rate', '제한']):
-                              try:
-                                  await item.click()
-                                  await page.wait_for_timeout(2000)
-                                  content = await page.inner_text("body")
-                                  if any(k in content for k in ['rate', '제한', '횟수', '100', 'limit', '초과']):
-                                      print(f"=== FOUND RATE LIMIT in [{txt}] ===")
-                                      print(content[:5000])
-                                      break
-                              except: pass
-                      
-                      full_txt = await page.inner_text("body")
-                      print(f"\n=== {url} (전체) ===")
-                      print(full_txt[:8000])
-                  
-                  await browser.close()
+      - name: Install Playwright
+        run: pip install playwright && python -m playwright install chromium --with-deps 2>/dev/null
+
+      - name: Crawl Partners API Docs
+        run: |
+          python3 << 'PYEOF'
+          from playwright.sync_api import sync_playwright
+          import json, os, re, time
+
+          results = {}
+          BASE = "https://partners.coupang.com"
           
-          asyncio.run(main())
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              ctx = browser.new_context(viewport={"width":1280,"height":900})
+              page = ctx.new_page()
+              
+              # 메인 페이지 로드
+              page.goto(f"{BASE}/#help/open-api", timeout=30000)
+              page.wait_for_load_state("networkidle")
+              time.sleep(5)
+              
+              # 로그인 체크 (비로그인이어도 문서는 볼 수 있음)
+              title = page.title()
+              print(f"페이지 제목: {title}")
+              
+              # 전체 텍스트
+              body = page.evaluate("document.body.innerText")
+              results["메인_오픈API"] = body[:8000]
+              print(f"메인페이지 텍스트 {len(body)}자")
+              print(body[:3000])
+              
+              # 딥링크 페이지
+              page.goto(f"{BASE}/#help/open-api/api/deeplink", timeout=20000)
+              page.wait_for_load_state("networkidle")
+              time.sleep(3)
+              body2 = page.evaluate("document.body.innerText")
+              results["딥링크_API"] = body2[:8000]
+              print("\n\n=== 딥링크 API 페이지 ===")
+              print(body2[:3000])
+              
+              # FAQ
+              page.goto(f"{BASE}/#help/open-api/faq", timeout=20000)
+              page.wait_for_load_state("networkidle")
+              time.sleep(3)
+              body3 = page.evaluate("document.body.innerText")
+              results["FAQ"] = body3[:8000]
+              print("\n\n=== FAQ 페이지 ===")
+              print(body3[:3000])
+              
+              browser.close()
+          
+          os.makedirs("coupang_api_docs", exist_ok=True)
+          with open("coupang_api_docs/api_reference.json", "w", encoding="utf-8") as f:
+              json.dump(results, f, ensure_ascii=False, indent=2)
+          print("\n\n저장 완료")
           PYEOF
+
+      - name: Commit Results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add coupang_api_docs/
+          git diff --staged --quiet || git commit -m "docs: coupang partners API docs crawled"
+          git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/noivan0/aikeeper-blog.git main || echo "push 실패 (변경없음)"
