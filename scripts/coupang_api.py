@@ -419,11 +419,14 @@ def _get_deeplink_shorten_urls(coupang_urls: list) -> dict:
     """
     쿠팡 파트너스 공식 deeplink API를 사용하여 shortenUrl 일괄 획득.
     - POST /v2/providers/affiliate_open_api/apis/openapi/deeplink
-    - body: {"coupangUrls": [...]}
-    - 반환: {원본URL: shortenUrl} 딕셔너리
+    - body: {"coupangUrls": [...], "subId": "ggultongmon"}
+    - 반환: {원본URL: shortenUrl} 딕셔너리 (link.coupang.com/a/... 형태만)
     - 최대 10개씩 배치 처리
+    - [규칙] shortenUrl 없으면 해당 상품 skip — productUrl fallback 절대 금지 (노이반님 원칙)
     """
+    # [규칙] path는 /openapi/deeplink (v1 없음) — 실제 API 확인 완료
     DEEPLINK_PATH = "/v2/providers/affiliate_open_api/apis/openapi/deeplink"
+    SUBID = os.environ.get("COUPANG_SUBID", "ggultongmon")
     result = {}
 
     if not coupang_urls:
@@ -433,20 +436,19 @@ def _get_deeplink_shorten_urls(coupang_urls: list) -> dict:
     for i in range(0, len(coupang_urls), 10):
         batch = coupang_urls[i:i + 10]
         try:
-            resp = _post(DEEPLINK_PATH, {"coupangUrls": batch})
+            resp = _post(DEEPLINK_PATH, {"coupangUrls": batch, "subId": SUBID})
             data_list = resp.get("data", [])
+            # 1차: originalUrl 기반 매핑 (공식 응답 필드)
             for item in data_list:
-                landing = item.get("landingUrl", "")
+                orig = item.get("originalUrl", "")
                 shorten = item.get("shortenUrl", "")
-                if shorten:
-                    # landingUrl로 원본 URL 매핑
-                    result[landing] = shorten
-                    # 원본 URL도 직접 매핑 (배치 순서 기반 fallback)
-            # 순서 기반 매핑 (landingUrl이 원본과 다를 경우 대비)
-            if len(data_list) == len(batch):
-                for orig_url, item in zip(batch, data_list):
-                    shorten = item.get("shortenUrl", "")
-                    if shorten and orig_url not in result:
+                if shorten and "link.coupang.com/a/" in shorten and orig:
+                    result[orig] = shorten
+            # 2차: 순서 기반 fallback (originalUrl 미포함 응답 대비)
+            for idx, orig_url in enumerate(batch):
+                if orig_url not in result and idx < len(data_list):
+                    shorten = data_list[idx].get("shortenUrl", "")
+                    if shorten and "link.coupang.com/a/" in shorten:
                         result[orig_url] = shorten
         except Exception as e:
             print(f"  [WARN] deeplink API 배치 실패: {e}")
@@ -516,9 +518,9 @@ def get_products_with_shorten(keyword_or_products, limit: int = 5) -> list:
                     _save_item_id_cache(product_id, item_id, vendor_item_id)
                     item_id_cache[product_id] = {"itemId": item_id, "vendorItemId": vendor_item_id}
             else:
-                # itemId 확보 불가 → productUrl fallback
-                print(f"  [FALLBACK] {product_id}: itemId 없음, productUrl 사용")
-                p["shortenUrl"] = product_url or "#"
+                # [규칙] itemId 없어도 productUrl fallback 금지 — 해당 상품 skip (노이반님 원칙)
+                print(f"  [SKIP] {product_id}: itemId 없음 — shortenUrl 불가, 상품 제외")
+                p["_skip"] = True
 
         # 2단계: deeplink API 일괄 호출
         if products_needing_deeplink:
@@ -529,13 +531,16 @@ def get_products_with_shorten(keyword_or_products, limit: int = 5) -> list:
 
             for p, complete_url in products_needing_deeplink:
                 shorten = url_to_shorten.get(complete_url)
-                if shorten:
+                if shorten and "link.coupang.com/a/" in shorten:
                     p["shortenUrl"] = shorten
                     print(f"  [OK] {p.get('productId')}: {shorten}")
                 else:
-                    # deeplink 실패 → productUrl fallback
-                    print(f"  [FALLBACK] {p.get('productId')}: deeplink 실패, productUrl 사용")
-                    p["shortenUrl"] = p.get("productUrl", "#")
+                    # [규칙] deeplink 실패해도 productUrl fallback 절대 금지 — skip (노이반님 원칙)
+                    print(f"  [SKIP] {p.get('productId')}: deeplink 실패 — 상품 제외")
+                    p["_skip"] = True
+
+        # skip 표시 상품 제거
+        products = [p for p in products if not p.get("_skip")]
 
         return products
     except Exception as e:
@@ -591,12 +596,13 @@ def download_product_image(image_url: str, save_path: str) -> bool:
         return False
 
 def get_shorten_urls(product_urls: list) -> dict:
-    """상품 URL → shortenUrl (productUrl이 이미 affiliate URL이면 그대로 반환)"""
-    result = {}
-    for url in product_urls:
-        if url and "coupang.com" in url:
-            result[url] = url  # productUrl이 이미 affiliate 링크
-    return result
+    """
+    상품 URL → shortenUrl (공식 deeplink API 호출)
+    - [규칙] 반드시 link.coupang.com/a/... 형태만 반환 (노이반님 원칙)
+    - deeplink 실패한 URL은 결과에서 제외 (raw URL fallback 절대 금지)
+    """
+    # deeplink API로 실제 shortenUrl 획득
+    return _get_deeplink_shorten_urls(product_urls)
 
 # ── CLI 테스트 ────────────────────────────────────────────────────────────
 if __name__ == "__main__":

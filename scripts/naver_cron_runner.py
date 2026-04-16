@@ -154,10 +154,14 @@ def parse_product_sections(html: str) -> list:
         plain = re.sub(r'\s+', ' ', plain).strip()
         desc = plain[:150].strip()
 
+        # [규칙] 제품 링크는 반드시 shortenUrl(link.coupang.com/a/...) 사용 (노이반님 원칙)
+        # AFFSDP URL(link.coupang.com/re/...) / raw URL 전달 금지
+        safe_link = first_link if first_link and "link.coupang.com/a/" in first_link else ""
+
         products.append({
             'name': h2_text,
             'price': prices_in_body[0],
-            'link': first_link,
+            'link': safe_link,
             'image': first_img,
             'desc': desc,
         })

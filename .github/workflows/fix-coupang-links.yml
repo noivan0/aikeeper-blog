@@ -106,7 +106,7 @@ jobs:
 
           def parse_affsdp_urls(content):
               """AFFSDP URL 목록 파싱. 중복 제거, 원본 AFFSDP URL -> coupang product URL 매핑 반환.
-              deeplink API 스펙: productId만 있는 단순 URL 사용 (itemId/vendorItemId 불필요)
+              deeplink API 스펙: pageKey + itemId + vendorItemId 포함 완전한 URL 사용.
               """
               affsdp_to_product = {}
               for raw in AFFSDP_PAT.findall(content):
@@ -117,8 +117,13 @@ jobs:
                   pk = params.get('pageKey', '')
                   if not pk:
                       continue
-                  # deeplink API: productId만으로 단순 URL (itemId/vendorItemId 없이)
-                  product_url = f'https://www.coupang.com/vp/products/{pk}'
+                  item_id = params.get('itemId', '')
+                  vendor_item_id = params.get('vendorItemId', '')
+                  # deeplink API: itemId/vendorItemId 포함 완전한 URL 사용 (성공률 높음)
+                  if item_id and vendor_item_id:
+                      product_url = f'https://www.coupang.com/vp/products/{pk}?itemId={item_id}&vendorItemId={vendor_item_id}'
+                  else:
+                      product_url = f'https://www.coupang.com/vp/products/{pk}'
                   affsdp_to_product[url] = product_url
               return affsdp_to_product
 
