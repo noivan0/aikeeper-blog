@@ -234,16 +234,10 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
                     )
                 )
                 if is_heading:
-                    # 소제목: 중앙 정렬 (banidad 스타일)
-                    paras.append(para(s, bold=True, fs=FS["heading"], align="center"))
-                elif len(s) >= 100:
-                    # 긴 줄(100자 이상): 자동으로 2~3줄로 split하여 가독성 향상
-                    # 자연스러운 위치(쉼표, 마침표, 조사 뒤)에서 분리
-                    split_lines = _split_long_line(s)
-                    for sl in split_lines:
-                        if sl.strip():
-                            paras.append(para(sl.strip(), fs=FS["normal"]))
+                    paras.append(para(s, bold=True, fs=FS["heading"]))
                 else:
+                    # 긴 줄 분리 제거 — paragraph 수 최소화 (documentModel 크기 제한 대응)
+                    # _split_long_line 사용 시 paragraph 3배 증가 → 97KB 초과 원인
                     paras.append(para(s, fs=FS["normal"]))
             if paras:
                 components.append({'_type': 'TEXT', '_paras': paras})
@@ -410,7 +404,7 @@ async def publish(
         # 네이버 RabbitAutoSaveWrite: payload ~100KB 초과 시 UNKNOWN 오류
         # 이미지 1장 업로드 후 document 반영 크기 ~15KB → 4장 = ~60KB (안전)
         # 기존 6장에서 4장으로 축소 (95KB → UNKNOWN 오류 방지)
-        MAX_EXTRA_IMGS = 4
+        MAX_EXTRA_IMGS = 2
         extra_local = []
         if extra_image_urls:
             try:
@@ -649,14 +643,30 @@ async def publish(
                     break
             print(f"  최종 documentModel: {len(doc_str)}자")
 
-        # ── STEP 7: 자동저장 (실패해도 직접 발행으로 폴백) ─────
-        save_result = await autosave(page, blog_id, doc_str, pop_save)
+        # ── STEP 7: 자동저장 (3단계 폴백) ─────────────────────
+        # 업로드된 이미지 정보 수집 (mediaResources에 포함)
+        all_uploaded = list(uploaded_images.values()) + list(extra_uploaded)
+        save_result = await autosave(page, blog_id, doc_str, pop_save, uploaded_images=all_uploaded)
         auto_save_no = None
+
         if save_result:
             auto_save_no = save_result.get("autoSaveNo")
             print(f"  ✅ autoSaveNo={auto_save_no}")
         else:
-            print(f"  ⚠️ 자동저장 실패 — autoSaveNo=None으로 직접 발행 시도 (폴백)")
+            # 폴백 1: 이미지 없는 minimal 버전으로 재시도
+            print(f"  ⚠️ 자동저장 실패 — 이미지 컴포넌트 제거 후 재시도")
+            minimal_comps = [c for c in final_comps if not (isinstance(c, dict) and c.get('@ctype') == 'image')]
+            minimal_doc = build_document_model(title, minimal_comps, category_no=category_no)
+            print(f"  minimal documentModel: {len(minimal_doc)}자, 컴포넌트 {len(minimal_comps)+1}개")
+            save_result2 = await autosave(page, blog_id, minimal_doc, pop_save, uploaded_images=None)
+            if save_result2:
+                auto_save_no = save_result2.get("autoSaveNo")
+                doc_str = minimal_doc        # 이미지 없는 버전으로 발행
+                final_comps = minimal_comps
+                print(f"  ✅ 이미지 제거 후 자동저장 성공: autoSaveNo={auto_save_no}")
+            else:
+                # 폴백 2: autoSaveNo=None으로 직접 발행 시도
+                print(f"  ⚠️ 이미지 제거 후도 실패 — autoSaveNo=None으로 직접 발행 시도")
 
         # ── STEP 8: 발행 ────────────────────────────────────────
         # 확인된 사실: tokenId는 세션 쿠키에 내재 → 빈 문자열로도 발행 성공

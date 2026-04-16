@@ -25,11 +25,12 @@ def _docid() -> str:
     return "".join(random.choices(string.digits + string.ascii_uppercase, k=26))
 
 
-def para(text: str, bold: bool = False, fs: str = FS["normal"], color: str = FONT_COLOR, align: str = "center") -> dict:
+def para(text: str, bold: bool = False, fs: str = FS["normal"], color: str = FONT_COLOR, align: str = "left") -> dict:
     """
     SE 에디터 paragraph 컴포넌트.
-    align: "center" (기본, banidad 스타일) | "left" | "right"
-    align="center"만 paragraph에 align 속성 추가 (left/right는 SE 기본값 사용).
+    align: "left" (기본, SE 기본값 = 속성 생략) | "center" | "right"
+    좌측 정렬이 기본 — 중앙 정렬은 documentModel 크기 증가 + 가독성 저하
+    2026-04-16: banidad 스타일 분석 결과 좌측 정렬 + 16pt 본문이 표준
     """
     style = {"fontSizeCode": fs, "color": color, "@ctype": "nodeStyle"}
     if bold:
@@ -39,11 +40,11 @@ def para(text: str, bold: bool = False, fs: str = FS["normal"], color: str = FON
         "nodes": [{"id": _uid(), "value": text, "style": style, "@ctype": "textNode"}],
         "@ctype": "paragraph"
     }
+    # left는 SE 기본값이므로 align 속성 생략 (크기 절약)
     if align == "center":
         paragraph["align"] = "center"
     elif align == "right":
         paragraph["align"] = "right"
-    # left는 SE 기본값이므로 align 속성 생략
     return paragraph
 
 
