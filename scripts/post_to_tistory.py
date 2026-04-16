@@ -297,7 +297,9 @@ def upload_product_images(products: list, ts: str, topic: str = "",
             "index": i + 1,
             "name": pname,
             "price": price_str,
-            "url": p.get("shortenUrl", p.get("productUrl", p.get("coupang_url", ""))),
+            # [규칙] 제품 링크는 반드시 shortenUrl 사용 (노이반님 원칙)
+            # link.coupang.com/a/... 형태만 허용 / productUrl/coupang_url fallback 절대 금지
+            "url": (lambda u: u if u and "link.coupang.com/a/" in u else "")(p.get("shortenUrl", "")),
             "alt": seo_alt,
             "gh_url": gh_url,
             "original_url": pimg,
@@ -376,7 +378,10 @@ def generate_cross_post(topic: str, products: list, post_url: str,
     for i, p in enumerate(products):
         pname  = p.get("productName", p.get("name", ""))
         pprice = p.get("productPrice", p.get("price", ""))
-        purl   = p.get("shortenUrl", p.get("productUrl", p.get("coupang_url", "")))
+        # [규칙] 제품 링크는 반드시 shortenUrl 사용 (노이반님 원칙)
+        # link.coupang.com/a/... 형태만 허용 / productUrl/coupang_url fallback 절대 금지
+        _purl_raw = p.get("shortenUrl", "")
+        purl   = _purl_raw if _purl_raw and "link.coupang.com/a/" in _purl_raw else ""
 
         try:
             price_str = f"{int(pprice):,}원" if pprice else ""

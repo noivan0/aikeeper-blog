@@ -104,7 +104,10 @@ def build_prompt(topic: str, products: list, labels: list, original_url: str) ->
     for i, prod in enumerate(products[:3], 1):
         name  = prod.get("productName", prod.get("name", "상품"))
         price = prod.get("price", "")
-        url   = prod.get("shortenUrl", prod.get("coupang_url", ""))
+        # [규칙] 제품 링크는 반드시 shortenUrl 사용 (노이반님 원칙)
+        # P004: link.coupang.com/a/... 형태만 허용 / coupang_url fallback 절대 금지
+        _raw = prod.get("shortenUrl", "")
+        url  = _raw if _raw and "link.coupang.com/a/" in _raw else ""
         prod_lines.append(f"상품{i}: {name} / {price}\n링크{i}: {url}")
     prod_summary = "\n".join(prod_lines)
     labels_str   = ", ".join(labels[:5]) if labels else topic
@@ -113,7 +116,9 @@ def build_prompt(topic: str, products: list, labels: list, original_url: str) ->
     link_rules = ""
     for i, prod in enumerate(products[:3], 1):
         name  = prod.get("productName", prod.get("name", "상품"))
-        url   = prod.get("shortenUrl", prod.get("coupang_url", ""))
+        # [규칙] 제품 링크는 반드시 shortenUrl 사용 (노이반님 원칙)
+        _raw  = prod.get("shortenUrl", "")
+        url   = _raw if _raw and "link.coupang.com/a/" in _raw else ""
         price = prod.get("price", "")
         link_rules += f"\n상품{i}({name}):"
         link_rules += f"\n  - 소개 후 1번: 지금 쿠팡에서 확인하기 → {url}"
