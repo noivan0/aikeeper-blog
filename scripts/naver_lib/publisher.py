@@ -26,7 +26,7 @@ from playwright.async_api import async_playwright
 
 from .session import load_session, save_session, login_if_needed, dismiss_popups
 from .document import (
-    FS, para, para_link, empty_para, text_comp, image_comp, oglink_comp,
+    FS, para, para_link, empty_para, empty_paras, text_comp, image_comp, oglink_comp,
     brand_card_comp, build_document_model, make_pop
 )
 from .uploader import download_image, upload_image_file
@@ -161,7 +161,7 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
             for line in sec_content:
                 s = line.strip()
                 if not s:
-                    paras.append(empty_para())
+                    paras.extend(empty_paras(2))  # banidad 스타일: 빈 줄 2개로 시각적 여백
                     continue
                 if '파트너스 활동' in s or s.startswith('📢') or (s.startswith('#') and s.count('#') >= 3):
                     paras.append(para(s, fs=FS["tiny"]))
@@ -302,8 +302,12 @@ async def publish(
                 await page.mouse.click(box['x'] + 50, box['y'] + box['height'] / 2)
             await page.keyboard.type(_trigger_link, delay=5)
             await page.keyboard.press("Enter")
-            print("  se-auth 캡처 대기 (9s)...")
-            await page.wait_for_timeout(9000)
+            print("  se-auth 캡처 대기 (최대 15s)...")
+            await page.wait_for_timeout(10000)
+            # 10초 후에도 se-auth 없으면 추가 5초 대기
+            if not captured["se_auth"]:
+                print("  se-auth 미캡처 — 추가 5초 대기...")
+                await page.wait_for_timeout(5000)
         else:
             # 링크 없는 경우: 에디터 활성화만
             await page.wait_for_timeout(2000)

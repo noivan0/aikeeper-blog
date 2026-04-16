@@ -8,11 +8,11 @@ import random
 import string
 
 # 폰트 사이즈 코드 (네이버 SE 실측 기반)
-# normal=16pt(본문), heading=19pt(소제목) — 노이반님 지시 2026-04-16
+# normal=15pt(본문), heading=19pt(소제목) — 2026-04-16 수정
 # 네이버 SE 실제 렌더링 기준 (2026-04-12 역공학 확정)
-# fs11=11pt, fs13=13pt, fs15=15pt, fs16=16pt(본문), fs19=19pt(소제목), fs28=28pt
-# 검색 상위 100개 분석: fs16이 1783회로 가장 많이 쓰이는 본문 폰트 (naver_format_guide_v2.md)
-FS = {"tiny": "fs11", "normal": "fs16", "heading": "fs19", "large": "fs28"}
+# fs11=11pt, fs13=13pt, fs15=15pt, fs16=16pt(실제 11px 렌더링 버그), fs19=19pt(소제목), fs28=28pt
+# 검색 상위 100개 분석: fs15가 1116회 사용 = 실제 15pt 안전 코드 (fs16은 11px 버그)
+FS = {"tiny": "fs11", "normal": "fs15", "heading": "fs19", "large": "fs28"}
 # 폰트 색상: 검은색 (#000000)
 FONT_COLOR = "#000000"
 
@@ -25,13 +25,15 @@ def _docid() -> str:
     return "".join(random.choices(string.digits + string.ascii_uppercase, k=26))
 
 
-def para(text: str, bold: bool = False, fs: str = FS["normal"], color: str = FONT_COLOR) -> dict:
+def para(text: str, bold: bool = False, fs: str = FS["normal"], color: str = FONT_COLOR, align: str = "center") -> dict:
+    # align: "center" (기본, banidad 스타일) | "left" | "right"
     style = {"fontSizeCode": fs, "color": color, "@ctype": "nodeStyle"}
     if bold:
         style["bold"] = True
     return {
         "id": _uid(),
         "nodes": [{"id": _uid(), "value": text, "style": style, "@ctype": "textNode"}],
+        "align": align,
         "@ctype": "paragraph"
     }
 
@@ -51,7 +53,12 @@ def para_link(text: str, url: str) -> dict:
 
 
 def empty_para() -> dict:
-    return para("", fs=FS["normal"])  # fs16
+    return para("", fs=FS["normal"])  # fs15
+
+
+def empty_paras(n: int = 2) -> list:
+    """문단 사이 n개 빈 줄 (banidad 스타일 — 시각적 여백)."""
+    return [para("", fs=FS["normal"]) for _ in range(n)]
 
 
 def text_comp(paras: list) -> dict:
@@ -84,6 +91,22 @@ def image_comp(src: str, path: str, width: int, height: int,
         "ai": False,
         "@ctype": "image"
     }
+
+
+def brand_card_comp(title: str, desc: str, thumb_url: str, link: str) -> dict:
+    """
+    브랜드커넥트 상품 카드 컴포넌트 (OGLink sign 없이 구현).
+    naver.me 링크용 — 이미지 + 제목 + 설명 + 링크 텍스트 조합.
+    SE editor의 text 컴포넌트에 이미지 블록 + 링크 버튼 텍스트를 묶어 카드처럼 표시.
+    """
+    # 빈 줄 + [카드 헤더 박스 텍스트] + 구매 링크 텍스트 형태로 카드 구현
+    return text_comp([
+        para("━" * 20, fs=FS["tiny"]),
+        para(title, bold=True, fs=FS["heading"]),
+        para(desc, fs=FS["normal"]),
+        para_link("👉 지금 네이버에서 확인하기 →", link),
+        para("━" * 20, fs=FS["tiny"]),
+    ])
 
 
 def oglink_comp(og_sign: str, title: str, desc: str,
