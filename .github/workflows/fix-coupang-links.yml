@@ -67,17 +67,24 @@ jobs:
               try:
                   with urllib.request.urlopen(req, timeout=15) as r:
                       raw = r.read()
+                      http_code = r.status
+              except urllib.error.HTTPError as e:
+                  raw = e.read()
+                  http_code = e.code
+                  print(f'    [HTTP {http_code}] {raw[:300]}', flush=True)
+                  return {}
               except Exception as e:
                   print(f'    [HTTP ERR] {e}', flush=True)
                   return {}
               for enc in ('utf-8', 'euc-kr', 'cp949', 'latin-1'):
                   try:
                       resp = json.loads(raw.decode(enc))
+                      print(f'    [RAW RESP {http_code}] {json.dumps(resp)[:300]}', flush=True)
                       break
                   except Exception:
                       continue
               else:
-                  print(f'    [DECODE ERR] {raw[:200]}', flush=True)
+                  print(f'    [DECODE ERR] {raw[:300]}', flush=True)
                   return {}
 
               data = resp.get('data', [])
