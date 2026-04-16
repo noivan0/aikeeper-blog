@@ -1,71 +1,55 @@
-name: Crawl Coupang API Docs
-
+name: Crawl Partners API Playground
 on:
-  workflow_dispatch:
-
+  workflow_dispatch: {}
 jobs:
   crawl:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Install dependencies
-        run: pip install playwright && playwright install chromium --with-deps
-
-      - name: Crawl all API pages
+      - name: Install
+        run: pip install playwright && python -m playwright install chromium --with-deps
+      - name: Crawl API Playground and FAQ
         run: |
           python3 - << 'PYEOF'
-          import asyncio, json
+          import asyncio
           from playwright.async_api import async_playwright
-
-          API_PAGES = [
-              "https://partners.coupang.com/#help/open-api",
-              "https://partners.coupang.com/#help/open-api/api/deeplink",
-              "https://partners.coupang.com/#help/open-api/api/deeplink-v2",
-              "https://partners.coupang.com/#help/open-api/api/bestcategory-products",
-              "https://partners.coupang.com/#help/open-api/api/search-products",
-              "https://partners.coupang.com/#help/open-api/getting-started",
-              "https://partners.coupang.com/#help/open-api/api/error-code",
-          ]
-
-          async def crawl_page(page, url):
-              await page.goto(url, timeout=30000)
-              await page.wait_for_timeout(4000)
-              return await page.evaluate("() => document.body.innerText")
 
           async def main():
               async with async_playwright() as p:
                   browser = await p.chromium.launch()
-                  context = await browser.new_context()
-                  page = await context.new_page()
+                  page = await browser.new_page()
                   
-                  all_content = {}
-                  for url in API_PAGES:
-                      print(f"\n=== {url} ===")
-                      try:
-                          text = await crawl_page(page, url)
-                          all_content[url] = text
-                          print(f"길이: {len(text)}자")
-                          # 중요 섹션 출력
-                          for line in text.split('\n'):
-                              line = line.strip()
-                              if line and any(k in line.lower() for k in [
-                                  'rate','limit','quota','횟수','한도','초과','허용','제한',
-                                  'deeplink','shorten','error','오류','400','401','403',
-                                  'request per','per minute','per second','per hour',
-                                  '분당','시간당','일당','초당'
-                              ]):
-                                  print(f"  >> {line[:200]}")
-                      except Exception as e:
-                          print(f"오류: {e}")
+                  # FAQ 페이지
+                  faq_urls = [
+                      "https://partners.coupang.com/#help/open-api/faq",
+                      "https://partners.coupang.com/#help/open-api/api/deeplink",
+                      "https://partners.coupang.com/#help/open-api/guide",
+                  ]
                   
-                  # 전체 저장
-                  with open('full_docs.txt', 'w') as f:
-                      for url, text in all_content.items():
-                          f.write(f"\n{'='*60}\n{url}\n{'='*60}\n{text}\n")
-                  print("\n\n전체 문서 저장 완료")
+                  for url in faq_urls:
+                      await page.goto(url, timeout=20000)
+                      await page.wait_for_timeout(5000)
+                      
+                      # 클릭 가능한 탭/메뉴 찾기
+                      all_items = await page.query_selector_all("li, a, button, .tab, [role='tab']")
+                      for item in all_items:
+                          txt = (await item.inner_text()).strip()
+                          if any(k in txt.lower() for k in ['faq', '자주', '묻는', '플레이', 'playground', 'deeplink', '딥링크', 'rate', '제한']):
+                              try:
+                                  await item.click()
+                                  await page.wait_for_timeout(2000)
+                                  content = await page.inner_text("body")
+                                  if any(k in content for k in ['rate', '제한', '횟수', '100', 'limit', '초과']):
+                                      print(f"=== FOUND RATE LIMIT in [{txt}] ===")
+                                      print(content[:5000])
+                                      break
+                              except: pass
+                      
+                      full_txt = await page.inner_text("body")
+                      print(f"\n=== {url} (전체) ===")
+                      print(full_txt[:8000])
+                  
                   await browser.close()
-
+          
           asyncio.run(main())
           PYEOF
-
-      - name: Show full docs
-        run: cat full_docs.txt
