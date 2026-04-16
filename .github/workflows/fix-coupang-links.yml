@@ -13,7 +13,7 @@ jobs:
           token: ${{ secrets.GH_PAT }}
 
       - name: Install dependencies
-        run: pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
+        run: pip install google-api-python-client google-auth-oauthlib google-auth-httplib2 requests
 
       - name: Fix all AFFSDP links -> shortenUrl
         env:
@@ -24,8 +24,9 @@ jobs:
           GGULTONGMON_CLIENT_SECRET: ${{ secrets.GGULTONGMON_CLIENT_SECRET }}
         run: |
           python3 - << 'PYEOF'
-          import hmac, hashlib, json, os, re, sys, time, urllib.parse, urllib.request
+          import hmac, hashlib, json, os, re, sys, time, urllib.parse
           from time import gmtime, strftime
+          import requests
 
           import google.oauth2.credentials
           import googleapiclient.discovery
@@ -54,48 +55,34 @@ jobs:
               return f'CEA algorithm=HmacSHA256, access-key={ACCESS_KEY}, signed-date={dt}, signature={sig}'
 
           def deeplink_batch(urls):
-              """urls -> {url: shortenUrl} 딕셔너리. 순서 기반 + landingUrl 기반 이중 매핑."""
+              """urls -> {url: shortenUrl} 딕셔너리. 순서 기반 + originalUrl 기반 이중 매핑."""
               if not urls:
                   return {}
               path = '/v2/providers/affiliate_open_api/apis/openapi/deeplink'
               auth = gen_hmac('POST', path)
-              body = json.dumps({'coupangUrls': urls, 'subId': 'ggultongmon'}).encode('utf-8')
-              req = urllib.request.Request(
-                  DOMAIN + path, data=body, method='POST',
-                  headers={'Authorization': auth, 'Content-Type': 'application/json;charset=UTF-8'}
-              )
+              payload = {'coupangUrls': urls, 'subId': 'ggultongmon'}
               try:
-                  with urllib.request.urlopen(req, timeout=15) as r:
-                      raw = r.read()
-                      http_code = r.status
-              except urllib.error.HTTPError as e:
-                  raw = e.read()
-                  http_code = e.code
-                  print(f'    [HTTP {http_code}] {raw[:300]}', flush=True)
-                  return {}
+                  r = requests.post(
+                      DOMAIN + path,
+                      json=payload,
+                      headers={'Authorization': auth, 'Content-Type': 'application/json;charset=UTF-8'},
+                      timeout=15
+                  )
+                  resp = r.json()
+                  print(f'    [RAW RESP {r.status_code}] {json.dumps(resp)[:400]}', flush=True)
               except Exception as e:
-                  print(f'    [HTTP ERR] {e}', flush=True)
-                  return {}
-              for enc in ('utf-8', 'euc-kr', 'cp949', 'latin-1'):
-                  try:
-                      resp = json.loads(raw.decode(enc))
-                      print(f'    [RAW RESP {http_code}] {json.dumps(resp)[:300]}', flush=True)
-                      break
-                  except Exception:
-                      continue
-              else:
-                  print(f'    [DECODE ERR] {raw[:300]}', flush=True)
+                  print(f'    [ERR] {e}', flush=True)
                   return {}
 
               data = resp.get('data', [])
               result = {}
-              # 1차: landingUrl 기반 매핑
+              # 1차: originalUrl 기반 매핑
               for item in data:
-                  landing = item.get('landingUrl', '')
+                  orig = item.get('originalUrl', '')
                   shorten = item.get('shortenUrl', '')
-                  if shorten and landing:
-                      result[landing] = shorten
-              # 2차: 순서 기반 매핑 (landingUrl != 입력 URL인 경우 fallback)
+                  if shorten and orig:
+                      result[orig] = shorten
+              # 2차: 순서 기반 fallback
               for i, url in enumerate(urls):
                   if url not in result and i < len(data):
                       shorten = data[i].get('shortenUrl', '')
