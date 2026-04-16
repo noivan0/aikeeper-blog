@@ -73,12 +73,22 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
             sections.append(('lines', list(current_lines)))
             current_lines.clear()
 
+    LINK_TEXT_PAT = re.compile(r'^LINK_TEXT:(.+)\|(.+)$')
+
     for line in body.split('\n'):
         stripped = line.strip()
         # IMAGE_HERE 마커: 소제목 직후 이미지 배치 위치 표시
         if stripped == 'IMAGE_HERE':
             flush()
             sections.append(('image_marker', ''))
+            continue
+        # LINK_TEXT:텍스트|URL 마커 → urlLink 하이퍼링크 (P005 링크 방식)
+        lt_match = LINK_TEXT_PAT.match(stripped)
+        if lt_match:
+            lt_text = lt_match.group(1).strip()
+            lt_url  = lt_match.group(2).strip().rstrip('.,)')
+            flush()
+            sections.append(('para_link', (lt_url, lt_text)))
             continue
         # C: <a href="URL">텍스트</a> 패턴 명시 파싱 → PARA_LINK
         a_match = A_TAG_PAT.search(stripped)
