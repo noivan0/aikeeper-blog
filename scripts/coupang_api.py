@@ -432,28 +432,78 @@ def _get_deeplink_shorten_urls(coupang_urls: list) -> dict:
     if not coupang_urls:
         return result
 
-    # 최대 10개씩 배치
-    for i in range(0, len(coupang_urls), 10):
-        batch = coupang_urls[i:i + 10]
+    # 최대 10개씩 배치 + 캐시 선조회
+    shorten_cache = _load_shorten_cache()
+    urls_to_fetch = []
+    for url in coupang_urls:
+        if url in shorten_cache and "link.coupang.com/a/" in shorten_cache[url]:
+            result[url] = shorten_cache[url]
+            print(f"  [캐시HIT] shortenUrl: {shorten_cache[url]}")
+        else:
+            urls_to_fetch.append(url)
+
+    print(f"  [deeplink] 캐시 {len(result)}개 HIT, API 호출 필요: {len(urls_to_fetch)}개")
+
+    for i in range(0, len(urls_to_fetch), 10):
+        batch = urls_to_fetch[i:i + 10]
         try:
             resp = _post(DEEPLINK_PATH, {"coupangUrls": batch, "subId": SUBID})
+            rCode = resp.get("rCode", "")
+            if rCode == "403":
+                # rate limit — 이미 캐시에 있는 것만 반환
+                print(f"  [WARN] deeplink rate limit: {resp.get('rMessage','')[:80]}")
+                break
             data_list = resp.get("data", [])
             # 1차: originalUrl 기반 매핑 (공식 응답 필드)
+            new_results = {}
             for item in data_list:
                 orig = item.get("originalUrl", "")
                 shorten = item.get("shortenUrl", "")
                 if shorten and "link.coupang.com/a/" in shorten and orig:
-                    result[orig] = shorten
-            # 2차: 순서 기반 fallback (originalUrl 미포함 응답 대비)
+                    new_results[orig] = shorten
+            # 2차: 순서 기반 fallback
             for idx, orig_url in enumerate(batch):
-                if orig_url not in result and idx < len(data_list):
+                if orig_url not in new_results and idx < len(data_list):
                     shorten = data_list[idx].get("shortenUrl", "")
                     if shorten and "link.coupang.com/a/" in shorten:
-                        result[orig_url] = shorten
+                        new_results[orig_url] = shorten
+            result.update(new_results)
+            # 캐시 저장
+            if new_results:
+                _save_shorten_cache(new_results)
+            # 배치 간 딜레이 (rate limit 방지)
+            if i + 10 < len(urls_to_fetch):
+                time.sleep(0.5)
         except Exception as e:
             print(f"  [WARN] deeplink API 배치 실패: {e}")
 
     return result
+
+
+def _load_shorten_cache() -> dict:
+    """shortenUrl 로컬 캐시 로드"""
+    try:
+        cache_file = _LOCAL_CACHE.parent / "shorten_cache.json"
+        if cache_file.exists():
+            data = json.loads(cache_file.read_text(encoding="utf-8"))
+            return data.get("shorten_urls", {})
+    except Exception:
+        pass
+    return {}
+
+
+def _save_shorten_cache(new_entries: dict):
+    """shortenUrl 로컬 캐시 저장"""
+    try:
+        cache_file = _LOCAL_CACHE.parent / "shorten_cache.json"
+        existing = {}
+        if cache_file.exists():
+            existing = json.loads(cache_file.read_text(encoding="utf-8"))
+        existing.setdefault("shorten_urls", {}).update(new_entries)
+        cache_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"  [캐시] shortenUrl {len(new_entries)}개 저장 완료")
+    except Exception as e:
+        print(f"  [WARN] shortenUrl 캐시 저장 실패: {e}")
 
 
 def get_products_with_shorten(keyword_or_products, limit: int = 5) -> list:
