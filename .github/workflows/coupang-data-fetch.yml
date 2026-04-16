@@ -100,6 +100,131 @@ jobs:
           print('coupang_cache/latest.json 저장 완료')
           PYEOF
 
+      - name: Add shortenUrl via Deeplink API
+        env:
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+        run: |
+          python3 - << 'PYEOF'
+          import hmac, hashlib, urllib.request, json, os, re, sys, time
+          from time import gmtime, strftime
+
+          access = os.environ['COUPANG_ACCESS_KEY']
+          secret = os.environ['COUPANG_SECRET_KEY']
+
+          DEEPLINK_PATH = '/v2/providers/affiliate_open_api/apis/openapi/deeplink'
+
+          def make_deeplink_auth():
+              dt = strftime('%y%m%d', gmtime()) + 'T' + strftime('%H%M%S', gmtime()) + 'Z'
+              message = dt + 'POST' + DEEPLINK_PATH
+              sig = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+              return f'CEA algorithm=HmacSHA256, access-key={access}, signed-date={dt}, signature={sig}'
+
+          def call_deeplink_api(coupang_urls: list) -> dict:
+              """deeplink API 호출. 반환: {originalUrl: shortenUrl}"""
+              auth = make_deeplink_auth()
+              body = json.dumps({'coupangUrls': coupang_urls}).encode('utf-8')
+              req = urllib.request.Request(
+                  f'https://api-gateway.coupang.com{DEEPLINK_PATH}',
+                  data=body,
+                  method='POST',
+                  headers={
+                      'Authorization': auth,
+                      'Content-Type': 'application/json;charset=UTF-8',
+                  }
+              )
+              result = {}
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as r:
+                      resp = json.loads(r.read().decode('utf-8'))
+                      if resp.get('rCode') != '0':
+                          print(f'  [WARN] deeplink rCode={resp.get("rCode")} msg={resp.get("rMessage","?")}', file=sys.stderr)
+                          return result
+                      data_list = resp.get('data', [])
+                      # 1차: originalUrl 매핑
+                      for item in data_list:
+                          orig = item.get('originalUrl', '')
+                          shorten = item.get('shortenUrl', '')
+                          if shorten and 'link.coupang.com/a/' in shorten and orig:
+                              result[orig] = shorten
+                      # 2차: 순서 기반 fallback
+                      for idx, orig_url in enumerate(coupang_urls):
+                          if orig_url not in result and idx < len(data_list):
+                              shorten = data_list[idx].get('shortenUrl', '')
+                              if shorten and 'link.coupang.com/a/' in shorten:
+                                  result[orig_url] = shorten
+              except Exception as e:
+                  print(f'  [ERROR] deeplink API 호출 실패: {e}', file=sys.stderr)
+              return result
+
+          def extract_item_ids(url: str):
+              """URL에서 itemId, vendorItemId 추출. 없으면 (None, None)"""
+              m = re.search(r'itemId=(\d+)', url)
+              m2 = re.search(r'vendorItemId=(\d+)', url)
+              if m and m2:
+                  return m.group(1), m2.group(1)
+              return None, None
+
+          # 캐시 로드
+          with open('coupang_cache/latest.json', 'r', encoding='utf-8') as f:
+              cache_data = json.load(f)
+
+          all_data = cache_data.get('categories', {})
+
+          # 각 상품별로 itemId/vendorItemId 추출 → 완전한 URL 구성
+          # (product, complete_url) 목록
+          products_to_process = []
+          for cat_id, products in all_data.items():
+              for p in products:
+                  if p.get('shortenUrl') and 'link.coupang.com/a/' in p.get('shortenUrl', ''):
+                      continue  # 이미 shortenUrl 있음
+                  product_url = p.get('productUrl', '')
+                  product_id = str(p.get('productId', ''))
+                  item_id, vendor_item_id = extract_item_ids(product_url)
+                  if item_id and vendor_item_id and product_id:
+                      complete_url = (
+                          f'https://www.coupang.com/vp/products/{product_id}'
+                          f'?itemId={item_id}&vendorItemId={vendor_item_id}'
+                      )
+                      products_to_process.append((p, complete_url))
+
+          print(f'deeplink 처리 대상: {len(products_to_process)}개 상품')
+
+          # 10개 배치로 deeplink API 호출
+          success_count = 0
+          fail_count = 0
+          BATCH_SIZE = 10
+
+          for i in range(0, len(products_to_process), BATCH_SIZE):
+              batch = products_to_process[i:i + BATCH_SIZE]
+              batch_urls = [url for _, url in batch]
+              print(f'  배치 {i//BATCH_SIZE + 1}: {len(batch_urls)}개 요청')
+
+              url_to_shorten = call_deeplink_api(batch_urls)
+
+              for p, complete_url in batch:
+                  shorten = url_to_shorten.get(complete_url)
+                  if shorten and 'link.coupang.com/a/' in shorten:
+                      p['shortenUrl'] = shorten
+                      success_count += 1
+                  else:
+                      fail_count += 1
+
+              if i + BATCH_SIZE < len(products_to_process):
+                  time.sleep(0.5)
+
+          print(f'\nshortenUrl 결과: 성공={success_count}, 실패={fail_count}')
+
+          # 갱신된 데이터 저장
+          import datetime
+          cache_data['categories'] = all_data
+          cache_data['shorten_updated_at'] = datetime.datetime.utcnow().isoformat() + 'Z'
+          with open('coupang_cache/latest.json', 'w', encoding='utf-8') as f:
+              json.dump(cache_data, f, ensure_ascii=False, indent=2)
+
+          print('coupang_cache/latest.json shortenUrl 저장 완료')
+          PYEOF
+
       - name: Commit and Push
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
