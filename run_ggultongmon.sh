@@ -123,38 +123,41 @@ if [ -z "$TOPIC" ] || [ ${#TOPIC} -lt 5 ]; then
     exit 0
 fi
 
-# Step 2: 포스트 생성 및 발행
-echo "[$(date '+%H:%M:%S')] Step 2: 포스트 생성 및 발행" | tee -a "$LOG_FILE"
+# Step 2: GitHub Actions 트리거 (deeplink shortenUrl 발급 → 발행 일괄 처리)
+# [노이반님 원칙] 제품 링크는 반드시 shortenUrl 사용
+# → 이 서버에서 api-gateway.coupang.com 직접 접근 불가
+# → Actions(외부망)에서 deeplink API → shortenUrl 확보 → 발행까지 일괄 처리
+echo "[$(date '+%H:%M:%S')] Step 2: GitHub Actions 트리거 (deeplink + 발행)" | tee -a "$LOG_FILE"
 
-export TOPIC SEARCH_KW ANGLE CATEGORY LABELS META_DESC PRODUCTS_JSON
-export TARGET_BLOG_ID TARGET_BLOG_URL POSTS_OUTPUT_DIR
-export BLOG_TYPE="COUPANG"
-export BLOG_NAME="꿀통 몬스터"
-export COUPANG_SUB_ID="ggultongmon"
+GH_PAT="${GITHUB_PAT:-${GH_PAT:-}}"
+if [ -z "$GH_PAT" ]; then
+    echo "[$(date '+%H:%M:%S')] [ERROR] GH_PAT 없음 — Actions 트리거 불가" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-set -o pipefail
-python3 scripts/post_to_blogger_ggultongmon.py 2>&1 | tee -a "$LOG_FILE"
-_EXIT=$?
-set +o pipefail
+# TOPIC/CATEGORY를 Actions inputs로 전달
+_PAYLOAD=$(python3 -c "
+import json, sys
+topic    = '''${TOPIC}'''
+category = '''${CATEGORY}'''
+print(json.dumps({'ref': 'main', 'inputs': {'topic': topic, 'category': category, 'skip_delay': 'true'}}))
+")
 
-if [ $_EXIT -ne 0 ]; then
-    echo "[$KST] [ERROR] 포스트 생성/발행 실패 (exit $_EXIT) — 이번 사이클 종료" | tee -a "$LOG_FILE"
+_TRG_STATUS=$(curl -s -o /tmp/gh_trigger_resp.json -w "%{http_code}" -X POST \
+    -H "Authorization: token $GH_PAT" \
+    -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/noivan0/aikeeper-blog/actions/workflows/ggultongmon-auto.yml/dispatches" \
+    -d "$_PAYLOAD")
+
+echo "[$(date '+%H:%M:%S')] Actions 트리거: HTTP $_TRG_STATUS" | tee -a "$LOG_FILE"
+cat /tmp/gh_trigger_resp.json 2>/dev/null | head -3 | tee -a "$LOG_FILE"
+
+if [ "$_TRG_STATUS" = "204" ]; then
+    echo "[$KST] ===== Actions 트리거 성공 [blog: $BLOG_KEY] =====" | tee -a "$LOG_FILE"
+    echo "[$(date '+%H:%M:%S')] Actions에서 deeplink shortenUrl 발급 → 발행 진행 예정" | tee -a "$LOG_FILE"
+else
+    echo "[$KST] [ERROR] Actions 트리거 실패 (HTTP $_TRG_STATUS) — 발행 중단" | tee -a "$LOG_FILE"
     exit 1
 fi
 
 echo "[$KST] ===== 완료 [blog: $BLOG_KEY] =====" | tee -a "$LOG_FILE"
-
-# 발행 후 GitHub Actions로 쿠팡 링크 shortenUrl 자동 교체
-# (이 서버에서 api-gateway.coupang.com 접근 불가 → Actions(외부)에서 처리)
-GH_PAT="${GITHUB_PAT:-${GH_PAT:-}}"
-if [ -n "$GH_PAT" ]; then
-    echo "[$(date '+%H:%M:%S')] GitHub Actions shortenUrl 교체 트리거..." | tee -a "$LOG_FILE"
-    _TRG_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-        -H "Authorization: token $GH_PAT" \
-        -H "Accept: application/vnd.github.v3+json" \
-        "https://api.github.com/repos/noivan0/aikeeper-blog/actions/workflows/fix-coupang-links.yml/dispatches" \
-        -d '{"ref":"main"}')
-    echo "[$(date '+%H:%M:%S')] Actions 트리거: HTTP $_TRG_STATUS" | tee -a "$LOG_FILE"
-else
-    echo "[$(date '+%H:%M:%S')] GH_PAT 없음 — Actions 트리거 스킵" | tee -a "$LOG_FILE"
-fi
