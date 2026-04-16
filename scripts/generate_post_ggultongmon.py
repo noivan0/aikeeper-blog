@@ -205,7 +205,13 @@ def build_quick_buy_bar(products: list) -> str:
     for i, p in enumerate(products[:3]):
         name  = p.get("productName", "")[:20] + "..."
         price = f"{int(p.get('productPrice', 0)):,}원"
-        url   = p.get("shortenUrl", p.get("productUrl", "#"))
+        # [규칙] 제품 링크는 반드시 shortenUrl 사용 (노이반님 원칙)
+        # P004: link.coupang.com/a/... 형태만 허용
+        # productUrl / raw URL fallback 절대 금지
+        shorten = p.get("shortenUrl", "")
+        if not shorten or "link.coupang.com/a/" not in shorten:
+            continue
+        url   = shorten
         btn_text = _pick(BUY_BUTTON_TEXTS, p.get("productName","") + "quick")
         items.append(
             f'<div style="flex:1;min-width:140px;text-align:center;padding:10px 8px;'
@@ -245,7 +251,12 @@ def build_inline_card(product: dict, rank: int, title_seed: str = "") -> str:
     price     = f"{int(product.get('productPrice', 0)):,}"
     imgs      = get_product_images(product)
     img_url   = imgs["thumb"] or optimize_coupang_img(product.get("productImage", ""), width=300)
-    buy_url   = product.get("shortenUrl", product.get("productUrl", "#"))
+    # [규칙] 제품 링크는 반드시 shortenUrl 사용 (노이반님 원칙)
+    # P004: link.coupang.com/a/... 형태만 허용
+    # productUrl / raw URL fallback 절대 금지
+    buy_url   = product.get("shortenUrl", "")
+    if not buy_url or "link.coupang.com/a/" not in buy_url:
+        return None  # shortenUrl 없는 상품 skip
     is_rocket = product.get("isRocket", False)
     is_free   = product.get("isFreeShipping", False)
 
@@ -296,7 +307,10 @@ background:#f8f9ff;">
 
 def build_section_buy_btn(product: dict, title_seed: str = "") -> str:
     """섹션 하단 보조 구매 버튼 (색상 구분)"""
-    url      = product.get("shortenUrl", product.get("productUrl", "#"))
+    # [규칙] 제품 링크는 반드시 shortenUrl 사용 (노이반님 원칙)
+    # P004: link.coupang.com/a/... 형태만 허용
+    # productUrl / raw URL fallback 절대 금지
+    url      = product.get("shortenUrl", "")
     btn_text = _pick(BUY_BUTTON_TEXTS, title_seed + product.get("productName","") + "btn")
     return (
         f'<div style="text-align:center;margin:0.8em 0 2.2em;">'
@@ -682,7 +696,8 @@ def build_full_html(title: str, content: str, products: list,
     product_schemas = ""
     for prod in (products or [])[:3]:
         pname  = prod.get("name", "")
-        plink  = prod.get("link", prod.get("coupang_url", ""))
+        # [규칙] 제품 링크는 반드시 shortenUrl 사용 (노이반님 원칙) — raw URL fallback 금지
+        plink  = prod.get("shortenUrl", "")
         pprice = prod.get("price", prod.get("price_str", ""))
         # 가격에서 숫자만 추출
         price_num = re.sub(r"[^0-9]", "", str(pprice)) if pprice else ""

@@ -863,8 +863,12 @@ async def main():
     try:
         products = json.loads(PRODUCTS_JSON)
         for prod in products:
-            url = prod.get("shortenUrl") or prod.get("coupang_url") or prod.get("url", "")
-            if url and "coupang.com" in url:
+            # [규칙] 제품 링크는 반드시 shortenUrl 사용 (노이반님 원칙)
+            # P004: link.coupang.com/a/... 형태만 허용
+            # P005: naver.me/... 형태만 허용
+            # productUrl / coupang_url / raw URL fallback 절대 금지
+            url = prod.get("shortenUrl", "")
+            if url and "link.coupang.com/a/" in url:
                 product_links.append(url)
     except: pass
 

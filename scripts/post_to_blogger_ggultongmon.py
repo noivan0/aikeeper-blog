@@ -425,7 +425,8 @@ def main():
             for i, p in enumerate(products):
                 _littly_prods.append({
                     "title": p.get("productName", p.get("name", "상품")),
-                    "url":   p.get("shortenUrl", p.get("coupang_url", p.get("url", ""))),
+                    # [규칙] 제품 링크는 반드시 shortenUrl 사용 (노이반님 원칙) — raw URL fallback 금지
+                    "url":   p.get("shortenUrl", ""),
                     "tags":  LABELS[:3],   # 포스트 라벨을 강조 태그로 사용 (최대 3개)
                 })
 
