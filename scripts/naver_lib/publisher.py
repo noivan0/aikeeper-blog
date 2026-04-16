@@ -404,18 +404,13 @@ async def publish(
                 if local:
                     thumb_local[link] = local
 
-        # extra_image_urls 다운로드 (최대 4장 제한 — documentModel payload 크기 제한)
-        # 네이버 RabbitAutoSaveWrite: payload ~100KB 초과 시 UNKNOWN 오류
-        # 이미지 1장 업로드 후 document 반영 크기 ~15KB → 4장 = ~60KB (안전)
-        # 기존 6장에서 4장으로 축소 (95KB → UNKNOWN 오류 방지)
-        MAX_EXTRA_IMGS = 2
+        # extra_image_urls 다운로드
+        # 성공 기준: pipeline이 메인 3장만 전달 → publisher는 전달받은 수 그대로 처리
         extra_local = []
         if extra_image_urls:
             try:
                 import requests as _req
-                for ei, eurl in enumerate(extra_image_urls[:MAX_EXTRA_IMGS]):
-                    if len(extra_local) >= MAX_EXTRA_IMGS:
-                        break
+                for ei, eurl in enumerate(extra_image_urls[:15]):
                     try:
                         # URL 도메인에 맞는 Referer 자동 선택
                         if 'naver' in eurl or 'pstatic' in eurl:
@@ -426,19 +421,16 @@ async def publish(
                             _ref = 'https://www.naver.com/'
                         r = _req.get(eurl, timeout=8, allow_redirects=True,
                                      headers={"Referer": _ref, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
-                        if r.status_code == 200 and 10000 < len(r.content) < 3_000_000:
+                        if r.status_code == 200 and len(r.content) > 10000:
                             save_path = _os.path.join(tmpdir, f"extra_{ei}.jpg")
                             with open(save_path, "wb") as f:
                                 f.write(r.content)
                             extra_local.append(save_path)
                             print(f"    ✅ 추가이미지 {ei+1}: {len(r.content)//1024}KB")
-                        elif r.status_code == 200:
-                            print(f"    ⚠️ 추가이미지 {ei+1} 스킵: {len(r.content)//1024}KB (크기 부적합)")
                     except Exception as e:
                         print(f"    ⚠️ 추가이미지 실패: {e}")
             except ImportError:
                 pass
-        print(f"  이미지 다운로드 완료: {len(extra_local)}/{min(len(extra_image_urls or []), MAX_EXTRA_IMGS)}장")
 
         # ── STEP 4: 새 에디터 페이지로 이동 ─────────────────────
         await page.goto(WRITE_URL, timeout=40000)
