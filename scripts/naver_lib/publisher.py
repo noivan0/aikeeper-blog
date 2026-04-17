@@ -52,24 +52,24 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     """
     LINK_PAT  = re.compile(r'https?://(?:link\.coupang\.com|naver\.me|brand\.naver\.com)\S+')
     A_TAG_PAT = re.compile(r'<a\s+href=["\']([^"\']+)["\'][^>]*>([^<]*)</a>', re.IGNORECASE)
+    # 링크 박스 구분선 패턴 (━━━ 3개 이상)
+    DIVIDER_PAT = re.compile(r'^━{3,}$')
 
     HEADING_EMOJIS = ('🛒', '✅', '⚠', '📌', '🎯', '💡', '🔍', '📊', '🏷', '💰', '👍', '❌', '🔑', '📋', '🎁',
-                      '🛍', '💬', '🔧', '📦', '⭐', '🌟', '💫', '🏆', '🎪', '📝', '🚀', '💎', '🎉', '👉')
+                      '🛍', '💬', '🔧', '📦', '⭐', '🌟', '💫', '🏆', '🎪', '📝', '🚀', '💎', '🎉', '👉', '✨', '🔥')
 
     def _line_to_para(s: str) -> dict:
         """단일 줄 → para 객체 (bold/heading/tiny 자동 판별)."""
         if not s:
             return empty_para()
+        # 브랜드커넥트 고지문, 해시태그
         if '파트너스 활동' in s or s.startswith('📢') or (s.startswith('#') and s.count('#') >= 3):
             return para(s, fs=FS["tiny"])
+        # 소제목 판별: 이모지로 시작하는 짧은 줄 (실제 포스팅 기준)
         is_heading = (
-            5 <= len(s) <= 45
-            and not any(s.endswith(e) for e in ('요.', '요!', '요?', '네요.', '다.', '다!', '습니다.', '어요.', '어요!', '더라고요.'))
-            and (
-                any(s.startswith(em) for em in HEADING_EMOJIS)
-                or '—' in s
-                or any(c in s for c in ['가이드', '비교', '정리', '선택', '체크', '기준', '방법', '포인트', '결론'])
-            )
+            3 <= len(s) <= 60
+            and not any(s.endswith(e) for e in ('요.', '요!', '요?', '네요.', '다.', '다!', '습니다.', '어요.', '어요!', '더라고요.', '거든요.', '거든요'))
+            and any(s.startswith(em) for em in HEADING_EMOJIS)
         )
         if is_heading:
             return para(s, bold=True, fs=FS["heading"])
@@ -81,16 +81,48 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     first_image = True
     url_seen_count: dict[str, int] = {}
 
+    # ── v5: 링크 박스 선처리 ─────────────────────────────────────────
+    # 패턴: ━━━\n내용\n👉 링크\n━━━ → 링크만 추출하고 나머지는 버림
+    # 링크 박스 전체를 하나의 LINK_BOX 마커로 교체
+    def _normalize_link_boxes(text: str) -> str:
+        """━━━ 링크 박스를 '링크 URL만 남기고' 구분선 제거."""
+        lines_in = text.split('\n')
+        lines_out = []
+        i = 0
+        while i < len(lines_in):
+            s = lines_in[i].strip()
+            # 구분선 시작 감지
+            if DIVIDER_PAT.match(s):
+                # 다음 줄들에서 링크 URL 찾기 (다음 구분선까지)
+                j = i + 1
+                found_url = None
+                while j < len(lines_in) and not DIVIDER_PAT.match(lines_in[j].strip()):
+                    m = LINK_PAT.search(lines_in[j])
+                    if m:
+                        found_url = m.group(0).rstrip('.,)')
+                    j += 1
+                # 닫는 구분선 소비
+                if j < len(lines_in) and DIVIDER_PAT.match(lines_in[j].strip()):
+                    j += 1
+                # 구분선 블록 전체를 링크 한 줄로 교체
+                if found_url:
+                    lines_out.append(found_url)
+                i = j
+            else:
+                lines_out.append(lines_in[i])
+                i += 1
+        return '\n'.join(lines_out)
+
+    # 링크 박스 정규화 적용
+    body = _normalize_link_boxes(body)
+
     # ── v4: 이중 줄바꿈으로 문단 블록 분리 ──────────────────────────────
-    # 핵심 수정: body.split('\n') 대신 '\n\n' 기준으로 문단 블록 분리
-    # 각 블록 = 하나의 TEXT 컴포넌트 (banidad 패턴: 3~5문장이 하나의 단락)
     raw_blocks = re.split(r'\n{2,}', body.strip())
 
     for block in raw_blocks:
         lines = block.split('\n')
-
         # IMAGE_HERE 마커 줄 제거
-        lines = [l for l in lines if l.strip() != 'IMAGE_HERE']
+        lines = [l for l in lines if l.strip() not in ('IMAGE_HERE', '[IMAGE]')]
         if not lines:
             continue
 
@@ -142,7 +174,7 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     for sec_type, sec_content in sections:
 
         if sec_type == 'block_paras':
-            # 문단 블록 전체를 하나의 TEXT 컴포넌트로 (핵심!)
+            # 문단 블록 전체를 하나의 TEXT 컴포넌트로
             if sec_content:
                 components.append({'_type': 'TEXT', '_paras': sec_content})
 
