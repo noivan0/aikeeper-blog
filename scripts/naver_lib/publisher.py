@@ -139,7 +139,7 @@ def parse_body_to_sections(body: str, og_map: dict, keep_link_box_as_text: bool 
     for block in raw_blocks:
         lines = block.split('\n')
         # IMAGE_HERE 마커 줄 제거
-        lines = [l for l in lines if l.strip() not in ('IMAGE_HERE', '[IMAGE]')]
+        lines = [l for l in lines if l.strip() not in ('IMAGE_HERE', '[IMAGE]', '[IMAGE_SLOT]')]
         if not lines:
             continue
 
