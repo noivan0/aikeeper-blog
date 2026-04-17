@@ -828,6 +828,12 @@ def parse_post(file_path: str):
 
     # hero 이미지 front matter에서 읽기
     hero_image_url    = meta.get("hero_image_url", "")
+    # [local] 경로는 발행 불가 — 이미지 생략 처리 (깨진 이미지 방지, 노이반님 지시 2026-04-17)
+    if hero_image_url and (hero_image_url.startswith("[local]") or
+                           hero_image_url.startswith("/root/") or
+                           not hero_image_url.startswith("http")):
+        print(f"  ⚠️  [post_to_blogger] 로컬 경로 이미지 제거: {hero_image_url[:60]}")
+        hero_image_url = ""
     hero_image_alt    = meta.get("hero_image_alt", title)
     hero_credit       = meta.get("hero_credit", "")
     hero_credit_url   = meta.get("hero_credit_url", "")

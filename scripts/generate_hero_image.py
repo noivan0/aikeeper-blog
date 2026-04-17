@@ -558,20 +558,27 @@ def generate_and_upload(title: str, blog: str = "aikeeper",
 
     # Step 3: GitHub Pages 업로드
     print(f"  📤 GitHub Pages 업로드 중...")
+    url = None
     try:
         url = upload_to_github(image_buf, slug)
     except Exception as e:
         print(f"  ❌ GitHub 업로드 실패: {e}")
-        # 업로드 실패 시 로컬 저장 후 None URL 반환
+        # 로컬 저장 유지
         local_path = SCRIPT_DIR / "fonts" / f"hero_{slug}.png"
         image_buf.seek(0)
         local_path.write_bytes(image_buf.read())
         print(f"  💾 로컬 저장: {local_path}")
-        url = f"[local] {local_path}"
+        # [local] 경로 절대 반환 금지 → Pollinations AI URL fallback
+        import hashlib, urllib.parse as _up
+        _seed = int(hashlib.md5(slug.encode()).hexdigest(), 16) % 99999
+        _prompt = f"Professional Korean tech blog thumbnail, dark gradient, bold text, 16:9, no text"
+        _enc = _up.quote(_prompt)
+        url = f"https://image.pollinations.ai/prompt/{_enc}?width=1200&height=630&seed={_seed}&nologo=true"
+        print(f"  🔄 Pollinations fallback URL 사용")
 
     brand_label = "🎨 AI키퍼" if blog == "aikeeper" else "🎨 올스윕"
     return {
-        "url": url,
+        "url": url,  # None이면 호출자가 이미지 생략 처리
         "alt": f"{title} — {copy_text}",
         "credit": theme["credit"],
         "credit_url": os.environ.get("GITHUB_PAGES_BASE", "https://noivan0.github.io/aikeeper-blog") + "/",
@@ -614,8 +621,15 @@ def generate_section_image(section_title: str, post_title: str, blog: str = "aik
         url = upload_to_github(buf, slug)
     except Exception as e:
         print(f"  ❌ 섹션 이미지 업로드 실패: {e}")
+        # [local] 반환 금지 → Pollinations fallback
+        import hashlib, urllib.parse as _up
+        _seed = int(hashlib.md5((slug + "_section").encode()).hexdigest(), 16) % 99999
+        _prompt = f"Professional tech blog section image, dark gradient, minimalist, 16:9, no text"
+        _enc = _up.quote(_prompt)
+        _fallback_url = f"https://image.pollinations.ai/prompt/{_enc}?width=1200&height=630&seed={_seed}&nologo=true"
+        print(f"  🔄 섹션 이미지 Pollinations fallback 사용")
         return {
-            "url": "",
+            "url": _fallback_url,
             "alt": section_title,
             "credit": theme["credit"],
             "credit_url": os.environ.get("GITHUB_PAGES_BASE", "https://noivan0.github.io/aikeeper-blog") + "/",
