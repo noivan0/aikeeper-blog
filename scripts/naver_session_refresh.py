@@ -56,9 +56,10 @@ async def solve_captcha(page) -> str | None:
     try:
         from env_loader import make_anthropic_client, get_model
         body = await page.inner_text("body")
+        lines = [l.strip() for l in body.split('\n') if l.strip()]
         question = next(
-            (l.strip() for l in body.split('\n')
-             if l.strip().endswith('?') and len(l.strip()) > 5),
+            (l for l in lines if '?' in l and len(l) > 8
+             and any(w in l.lower() for w in ['what','how','which','fill','the','number','price','kind','unit','location','third','second','first','cheapest','least','most'])),
             ""
         )
         print(f"  CAPTCHA 질문: {question}")
@@ -67,11 +68,11 @@ async def solve_captcha(page) -> str | None:
         client = make_anthropic_client(timeout=30)
         answer = ""
         with client.messages.stream(
-            model=get_model(), max_tokens=15,
+            model=get_model(), max_tokens=8,
             messages=[{"role": "user", "content": [
                 {"type": "image", "source": {"type": "base64",
                  "media_type": "image/png", "data": img_b64}},
-                {"type": "text", "text": f"네이버 영수증 CAPTCHA.\n질문: {question}\n숫자만 답하세요."}
+                {"type": "text", "text": f"Naver login CAPTCHA. Look at the receipt image carefully.\nQuestion: {question}\nAnswer with ONLY the answer word or number. Single word/number only, no explanation."}
             ]}]
         ) as stream:
             for chunk in stream.text_stream:
@@ -106,7 +107,7 @@ async def do_login(page, context) -> bool:
     for attempt in range(2):
         url = page.url
         body = await page.inner_text("body")
-        is_captcha = "Please enter the answer" in body or "자동입력 방지" in body
+        is_captcha = "Please enter the answer" in body or "자동입력 방지" in body or "receipt" in body.lower() or "virtually" in body.lower()
 
         if "nidlogin" not in url:
             await context.storage_state(path=str(SESSION_FILE))
