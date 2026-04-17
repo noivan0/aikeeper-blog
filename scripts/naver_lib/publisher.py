@@ -458,15 +458,17 @@ async def publish(
         extra_queue = list(extra_uploaded)
         new_final = []
         for comp in final_comps:
-            if isinstance(comp, dict) and comp.get('_type') == 'IMAGE_HERE_SLOT' and extra_queue:
-                eu = extra_queue.pop(0)
-                new_final.append(image_comp(
-                    src=eu["src"], path=eu["path"],
-                    width=eu["width"], height=eu["height"],
-                    filename=eu["fileName"],
-                    represent=(len(new_final) == 0),  # 첫 번째 이미지만 대표
-                    file_size=eu["fileSize"]
-                ))
+            if isinstance(comp, dict) and comp.get('_type') == 'IMAGE_HERE_SLOT':
+                if extra_queue:
+                    eu = extra_queue.pop(0)
+                    new_final.append(image_comp(
+                        src=eu["src"], path=eu["path"],
+                        width=eu["width"], height=eu["height"],
+                        filename=eu["fileName"],
+                        represent=(len(new_final) == 0),
+                        file_size=eu["fileSize"]
+                    ))
+                # else: 이미지 없으면 슬롯 제거 (텍스트 잔재 방지)
             else:
                 new_final.append(comp)
         final_comps = new_final
