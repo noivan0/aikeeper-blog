@@ -452,7 +452,15 @@ async def publish(
         for item in section_comps:
             t = item['_type']
             if t == 'TEXT':
-                final_comps.append(text_comp(item['_paras']))
+                paras = item['_paras']
+                # 단락 뒤 빈 줄(empty_para) 추가 — 가독성 향상 (노이반님 지시 2026-04-17)
+                # 단, 마지막 para가 이미 빈 줄이면 중복 추가 안 함
+                last_val = ''
+                if paras:
+                    last_val = paras[-1].get('nodes', [{}])[0].get('value', '') if paras[-1].get('nodes') else ''
+                if last_val != '':
+                    paras = list(paras) + [empty_para()]
+                final_comps.append(text_comp(paras))
             elif t == 'IMAGE_MARKER':
                 link = item['_url']
                 if link in uploaded_images:
@@ -522,11 +530,10 @@ async def publish(
                 else:
                     final_comps.append(text_comp([para_link("🔗 지금 네이버에서 확인하기", url)]))
 
-        # ── 이미지 분산 삽입 (v5: TEXT 각각 뒤에 1장씩 균등 교차) ──────
-        # 목표: TEXT → IMAGE → TEXT → IMAGE → TEXT → IMAGE ...
-        # 단락 12~16개, 이미지 10~14장 → 각 TEXT 뒤에 1장씩
-        # TEXT 수 >= 이미지 수: 균등 간격으로 이미지 있는 단락 선택
-        # TEXT 수 < 이미지 수: 모든 단락 뒤에 이미지 + 남은 이미지는 TEXT 사이에 추가
+        # ── 이미지 분산 삽입 (v6: 노이반님 기준 2026-04-17) ──────
+        # 규칙: 문단 - 이미지(최대 2장) - 문단 패턴
+        # 이미지 수: 최소 6장, 최대 15장
+        # 이미지 그룹: 2장씩 묶어서 TEXT 단락 사이에 균등 배치
         extra_queue = list(extra_uploaded)
         if extra_queue:
             text_indices = [
@@ -537,6 +544,7 @@ async def publish(
             n_imgs = len(extra_queue)
 
             if n_text < 1:
+                # TEXT 없으면 순서대로 끝에 추가
                 for eu in extra_queue:
                     final_comps.append(image_comp(
                         src=eu["src"], path=eu["path"],
@@ -544,54 +552,59 @@ async def publish(
                         filename=eu["fileName"], represent=False, file_size=eu["fileSize"]
                     ))
             else:
-                # 각 TEXT 뒤를 삽입 후보로 사용 (n_text개 슬롯)
-                # n_imgs <= n_text: 균등 간격 선택
-                # n_imgs > n_text: 전부 사용 + 초과분은 마지막에 추가
-                n_insert = min(n_imgs, n_text)
+                # ── 이미지 2장씩 그룹으로 묶기 ──
+                img_groups = []
+                for i in range(0, n_imgs, 2):
+                    img_groups.append(extra_queue[i:i+2])  # 1~2장 그룹
 
-                if n_insert >= n_text:
-                    # 이미지가 TEXT 수와 같거나 많음 → 모든 TEXT 뒤에 1장씩
-                    selected_text_idx = list(range(n_text))
+                n_groups = len(img_groups)
+
+                # ── 그룹 삽입 위치 결정 ──
+                # TEXT 단락 사이에 균등 배치
+                # 첫 단락 뒤와 마지막 단락 전은 제외하지 않음 (링크박스 단락 제외)
+                # PLAIN_LINK, PARA_LINK 타입은 제외하고 TEXT만 대상
+                
+                if n_groups >= n_text - 1:
+                    # 이미지 그룹이 많으면: 모든 TEXT 사이에 1그룹씩
+                    insert_after_slots = list(range(min(n_groups, n_text - 1)))
                 else:
-                    # 이미지가 부족 → 균등 간격으로 TEXT 선택
-                    step = n_text / n_insert
-                    selected_text_idx = sorted(set(
-                        min(int(step * i + step / 2), n_text - 1)
-                        for i in range(n_insert)
-                    ))
-                    # 중복 제거 후 부족분 보완
-                    all_idx = set(range(n_text))
-                    remaining_slots = sorted(all_idx - set(selected_text_idx))
-                    while len(selected_text_idx) < n_insert and remaining_slots:
-                        selected_text_idx.append(remaining_slots.pop(0))
-                    selected_text_idx = sorted(selected_text_idx[:n_insert])
+                    # 이미지 그룹이 적으면: 균등 간격으로 배치
+                    # 단, 첫 번째 TEXT 뒤에는 반드시 1그룹 (대표 이미지)
+                    slots = []
+                    if n_groups >= 1:
+                        slots.append(0)  # 첫 단락 뒤
+                    if n_groups >= 2:
+                        # 나머지는 균등 간격
+                        step = (n_text - 1) / (n_groups - 1) if n_groups > 1 else 1
+                        for k in range(1, n_groups):
+                            pos = min(int(step * k), n_text - 2)
+                            if pos not in slots:
+                                slots.append(pos)
+                            else:
+                                # 중복이면 다음 빈 슬롯 찾기
+                                for candidate in range(pos + 1, n_text - 1):
+                                    if candidate not in slots:
+                                        slots.append(candidate)
+                                        break
+                    insert_after_slots = sorted(slots[:n_groups])
 
-                # text_indices[k] 이후에 이미지 삽입 (뒤에서부터, 인덱스 밀림 방지)
-                insert_positions = [text_indices[k] for k in selected_text_idx]
-                imgs_to_insert = extra_queue[:len(insert_positions)]
-
-                for text_pos, eu in zip(sorted(insert_positions, reverse=True),
-                                        list(reversed(imgs_to_insert))):
-                    final_comps.insert(text_pos + 1, image_comp(
-                        src=eu["src"], path=eu["path"],
-                        width=eu["width"], height=eu["height"],
-                        filename=eu["fileName"], represent=False, file_size=eu["fileSize"]
-                    ))
-
-                print(f"  이미지 분산: {len(insert_positions)}장 TEXT 뒤 삽입 (단락당 1장 교차)")
-
-                # 남은 이미지 (TEXT 수보다 이미지가 더 많은 경우)
-                remaining = extra_queue[len(insert_positions):]
-                if remaining:
-                    step2 = max(2, len(final_comps) // (len(remaining) + 1))
-                    for i, eu in enumerate(remaining):
-                        pos = min(step2 * (i + 1), len(final_comps))
-                        final_comps.insert(pos, image_comp(
+                # ── 뒤에서부터 삽입 (인덱스 밀림 방지) ──
+                total_inserted = 0
+                for slot_k, group in zip(sorted(insert_after_slots, reverse=True),
+                                         list(reversed(img_groups[:len(insert_after_slots)]))):
+                    text_pos = text_indices[slot_k]
+                    # 그룹 내 이미지를 역순으로 삽입 (순서 유지)
+                    for eu in reversed(group):
+                        ic = image_comp(
                             src=eu["src"], path=eu["path"],
                             width=eu["width"], height=eu["height"],
-                            filename=eu["fileName"], represent=False, file_size=eu["fileSize"]
-                        ))
-                    print(f"  남은 이미지 {len(remaining)}장 → 균등 분산 추가")
+                            filename=eu["fileName"],
+                            represent=False, file_size=eu["fileSize"]
+                        )
+                        final_comps.insert(text_pos + 1, ic)
+                        total_inserted += 1
+
+                print(f"  이미지 분산: {total_inserted}장 ({n_groups}그룹) TEXT 사이 삽입 (최대 2장/그룹)")
 
         doc_str = build_document_model(title, final_comps, category_no=category_no)
         pop_save = make_pop(category_no=category_no, auto_save_no=None)
