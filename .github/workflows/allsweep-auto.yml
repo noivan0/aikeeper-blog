@@ -37,6 +37,8 @@ jobs:
       ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
       BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GITHUB_PAT: ${{ secrets.GH_PAT }}
+      GITHUB_PAGES_BASE: "https://noivan0.github.io/aikeeper-blog"
       # Blogger OAuth (동일 계정)
       BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
       BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}

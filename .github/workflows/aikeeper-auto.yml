@@ -36,6 +36,8 @@ jobs:
       BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
       UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GITHUB_PAT: ${{ secrets.GH_PAT }}
+      GITHUB_PAGES_BASE: "https://noivan0.github.io/aikeeper-blog"
       # aikeeper 블로그 설정 (internal_links.py TARGET_BLOG_ID 자동 전달)
       TARGET_BLOG_ID: "3598676904202320050"
       TARGET_BLOG_URL: "https://aikeeper.allsweep.xyz"

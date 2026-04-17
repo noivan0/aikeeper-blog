@@ -771,8 +771,13 @@ def make_hero_image(title: str, query: str, blog: str = "aikeeper", slug: str = 
                 blog=blog,
                 slug=slug or None,
             )
-            print(f"  🎨 Hero: 마케팅 카피 이미지 생성 완료")
-            return result
+            # 로컬 경로 반환 방지: URL이 http로 시작하지 않으면 폴백
+            _url = result.get("url", "")
+            if _url and _url.startswith("http"):
+                print(f"  🎨 Hero: 마케팅 카피 이미지 생성 완료")
+                return result
+            else:
+                print(f"  ⚠️  Hero 이미지 URL이 로컬 경로 — Pollinations 폴백: {_url[:60]}")
         except Exception as e:
             print(f"  ⚠️  generate_hero_image 실패: {e} — Pollinations 폴백")
 
