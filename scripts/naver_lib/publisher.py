@@ -557,77 +557,103 @@ async def publish(
         # 규칙: 문단 - 이미지(최대 2장) - 문단 패턴
         # 이미지 수: 최소 6장, 최대 15장
         # 이미지 그룹: 2장씩 묶어서 TEXT 단락 사이에 균등 배치
+        # ── 소제목(SECTION_HEADING) 해제 — 실제 text_comp으로 교체 ──────
+        # SECTION_HEADING을 실제 text_comp으로 변환하면서 섹션 경계 인덱스 수집
+        section_boundaries = []  # 각 소제목 직후 인덱스 (이미지 삽입 후보)
+        resolved_comps = []
+        for idx, comp in enumerate(final_comps):
+            if isinstance(comp, dict) and comp.get('_type') == 'SECTION_HEADING':
+                resolved_comps.append(comp['_comp'])
+                section_boundaries.append(len(resolved_comps) - 1)  # 소제목 위치
+            else:
+                resolved_comps.append(comp)
+        final_comps = resolved_comps
+
+        # ── 이미지 분산: 소제목 섹션 기반 (노이반님 지시 2026-04-17) ──────
+        # 규칙: 소제목 섹션마다 1~2장 배치 (문단-이미지-문단 패턴)
+        # 소제목이 없으면 TEXT 단락 기준 균등 배치 fallback
         extra_queue = list(extra_uploaded)
         if extra_queue:
-            text_indices = [
-                i for i, c in enumerate(final_comps)
-                if isinstance(c, dict) and c.get('_type') == 'TEXT'
-            ]
-            n_text = len(text_indices)
             n_imgs = len(extra_queue)
+            first_img = True
 
-            if n_text < 1:
-                # TEXT 없으면 순서대로 끝에 추가
-                for eu in extra_queue:
-                    final_comps.append(image_comp(
-                        src=eu["src"], path=eu["path"],
-                        width=eu["width"], height=eu["height"],
-                        filename=eu["fileName"], represent=False, file_size=eu["fileSize"]
-                    ))
+            def _make_ic(eu, represent=False):
+                return image_comp(
+                    src=eu["src"], path=eu["path"],
+                    width=eu["width"], height=eu["height"],
+                    filename=eu["fileName"],
+                    represent=represent,
+                    file_size=eu["fileSize"]
+                )
+
+            if section_boundaries and len(section_boundaries) >= 2:
+                # ── 소제목 섹션 기반 배치 ──
+                # 각 소제목 뒤 섹션(다음 소제목 직전) TEXT 단락들 사이에 1~2장 삽입
+                n_sections = len(section_boundaries)
+                # 섹션당 이미지 할당 (앞 섹션 우선)
+                imgs_per_section = max(1, min(2, n_imgs // max(n_sections, 1)))
+                remaining_budget = n_imgs
+
+                insert_plan = []  # (삽입할 인덱스, 이미지 리스트)
+
+                for s_idx, h_pos in enumerate(section_boundaries):
+                    if not extra_queue:
+                        break
+                    # 섹션 범위: 현재 소제목 ~ 다음 소제목 전
+                    next_h = section_boundaries[s_idx + 1] if s_idx + 1 < n_sections else len(final_comps)
+                    # 섹션 내 TEXT 컴포넌트 인덱스
+                    text_in_section = [
+                        i for i in range(h_pos + 1, next_h)
+                        if isinstance(final_comps[i], dict) and final_comps[i].get('@ctype') == 'text'
+                    ]
+                    if not text_in_section:
+                        continue
+                    # 섹션 중간 TEXT 뒤에 삽입
+                    alloc = min(imgs_per_section, len(extra_queue), 2)
+                    mid_pos = text_in_section[len(text_in_section) // 2]
+                    batch = [extra_queue.pop(0) for _ in range(alloc)]
+                    insert_plan.append((mid_pos, batch))
+
+                # 남은 이미지 → 마지막 섹션 뒤 균등 배치
+                if extra_queue:
+                    text_indices_all = [
+                        i for i, c in enumerate(final_comps)
+                        if isinstance(c, dict) and c.get('@ctype') == 'text'
+                    ]
+                    last_texts = text_indices_all[len(text_indices_all) // 2:]
+                    step = max(len(last_texts) // (len(extra_queue) + 1), 1)
+                    for k, eu in enumerate(extra_queue):
+                        pos = last_texts[min(step * (k + 1), len(last_texts) - 1)]
+                        insert_plan.append((pos, [eu]))
+
+                # 뒤에서부터 삽입
+                for insert_pos, batch in sorted(insert_plan, key=lambda x: x[0], reverse=True):
+                    for eu in reversed(batch):
+                        ic = _make_ic(eu, represent=first_img)
+                        first_img = False
+                        final_comps.insert(insert_pos + 1, ic)
+
+                total_inserted = sum(len(b) for _, b in insert_plan)
+                print(f"  이미지 분산: {total_inserted}장 ({n_sections}섹션 기준, 섹션당 {imgs_per_section}장)")
+
             else:
-                # ── 이미지 2장씩 그룹으로 묶기 ──
-                img_groups = []
-                for i in range(0, n_imgs, 2):
-                    img_groups.append(extra_queue[i:i+2])  # 1~2장 그룹
-
-                n_groups = len(img_groups)
-
-                # ── 그룹 삽입 위치 결정 ──
-                # TEXT 단락 사이에 균등 배치
-                # 첫 단락 뒤와 마지막 단락 전은 제외하지 않음 (링크박스 단락 제외)
-                # PLAIN_LINK, PARA_LINK 타입은 제외하고 TEXT만 대상
-                
-                if n_groups >= n_text - 1:
-                    # 이미지 그룹이 많으면: 모든 TEXT 사이에 1그룹씩
-                    insert_after_slots = list(range(min(n_groups, n_text - 1)))
+                # ── fallback: TEXT 단락 균등 배치 ──
+                text_indices = [
+                    i for i, c in enumerate(final_comps)
+                    if isinstance(c, dict) and c.get('@ctype') == 'text'
+                ]
+                n_text = len(text_indices)
+                if n_text < 1:
+                    for eu in extra_queue:
+                        final_comps.append(_make_ic(eu))
                 else:
-                    # 이미지 그룹이 적으면: 균등 간격으로 배치
-                    # 단, 첫 번째 TEXT 뒤에는 반드시 1그룹 (대표 이미지)
-                    slots = []
-                    if n_groups >= 1:
-                        slots.append(0)  # 첫 단락 뒤
-                    if n_groups >= 2:
-                        # 나머지는 균등 간격
-                        step = (n_text - 1) / (n_groups - 1) if n_groups > 1 else 1
-                        for k in range(1, n_groups):
-                            pos = min(int(step * k), n_text - 2)
-                            if pos not in slots:
-                                slots.append(pos)
-                            else:
-                                # 중복이면 다음 빈 슬롯 찾기
-                                for candidate in range(pos + 1, n_text - 1):
-                                    if candidate not in slots:
-                                        slots.append(candidate)
-                                        break
-                    insert_after_slots = sorted(slots[:n_groups])
-
-                # ── 뒤에서부터 삽입 (인덱스 밀림 방지) ──
-                total_inserted = 0
-                for slot_k, group in zip(sorted(insert_after_slots, reverse=True),
-                                         list(reversed(img_groups[:len(insert_after_slots)]))):
-                    text_pos = text_indices[slot_k]
-                    # 그룹 내 이미지를 역순으로 삽입 (순서 유지)
-                    for eu in reversed(group):
-                        ic = image_comp(
-                            src=eu["src"], path=eu["path"],
-                            width=eu["width"], height=eu["height"],
-                            filename=eu["fileName"],
-                            represent=False, file_size=eu["fileSize"]
-                        )
-                        final_comps.insert(text_pos + 1, ic)
-                        total_inserted += 1
-
-                print(f"  이미지 분산: {total_inserted}장 ({n_groups}그룹) TEXT 사이 삽입 (최대 2장/그룹)")
+                    step = max(n_text // (n_imgs + 1), 1)
+                    for k, eu in enumerate(extra_queue):
+                        pos = text_indices[min(step * (k + 1), n_text - 1)]
+                        ic = _make_ic(eu, represent=first_img)
+                        first_img = False
+                        final_comps.insert(pos + 1, ic)
+                print(f"  이미지 분산: {n_imgs}장 TEXT 균등 배치 (소제목 없음 fallback)")
 
         doc_str = build_document_model(title, final_comps, category_no=category_no)
         pop_save = make_pop(category_no=category_no, auto_save_no=None)
