@@ -38,7 +38,7 @@ from .uploader import download_image, upload_image_file
 from .api import oglink_fetch, autosave, rabbit_write
 
 
-def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
+def parse_body_to_sections(body: str, og_map: dict, keep_link_box_as_text: bool = False) -> tuple[list, list]:
     """
     본문 → SE 컴포넌트 목록 변환.
     - 쿠팡 링크 줄 → IMAGE_MARKER + OGLINK
@@ -84,29 +84,46 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     # ── v5: 링크 박스 선처리 ─────────────────────────────────────────
     # 패턴: ━━━\n내용\n👉 링크\n━━━ → 링크만 추출하고 나머지는 버림
     # 링크 박스 전체를 하나의 LINK_BOX 마커로 교체
-    def _normalize_link_boxes(text: str) -> str:
-        """━━━ 링크 박스를 '링크 URL만 남기고' 구분선 제거."""
+    def _normalize_link_boxes(text: str, keep_as_text: bool = False) -> str:
+        """━━━ 링크 박스 처리.
+
+        keep_as_text=False (기본, P004): 링크 URL만 추출하고 나머지 버림 → OG카드 변환
+        keep_as_text=True  (P005용):    박스 전체를 텍스트 단락으로 유지 (구분선만 제거)
+        """
         lines_in = text.split('\n')
         lines_out = []
         i = 0
         while i < len(lines_in):
             s = lines_in[i].strip()
-            # 구분선 시작 감지
             if DIVIDER_PAT.match(s):
-                # 다음 줄들에서 링크 URL 찾기 (다음 구분선까지)
+                # 구분선 시작 — 다음 구분선까지 블록 수집
                 j = i + 1
                 found_url = None
+                block_lines = []
                 while j < len(lines_in) and not DIVIDER_PAT.match(lines_in[j].strip()):
                     m = LINK_PAT.search(lines_in[j])
                     if m:
                         found_url = m.group(0).rstrip('.,)')
+                    block_lines.append(lines_in[j])
                     j += 1
-                # 닫는 구분선 소비
                 if j < len(lines_in) and DIVIDER_PAT.match(lines_in[j].strip()):
-                    j += 1
-                # 구분선 블록 전체를 링크 한 줄로 교체
-                if found_url:
-                    lines_out.append(found_url)
+                    j += 1  # 닫는 구분선 소비
+
+                if keep_as_text:
+                    # P005: 박스 내용을 텍스트로 유지 (링크 줄은 URL만 남김)
+                    for bl in block_lines:
+                        bl_s = bl.strip()
+                        if not bl_s:
+                            continue
+                        lm = LINK_PAT.search(bl_s)
+                        if lm:
+                            lines_out.append(lm.group(0).rstrip('.,)'))
+                        else:
+                            lines_out.append(bl_s)
+                else:
+                    # P004(기본): URL만 추출
+                    if found_url:
+                        lines_out.append(found_url)
                 i = j
             else:
                 lines_out.append(lines_in[i])
@@ -114,7 +131,7 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
         return '\n'.join(lines_out)
 
     # 링크 박스 정규화 적용
-    body = _normalize_link_boxes(body)
+    body = _normalize_link_boxes(body, keep_as_text=keep_link_box_as_text)
 
     # ── v4: 이중 줄바꿈으로 문단 블록 분리 ──────────────────────────────
     raw_blocks = re.split(r'\n{2,}', body.strip())
@@ -212,6 +229,7 @@ async def publish(
     naver_pw: str | None = None,
     product_info: dict | None = None,  # P005 brand_card fallback용 상품 정보
     shorten_url_override: str | None = None,  # OG카드 클릭 시 이동 URL (naver.me)
+    p005_mode: bool = False,  # P005: ━━━ 링크 박스를 텍스트로 유지 (OG카드 변환 안 함)
 ) -> str | None:
     """
     네이버 블로그 발행 메인 함수.
@@ -405,7 +423,7 @@ async def publish(
         await page.keyboard.type(".", delay=5)
 
         # ── STEP 5: 이미지 업로드 ───────────────────────────────
-        section_comps, image_upload_urls = parse_body_to_sections(body, og_map)
+        section_comps, image_upload_urls = parse_body_to_sections(body, og_map, keep_link_box_as_text=p005_mode)
         image_upload_urls = [u for u in image_upload_urls if u in thumb_local]
 
         uploaded_images: dict[str, dict] = {}
