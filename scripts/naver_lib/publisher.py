@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
-naver_lib/publisher.py — 네이버 블로그 발행 핵심 엔진 v2
+naver_lib/publisher.py — 네이버 블로그 발행 핵심 엔진 v3
 ─────────────────────────────────────────────────────────
 변경 이력:
+  v3 (2026-04-17): banidad 포맷 이미지 분산 방식 전면 개선 (노이반님 지시)
+    - IMAGE_HERE 마커 완전 제거 (parse_body_to_sections에서 제거)
+    - IMAGE_HERE_SLOT 완전 제거
+    - 이미지 분산: TEXT 컴포넌트 사이 1:1 교차 삽입 (banidad 실측 패턴)
+    - 단락 N개 → 이미지 N-1개 (단락마다 1장씩, 마지막 단락 제외)
   v2 (2026-04-15): naver_lib 분리, tokenId 캡처 버그 수정
     - Ctrl+S 후 팝업 처리 순서 보정 (poll 기반으로 변경)
     - OG 링크 없는 발행 지원 (P005 브랜드커넥트용)
@@ -39,6 +44,10 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     - 쿠팡 링크 줄 → IMAGE_MARKER + OGLINK
     - 일반 텍스트 → TEXT
     - OG_MAP 없는 링크(브랜드커넥트) → PLAIN_LINK (텍스트 링크로 처리)
+
+    v3 변경:
+    - IMAGE_HERE 마커 완전 제거 (이미지 분산은 publish()에서 처리)
+    - IMAGE_HERE_SLOT 제거
     반환: (components, image_upload_urls)
     """
     LINK_PAT  = re.compile(r'https?://(?:link\.coupang\.com|naver\.me|brand\.naver\.com)\S+')
@@ -55,10 +64,8 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
 
     for line in body.split('\n'):
         stripped = line.strip()
-        # IMAGE_HERE 마커: 소제목 직후 이미지 배치 위치 표시
+        # IMAGE_HERE 마커 완전 무시 (v3: 이미지 분산은 publish()에서 자동 처리)
         if stripped == 'IMAGE_HERE':
-            flush()
-            sections.append(('image_marker', ''))
             continue
         # C: <a href="URL">텍스트</a> 패턴 명시 파싱 → PARA_LINK
         a_match = A_TAG_PAT.search(stripped)
@@ -83,17 +90,7 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     first_image = True
     url_seen_count: dict[str, int] = {}
 
-    # IMAGE_HERE 마커 카운트 (extra_image 배치용)
-    image_here_count = sum(1 for t, _ in sections if t == 'image_marker')
-    image_here_idx = [0]  # mutable counter
-
     for sec_type, sec_content in sections:
-        if sec_type == 'image_marker':
-            # IMAGE_HERE: extra_image 배치 예약 (실제 이미지는 STEP5에서 삽입)
-            components.append({'_type': 'IMAGE_HERE_SLOT'})
-            image_here_idx[0] += 1
-            continue
-
         if sec_type == 'para_link':
             # C: <a href="URL">텍스트</a> → urlLink 하이퍼링크 컴포넌트
             a_url, a_text = sec_content
@@ -449,69 +446,57 @@ async def publish(
                     ))
                 else:
                     final_comps.append(text_comp([para_link("🔗 지금 네이버에서 확인하기", url)]))
-            elif t == 'IMAGE_HERE_SLOT':
-                # IMAGE_HERE 마커: extra_uploaded 이미지 순서대로 배치 (placeholder)
-                final_comps.append({'_type': 'IMAGE_HERE_SLOT'})
 
-        # IMAGE_HERE_SLOT을 extra_uploaded 이미지로 교체
-        # 소제목 직후 배치: IMAGE_HERE_SLOT 위치에 실제 이미지 삽입
+        # ── 이미지 분산 삽입 (banidad 1:1 교차 방식) ──────────────
+        # v3: IMAGE_HERE_SLOT 완전 제거. extra_uploaded를 TEXT 컴포넌트 사이에 1:1 삽입.
+        # banidad 실측: IMAGE → TEXT → IMAGE → TEXT (단락마다 이미지 1장)
         extra_queue = list(extra_uploaded)
-        new_final = []
-        for comp in final_comps:
-            if isinstance(comp, dict) and comp.get('_type') == 'IMAGE_HERE_SLOT':
-                if extra_queue:
-                    eu = extra_queue.pop(0)
-                    new_final.append(image_comp(
-                        src=eu["src"], path=eu["path"],
-                        width=eu["width"], height=eu["height"],
-                        filename=eu["fileName"],
-                        represent=(len(new_final) == 0),
-                        file_size=eu["fileSize"]
-                    ))
-                # else: 이미지 없으면 슬롯 제거 (텍스트 잔재 방지)
-            else:
-                new_final.append(comp)
-        final_comps = new_final
-
-        # 남은 extra 이미지 본문 중간 분산 삽입 (IMAGE_HERE_SLOT 소화 후 남은 것)
-        # v5: IMAGE_HERE 마커 제거 방식 → extra_queue 전체를 TEXT 컴포넌트 사이에 균등 배치
         if extra_queue:
-            # TEXT 컴포넌트 인덱스 수집 (이미지 삽입 포인트)
+            # TEXT 컴포넌트 인덱스 수집
             text_indices = [
                 i for i, c in enumerate(final_comps)
                 if isinstance(c, dict) and c.get('_type') == 'TEXT'
             ]
-            n_imgs = len(extra_queue)
             n_text = len(text_indices)
+            n_imgs = len(extra_queue)
 
-            if n_text >= 2 and n_imgs > 0:
-                # TEXT 컴포넌트 사이 균등 간격으로 이미지 삽입
-                # 예: TEXT 15개, 이미지 10개 → 매 1.5 TEXT마다 1개 삽입
-                step = max(n_text / (n_imgs + 1), 1)
-                insert_after_text = [
-                    text_indices[min(int(step * (i + 1)), n_text - 1)]
-                    for i in range(n_imgs)
-                ]
-                # 중복 제거 (같은 위치에 여러 이미지 쌓이는 것 방지)
-                seen_pos = set()
-                unique_inserts = []
-                for pos in insert_after_text:
-                    if pos not in seen_pos:
-                        unique_inserts.append(pos)
-                        seen_pos.add(pos)
+            if n_text >= 1 and n_imgs > 0:
+                # banidad 패턴: TEXT 단락 사이마다 이미지 1장씩 삽입
+                # 이미지 수가 단락 수보다 많으면 균등 배치, 적으면 앞 단락부터 삽입
+                # 마지막 단락(링크/마무리) 직전까지만 삽입
+                n_insert = min(n_imgs, n_text - 1) if n_text > 1 else min(n_imgs, n_text)
 
-                # 뒤에서부터 삽입 (인덱스 밀림 방지)
-                for text_pos, eu in zip(sorted(unique_inserts, reverse=True), list(reversed(extra_queue[:len(unique_inserts)]))):
-                    ic = image_comp(
-                        src=eu["src"], path=eu["path"],
-                        width=eu["width"], height=eu["height"],
-                        filename=eu["fileName"],
-                        represent=False, file_size=eu["fileSize"]
-                    )
-                    final_comps.insert(text_pos + 1, ic)
+                if n_insert > 0:
+                    # 삽입할 TEXT 인덱스 선택 (앞에서부터 균등하게)
+                    if n_insert >= n_text - 1:
+                        # 이미지가 충분: 모든 단락 사이에 삽입
+                        insert_after = text_indices[:n_insert]
+                    else:
+                        # 이미지가 부족: 균등 간격으로 분산
+                        step = (n_text - 1) / n_insert
+                        insert_after = [
+                            text_indices[min(int(step * i), n_text - 2)]
+                            for i in range(n_insert)
+                        ]
+                        # 중복 제거
+                        seen = set()
+                        insert_after = [x for x in insert_after if not (x in seen or seen.add(x))]
 
-                # 삽입 안 된 나머지 이미지 (중복 제거로 누락된 것) → 끝에서 3번째 전에 삽입
-                remaining = extra_queue[len(unique_inserts):]
+                    # 뒤에서부터 삽입 (인덱스 밀림 방지)
+                    for text_pos, eu in zip(sorted(insert_after, reverse=True),
+                                            list(reversed(extra_queue[:len(insert_after)]))):
+                        ic = image_comp(
+                            src=eu["src"], path=eu["path"],
+                            width=eu["width"], height=eu["height"],
+                            filename=eu["fileName"],
+                            represent=False, file_size=eu["fileSize"]
+                        )
+                        final_comps.insert(text_pos + 1, ic)
+
+                    print(f"  이미지 분산: {n_insert}장 TEXT 사이 삽입 (banidad 1:1)")
+
+                # 남은 이미지: 본문 끝에서 3번째 위치에 추가
+                remaining = extra_queue[len(insert_after):]
                 for eu in remaining:
                     ic = image_comp(
                         src=eu["src"], path=eu["path"],
@@ -521,19 +506,18 @@ async def publish(
                     )
                     insert_pos = max(0, len(final_comps) - 3)
                     final_comps.insert(insert_pos, ic)
+                if remaining:
+                    print(f"  남은 이미지 {len(remaining)}장 → 하단 삽입")
             else:
-                # TEXT 컴포넌트가 적은 경우 기존 방식 fallback
-                total = len(final_comps)
-                per = max(total // (len(extra_queue) + 1), 1)
-                for i, eu in enumerate(extra_queue):
-                    pos = min(per * (i + 1), len(final_comps))
+                # TEXT 없는 극단 케이스: 순서대로 끝에 추가
+                for eu in extra_queue:
                     ic = image_comp(
                         src=eu["src"], path=eu["path"],
                         width=eu["width"], height=eu["height"],
                         filename=eu["fileName"],
                         represent=False, file_size=eu["fileSize"]
                     )
-                    final_comps.insert(pos, ic)
+                    final_comps.append(ic)
 
         doc_str = build_document_model(title, final_comps, category_no=category_no)
         pop_save = make_pop(category_no=category_no, auto_save_no=None)
