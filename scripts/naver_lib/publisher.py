@@ -53,57 +53,109 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
     LINK_PAT  = re.compile(r'https?://(?:link\.coupang\.com|naver\.me|brand\.naver\.com)\S+')
     A_TAG_PAT = re.compile(r'<a\s+href=["\']([^"\']+)["\'][^>]*>([^<]*)</a>', re.IGNORECASE)
 
-    image_upload_urls = []
-    sections = []
-    current_lines = []
-
-    def flush():
-        if current_lines:
-            sections.append(('lines', list(current_lines)))
-            current_lines.clear()
-
-    for line in body.split('\n'):
-        stripped = line.strip()
-        # IMAGE_HERE 마커 완전 무시 (v3: 이미지 분산은 publish()에서 자동 처리)
-        if stripped == 'IMAGE_HERE':
-            continue
-        # C: <a href="URL">텍스트</a> 패턴 명시 파싱 → PARA_LINK
-        a_match = A_TAG_PAT.search(stripped)
-        if a_match:
-            a_url  = a_match.group(1).strip()
-            a_text = a_match.group(2).strip() or "구매하기"
-            flush()
-            sections.append(('para_link', (a_url, a_text)))
-            continue
-        m = LINK_PAT.search(stripped)
-        if m:
-            url = m.group(0).rstrip('.,)')
-            flush()
-            sections.append(('link', url))
-        else:
-            current_lines.append(line)
-    flush()
-
     HEADING_EMOJIS = ('🛒', '✅', '⚠', '📌', '🎯', '💡', '🔍', '📊', '🏷', '💰', '👍', '❌', '🔑', '📋', '🎁',
                       '🛍', '💬', '🔧', '📦', '⭐', '🌟', '💫', '🏆', '🎪', '📝', '🚀', '💎', '🎉', '👉')
+
+    def _line_to_para(s: str) -> dict:
+        """단일 줄 → para 객체 (bold/heading/tiny 자동 판별)."""
+        if not s:
+            return empty_para()
+        if '파트너스 활동' in s or s.startswith('📢') or (s.startswith('#') and s.count('#') >= 3):
+            return para(s, fs=FS["tiny"])
+        is_heading = (
+            5 <= len(s) <= 45
+            and not any(s.endswith(e) for e in ('요.', '요!', '요?', '네요.', '다.', '다!', '습니다.', '어요.', '어요!', '더라고요.'))
+            and (
+                any(s.startswith(em) for em in HEADING_EMOJIS)
+                or '—' in s
+                or any(c in s for c in ['가이드', '비교', '정리', '선택', '체크', '기준', '방법', '포인트', '결론'])
+            )
+        )
+        if is_heading:
+            return para(s, bold=True, fs=FS["heading"])
+        return para(s, fs=FS["normal"])
+
+    image_upload_urls = []
+    sections = []
     components = []
     first_image = True
     url_seen_count: dict[str, int] = {}
 
-    for sec_type, sec_content in sections:
-        if sec_type == 'para_link':
-            # C: <a href="URL">텍스트</a> → urlLink 하이퍼링크 컴포넌트
-            a_url, a_text = sec_content
-            components.append({'_type': 'PARA_LINK', '_url': a_url, '_text': a_text})
+    # ── v4: 이중 줄바꿈으로 문단 블록 분리 ──────────────────────────────
+    # 핵심 수정: body.split('\n') 대신 '\n\n' 기준으로 문단 블록 분리
+    # 각 블록 = 하나의 TEXT 컴포넌트 (banidad 패턴: 3~5문장이 하나의 단락)
+    raw_blocks = re.split(r'\n{2,}', body.strip())
+
+    for block in raw_blocks:
+        lines = block.split('\n')
+
+        # IMAGE_HERE 마커 줄 제거
+        lines = [l for l in lines if l.strip() != 'IMAGE_HERE']
+        if not lines:
             continue
 
-        if sec_type == 'link':
+        # 블록 안에 링크/a태그가 있는지 확인
+        block_has_link = any(
+            LINK_PAT.search(l.strip()) or A_TAG_PAT.search(l.strip())
+            for l in lines
+        )
+
+        if block_has_link:
+            # 링크 포함 블록: 줄 단위로 처리 (링크 줄 전후 분리)
+            pending_text_lines = []
+
+            def _flush_pending():
+                nonlocal pending_text_lines
+                if pending_text_lines:
+                    paras = [_line_to_para(l.strip()) for l in pending_text_lines if l.strip()]
+                    if paras:
+                        sections.append(('block_paras', paras))
+                    pending_text_lines = []
+
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+
+                a_match = A_TAG_PAT.search(stripped)
+                if a_match:
+                    _flush_pending()
+                    sections.append(('para_link', (a_match.group(1).strip(), a_match.group(2).strip() or "구매하기")))
+                    continue
+
+                m = LINK_PAT.search(stripped)
+                if m:
+                    _flush_pending()
+                    sections.append(('link', m.group(0).rstrip('.,)')))
+                else:
+                    pending_text_lines.append(line)
+
+            _flush_pending()
+
+        else:
+            # 순수 텍스트 블록 → 블록 전체를 하나의 TEXT 컴포넌트로
+            non_empty = [l.strip() for l in lines if l.strip()]
+            if non_empty:
+                sections.append(('block_paras', [_line_to_para(s) for s in non_empty]))
+
+    # ── 섹션 → 컴포넌트 변환 ──────────────────────────────────────────
+    for sec_type, sec_content in sections:
+
+        if sec_type == 'block_paras':
+            # 문단 블록 전체를 하나의 TEXT 컴포넌트로 (핵심!)
+            if sec_content:
+                components.append({'_type': 'TEXT', '_paras': sec_content})
+
+        elif sec_type == 'para_link':
+            a_url, a_text = sec_content
+            components.append({'_type': 'PARA_LINK', '_url': a_url, '_text': a_text})
+
+        elif sec_type == 'link':
             url = sec_content
             url_seen_count[url] = url_seen_count.get(url, 0) + 1
             count = url_seen_count[url]
 
             if url in og_map:
-                # 쿠팡 링크: 이미지 + OG카드
                 if count == 1:
                     image_upload_urls.append(url)
                     components.append({'_type': 'IMAGE_MARKER', '_url': url, '_is_first': first_image})
@@ -111,34 +163,7 @@ def parse_body_to_sections(body: str, og_map: dict) -> tuple[list, list]:
                 else:
                     components.append({'_type': 'OGLINK', '_url': url})
             else:
-                # OG카드 없는 링크(브랜드커넥트 naver.me 등) → 텍스트 링크로 삽입
                 components.append({'_type': 'PLAIN_LINK', '_url': url})
-
-        else:  # 'lines'
-            paras = []
-            for line in sec_content:
-                s = line.strip()
-                if not s:
-                    paras.append(empty_para())
-                    continue
-                if '파트너스 활동' in s or s.startswith('📢') or (s.startswith('#') and s.count('#') >= 3):
-                    paras.append(para(s, fs=FS["tiny"]))
-                    continue
-                is_heading = (
-                    5 <= len(s) <= 45
-                    and not any(s.endswith(e) for e in ('요.', '요!', '요?', '네요.', '다.', '다!', '습니다.', '어요.', '어요!', '더라고요.'))
-                    and (
-                        any(s.startswith(em) for em in HEADING_EMOJIS)
-                        or '—' in s
-                        or any(c in s for c in ['가이드', '비교', '정리', '선택', '체크', '기준', '방법', '포인트', '결론'])
-                    )
-                )
-                if is_heading:
-                    paras.append(para(s, bold=True, fs=FS["heading"]))
-                else:
-                    paras.append(para(s, fs=FS["normal"]))
-            if paras:
-                components.append({'_type': 'TEXT', '_paras': paras})
 
     return components, image_upload_urls
 
@@ -447,12 +472,12 @@ async def publish(
                 else:
                     final_comps.append(text_comp([para_link("🔗 지금 네이버에서 확인하기", url)]))
 
-        # ── 이미지 분산 삽입 (banidad 1:1 교차 방식) ──────────────
-        # v3: IMAGE_HERE_SLOT 완전 제거. extra_uploaded를 TEXT 컴포넌트 사이에 1:1 삽입.
-        # banidad 실측: IMAGE → TEXT → IMAGE → TEXT (단락마다 이미지 1장)
+        # ── 이미지 분산 삽입 (banidad 패턴: TEXT 사이 1장씩 균등) ──────
+        # v4: TEXT 컴포넌트가 문단 블록 단위로 구성됨 (3~5문장 = 1 TEXT)
+        # 목표: TEXT → IMAGE → TEXT → IMAGE → TEXT (교차 패턴)
         extra_queue = list(extra_uploaded)
         if extra_queue:
-            # TEXT 컴포넌트 인덱스 수집
+            # TEXT 컴포넌트 위치(인덱스) 수집 — 현재 final_comps 기준
             text_indices = [
                 i for i, c in enumerate(final_comps)
                 if isinstance(c, dict) and c.get('_type') == 'TEXT'
@@ -460,64 +485,72 @@ async def publish(
             n_text = len(text_indices)
             n_imgs = len(extra_queue)
 
-            if n_text >= 1 and n_imgs > 0:
-                # banidad 패턴: TEXT 단락 사이마다 이미지 1장씩 삽입
-                # 이미지 수가 단락 수보다 많으면 균등 배치, 적으면 앞 단락부터 삽입
-                # 마지막 단락(링크/마무리) 직전까지만 삽입
-                n_insert = min(n_imgs, n_text - 1) if n_text > 1 else min(n_imgs, n_text)
-
-                if n_insert > 0:
-                    # 삽입할 TEXT 인덱스 선택 (앞에서부터 균등하게)
-                    if n_insert >= n_text - 1:
-                        # 이미지가 충분: 모든 단락 사이에 삽입
-                        insert_after = text_indices[:n_insert]
-                    else:
-                        # 이미지가 부족: 균등 간격으로 분산
-                        step = (n_text - 1) / n_insert
-                        insert_after = [
-                            text_indices[min(int(step * i), n_text - 2)]
-                            for i in range(n_insert)
-                        ]
-                        # 중복 제거
-                        seen = set()
-                        insert_after = [x for x in insert_after if not (x in seen or seen.add(x))]
-
-                    # 뒤에서부터 삽입 (인덱스 밀림 방지)
-                    for text_pos, eu in zip(sorted(insert_after, reverse=True),
-                                            list(reversed(extra_queue[:len(insert_after)]))):
-                        ic = image_comp(
-                            src=eu["src"], path=eu["path"],
-                            width=eu["width"], height=eu["height"],
-                            filename=eu["fileName"],
-                            represent=False, file_size=eu["fileSize"]
-                        )
-                        final_comps.insert(text_pos + 1, ic)
-
-                    print(f"  이미지 분산: {n_insert}장 TEXT 사이 삽입 (banidad 1:1)")
-
-                # 남은 이미지: 본문 끝에서 3번째 위치에 추가
-                remaining = extra_queue[len(insert_after):]
-                for eu in remaining:
-                    ic = image_comp(
-                        src=eu["src"], path=eu["path"],
-                        width=eu["width"], height=eu["height"],
-                        filename=eu["fileName"],
-                        represent=False, file_size=eu["fileSize"]
-                    )
-                    insert_pos = max(0, len(final_comps) - 3)
-                    final_comps.insert(insert_pos, ic)
-                if remaining:
-                    print(f"  남은 이미지 {len(remaining)}장 → 하단 삽입")
-            else:
+            if n_text < 1:
                 # TEXT 없는 극단 케이스: 순서대로 끝에 추가
                 for eu in extra_queue:
-                    ic = image_comp(
+                    final_comps.append(image_comp(
                         src=eu["src"], path=eu["path"],
                         width=eu["width"], height=eu["height"],
-                        filename=eu["fileName"],
-                        represent=False, file_size=eu["fileSize"]
-                    )
-                    final_comps.append(ic)
+                        filename=eu["fileName"], represent=False, file_size=eu["fileSize"]
+                    ))
+            else:
+                # ── 삽입 위치 결정 ──────────────────────────────────
+                # 전략: TEXT 컴포넌트 '사이'마다 이미지 1장
+                # n_text=15, n_imgs=10 → 10개 위치에 균등 배치
+                # n_text=15, n_imgs=20 → 14개 사이 전부 + 남은 6장은 끝부분 분산
+                n_slots = n_text - 1  # TEXT 사이 슬롯 수 (첫 TEXT 앞은 제외)
+                if n_slots <= 0:
+                    n_slots = 1
+
+                n_insert = min(n_imgs, n_slots)
+
+                if n_insert >= n_slots:
+                    # 이미지가 충분: 모든 슬롯에 삽입
+                    insert_after_idx = list(range(n_slots))
+                else:
+                    # 이미지 부족: 균등 간격으로 n_insert개 위치 선택
+                    step = n_slots / n_insert
+                    insert_after_idx = sorted(set(
+                        min(int(step * i + step / 2), n_slots - 1)
+                        for i in range(n_insert)
+                    ))
+                    # 중복 제거 후 부족하면 보완
+                    while len(insert_after_idx) < n_insert and len(insert_after_idx) < n_slots:
+                        for j in range(n_slots):
+                            if j not in insert_after_idx:
+                                insert_after_idx.append(j)
+                                if len(insert_after_idx) >= n_insert:
+                                    break
+                    insert_after_idx = sorted(insert_after_idx[:n_insert])
+
+                # text_indices[k] 이후에 이미지 삽입 (k = insert_after_idx의 값)
+                insert_positions = [text_indices[k] for k in insert_after_idx]
+
+                # 뒤에서부터 삽입 (인덱스 밀림 방지)
+                imgs_to_insert = extra_queue[:len(insert_positions)]
+                for text_pos, eu in zip(sorted(insert_positions, reverse=True),
+                                        list(reversed(imgs_to_insert))):
+                    final_comps.insert(text_pos + 1, image_comp(
+                        src=eu["src"], path=eu["path"],
+                        width=eu["width"], height=eu["height"],
+                        filename=eu["fileName"], represent=False, file_size=eu["fileSize"]
+                    ))
+
+                print(f"  이미지 분산: {len(insert_positions)}장 TEXT 사이 삽입 (banidad 교차)")
+
+                # 남은 이미지: 본문 후반부에 균등 추가
+                remaining = extra_queue[len(insert_positions):]
+                if remaining:
+                    base = max(0, len(final_comps) - len(remaining) * 2)
+                    step2 = max(2, len(final_comps) // (len(remaining) + 1))
+                    for i, eu in enumerate(remaining):
+                        pos = min(base + step2 * (i + 1), len(final_comps))
+                        final_comps.insert(pos, image_comp(
+                            src=eu["src"], path=eu["path"],
+                            width=eu["width"], height=eu["height"],
+                            filename=eu["fileName"], represent=False, file_size=eu["fileSize"]
+                        ))
+                    print(f"  남은 이미지 {len(remaining)}장 → 후반부 분산")
 
         doc_str = build_document_model(title, final_comps, category_no=category_no)
         pop_save = make_pop(category_no=category_no, auto_save_no=None)
