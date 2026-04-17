@@ -182,15 +182,34 @@ def parse_body_to_sections(body: str, og_map: dict, keep_link_box_as_text: bool 
             _flush_pending()
 
         else:
-            # 순수 텍스트 블록 → 블록 전체를 하나의 TEXT 컴포넌트로
+            # 순수 텍스트 블록 → 소제목 / 일반 TEXT로 분리
             non_empty = [l.strip() for l in lines if l.strip()]
             if non_empty:
-                sections.append(('block_paras', [_line_to_para(s) for s in non_empty]))
+                # 소제목(HEADING)과 일반 텍스트를 분리해 각각 섹션으로
+                current_text = []
+                for s in non_empty:
+                    p = _line_to_para(s)
+                    is_h = p.get('nodes', [{}])[0].get('style', {}).get('bold') and \
+                           p.get('nodes', [{}])[0].get('style', {}).get('fontSizeCode') == FS["heading"]
+                    if is_h:
+                        if current_text:
+                            sections.append(('block_paras', current_text))
+                            current_text = []
+                        sections.append(('heading_para', p))
+                    else:
+                        current_text.append(p)
+                if current_text:
+                    sections.append(('block_paras', current_text))
 
     # ── 섹션 → 컴포넌트 변환 ──────────────────────────────────────────
     for sec_type, sec_content in sections:
 
-        if sec_type == 'block_paras':
+        if sec_type == 'heading_para':
+            # 소제목 → 단독 TEXT 컴포넌트 (HEADING 마커)
+            if sec_content:
+                components.append({'_type': 'HEADING', '_para': sec_content})
+
+        elif sec_type == 'block_paras':
             # 문단 블록 전체를 하나의 TEXT 컴포넌트로
             if sec_content:
                 components.append({'_type': 'TEXT', '_paras': sec_content})
@@ -451,7 +470,11 @@ async def publish(
         final_comps = []
         for item in section_comps:
             t = item['_type']
-            if t == 'TEXT':
+            if t == 'HEADING':
+                # 소제목 단독 TEXT 컴포넌트 (이미지 배치 기준점)
+                final_comps.append({'_type': 'SECTION_HEADING', '_comp': text_comp([item['_para']])})
+
+            elif t == 'TEXT':
                 paras = item['_paras']
                 # 단락 뒤 빈 줄(empty_para) 추가 — 가독성 향상 (노이반님 지시 2026-04-17)
                 # 단, 마지막 para가 이미 빈 줄이면 중복 추가 안 함
