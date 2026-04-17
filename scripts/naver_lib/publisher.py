@@ -295,14 +295,32 @@ async def publish(
                     thumb_local[link] = local
 
         # extra_image_urls 다운로드
+        # 규칙 2: 프로필/배너 이미지 URL 필터 (노이반님 지시 2026-04-17)
+        _SKIP_IMG_PATTERNS = [
+            'blogpfthumb', 'profileImage', 'profile_img',
+            'MjAyNjA0MTVf',  # 특정 프로필 썸네일 패턴
+        ]
+        _filtered_urls = [
+            u for u in (extra_image_urls or [])
+            if not any(p in u for p in _SKIP_IMG_PATTERNS)
+        ]
+        if len(_filtered_urls) < len(extra_image_urls or []):
+            print(f"  프로필 이미지 {len(extra_image_urls or []) - len(_filtered_urls)}장 필터링")
         extra_local = []
-        if extra_image_urls:
+        if _filtered_urls:
             try:
                 import requests as _req
-                for ei, eurl in enumerate(extra_image_urls[:15]):
+                for ei, eurl in enumerate(_filtered_urls[:15]):
                     try:
+                        # URL 도메인에 맞는 Referer 자동 선택
+                        if 'naver' in eurl or 'pstatic' in eurl:
+                            _ref = 'https://smartstore.naver.com/'
+                        elif 'coupang' in eurl:
+                            _ref = 'https://www.coupang.com/'
+                        else:
+                            _ref = 'https://www.naver.com/'
                         r = _req.get(eurl, timeout=8, allow_redirects=True,
-                                     headers={"Referer": "https://www.naver.com/", "User-Agent": "Mozilla/5.0"})
+                                     headers={"Referer": _ref, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
                         if r.status_code == 200 and len(r.content) > 10000:
                             save_path = _os.path.join(tmpdir, f"extra_{ei}.jpg")
                             with open(save_path, "wb") as f:
@@ -454,20 +472,66 @@ async def publish(
         final_comps = new_final
 
         # 남은 extra 이미지 본문 중간 분산 삽입 (IMAGE_HERE_SLOT 소화 후 남은 것)
+        # v5: IMAGE_HERE 마커 제거 방식 → extra_queue 전체를 TEXT 컴포넌트 사이에 균등 배치
         if extra_queue:
-            # IMAGE_HERE_SLOT으로 이미 소화된 이미지 제외한 나머지를 분산
-            real_comps = [c for c in final_comps if not (isinstance(c, dict) and c.get('@ctype') == 'image')]
-            total = len(final_comps)
-            per = max(total // (len(extra_queue) + 1), 1)
-            for i, eu in enumerate(extra_queue):
-                pos = min(per * (i + 1), len(final_comps))
-                ic = image_comp(
-                    src=eu["src"], path=eu["path"],
-                    width=eu["width"], height=eu["height"],
-                    filename=eu["fileName"],
-                    represent=False, file_size=eu["fileSize"]
-                )
-                final_comps.insert(pos, ic)
+            # TEXT 컴포넌트 인덱스 수집 (이미지 삽입 포인트)
+            text_indices = [
+                i for i, c in enumerate(final_comps)
+                if isinstance(c, dict) and c.get('_type') == 'TEXT'
+            ]
+            n_imgs = len(extra_queue)
+            n_text = len(text_indices)
+
+            if n_text >= 2 and n_imgs > 0:
+                # TEXT 컴포넌트 사이 균등 간격으로 이미지 삽입
+                # 예: TEXT 15개, 이미지 10개 → 매 1.5 TEXT마다 1개 삽입
+                step = max(n_text / (n_imgs + 1), 1)
+                insert_after_text = [
+                    text_indices[min(int(step * (i + 1)), n_text - 1)]
+                    for i in range(n_imgs)
+                ]
+                # 중복 제거 (같은 위치에 여러 이미지 쌓이는 것 방지)
+                seen_pos = set()
+                unique_inserts = []
+                for pos in insert_after_text:
+                    if pos not in seen_pos:
+                        unique_inserts.append(pos)
+                        seen_pos.add(pos)
+
+                # 뒤에서부터 삽입 (인덱스 밀림 방지)
+                for text_pos, eu in zip(sorted(unique_inserts, reverse=True), list(reversed(extra_queue[:len(unique_inserts)]))):
+                    ic = image_comp(
+                        src=eu["src"], path=eu["path"],
+                        width=eu["width"], height=eu["height"],
+                        filename=eu["fileName"],
+                        represent=False, file_size=eu["fileSize"]
+                    )
+                    final_comps.insert(text_pos + 1, ic)
+
+                # 삽입 안 된 나머지 이미지 (중복 제거로 누락된 것) → 끝에서 3번째 전에 삽입
+                remaining = extra_queue[len(unique_inserts):]
+                for eu in remaining:
+                    ic = image_comp(
+                        src=eu["src"], path=eu["path"],
+                        width=eu["width"], height=eu["height"],
+                        filename=eu["fileName"],
+                        represent=False, file_size=eu["fileSize"]
+                    )
+                    insert_pos = max(0, len(final_comps) - 3)
+                    final_comps.insert(insert_pos, ic)
+            else:
+                # TEXT 컴포넌트가 적은 경우 기존 방식 fallback
+                total = len(final_comps)
+                per = max(total // (len(extra_queue) + 1), 1)
+                for i, eu in enumerate(extra_queue):
+                    pos = min(per * (i + 1), len(final_comps))
+                    ic = image_comp(
+                        src=eu["src"], path=eu["path"],
+                        width=eu["width"], height=eu["height"],
+                        filename=eu["fileName"],
+                        represent=False, file_size=eu["fileSize"]
+                    )
+                    final_comps.insert(pos, ic)
 
         doc_str = build_document_model(title, final_comps, category_no=category_no)
         pop_save = make_pop(category_no=category_no, auto_save_no=None)
