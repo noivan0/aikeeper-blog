@@ -40,9 +40,9 @@ jobs:
       GITHUB_PAT: ${{ secrets.GH_PAT }}
       GITHUB_PAGES_BASE: "https://noivan0.github.io/aikeeper-blog"
       # Blogger OAuth (동일 계정)
-      BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-      BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
-      BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+      BLOGGER_REFRESH_TOKEN: ${{ secrets.ALLSWEEP_BLOGGER_REFRESH_TOKEN }}
+      BLOGGER_CLIENT_ID: ${{ secrets.ALLSWEEP_BLOGGER_CLIENT_ID }}
+      BLOGGER_CLIENT_SECRET: ${{ secrets.ALLSWEEP_BLOGGER_CLIENT_SECRET }}
       # allsweep 블로그 설정
       TARGET_BLOG_ID: "8772490249452917821"
       TARGET_BLOG_URL: "https://www.allsweep.xyz"
