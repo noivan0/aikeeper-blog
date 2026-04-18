@@ -672,10 +672,12 @@ async def publish(
         print(f"  ✅ autoSaveNo={auto_save_no}")
 
         # ── STEP 8: 발행 ────────────────────────────────────────
-        # 확인된 사실: tokenId는 세션 쿠키에 내재 → 빈 문자열로도 발행 성공
+        # autosave와 동일한 blogId로 발행 (prosweep → kjjhad alias 동작 보장)
+        # autosave 성공 기준: _autosave_bid(kjjhad) → rabbit_write도 동일하게 적용
+        _publish_bid = _autosave_bid  # autosave와 동일 blogId 사용
         pop_pub = make_pop(category_no=category_no, auto_save_no=auto_save_no)
-        publish_result = await rabbit_write(page, blog_id, doc_str, pop_pub, "")
-        print(f"  발행: {publish_result.get('status')} | {publish_result.get('body','')[:100]}")
+        publish_result = await rabbit_write(page, _publish_bid, doc_str, pop_pub, "")
+        print(f"  발행 blogId={_publish_bid}: {publish_result.get('status')} | {publish_result.get('body','')[:100]}")
 
         await save_session(context, _session)
         await browser.close()
