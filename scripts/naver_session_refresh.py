@@ -112,6 +112,15 @@ async def do_login(page, context) -> bool:
     except Exception as e:
         print(f"  keep 체크 스킵: {e}")
 
+    # ★ Stay Signed in 체크 (영구 쿠키 발급 핵심)
+    keep = await page.query_selector("#keep")
+    if keep:
+        is_checked = await keep.get_attribute("aria-checked")
+        if is_checked != "true":
+            await keep.click()
+            await asyncio.sleep(0.3)
+            print("  Stay Signed in 체크 완료")
+
     btn = await page.query_selector(".btn_login")
     if btn: await btn.click()
     await page.wait_for_timeout(7000)
@@ -217,7 +226,17 @@ async def main():
             print("세션 파일 있음 — 유효성 확인 중...")
             valid = await check_session_valid(page)
             if valid:
-                print("✅ 세션 유효 — 로그인 불필요")
+                print("✅ 세션 유효 — keepalive 저장 중...")
+                # 세션 유효 시 주요 페이지 방문 후 storage_state 재저장 (세션 연장)
+                try:
+                    await page.goto("https://www.naver.com", timeout=10000, wait_until="commit")
+                    await page.wait_for_timeout(1000)
+                    await page.goto(f"https://blog.naver.com/{BLOG_ID}", timeout=10000, wait_until="commit")
+                    await page.wait_for_timeout(1000)
+                    await context.storage_state(path=str(SESSION_FILE))
+                    print("✅ 세션 keepalive 저장 완료")
+                except Exception as e:
+                    print(f"keepalive 저장 실패 (무시): {e}")
                 await browser.close()
                 return True
             print("세션 만료 — 재로그인 시도")
