@@ -15,17 +15,14 @@ from env_loader import load_env, make_anthropic_client, get_model
 load_env()
 from datetime import datetime, timezone, timedelta
 try:
-    from seo_keywords import get_seo_keywords
-    def build_seo_title_prompt(kw, pname, kws, ch="ggultongmon"):
-        if not kws: return ""
-        kw_list = "\n".join(f"- {k}" for k in kws[:6])
-        return f"\n【SEO 제목 필수】실제 검색어 1~2개 반드시 포함:\n{kw_list}"
-    def get_search_keywords(kw): return get_seo_keywords(kw).get("combined", [])
+    from seo_title_helper import get_seo_keywords, build_seo_title_prompt, validate_title
+    def get_search_keywords(kw, pname=""): return get_seo_keywords(kw, pname).get("combined", [])
     _SEO_AVAILABLE = True
 except ImportError:
     def get_seo_keywords(kw, pname=""): return {"combined": []}
     def get_search_keywords(kw, pname=""): return []
-    def build_seo_title_prompt(kw, pname, kws, ch="ggultongmon"): return ""
+    def build_seo_title_prompt(pn, sk="", ch="ggultongmon"): return ("", [])
+    def validate_title(t, kws): return True
     _SEO_AVAILABLE = False
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

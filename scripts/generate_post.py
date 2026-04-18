@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# search_autocomplete import (SEO 제목 최적화)
+# seo_title_helper — 네이버+구글 통합 SEO 제목 최적화
 import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(__file__))
 try:
-    from search_autocomplete import get_seo_keywords as _get_seo_kw_full
-    def _get_seo_kw(kw, pname=""): return _get_seo_kw_full(kw, pname).get("combined", [])
+    from seo_title_helper import get_seo_keywords as _get_seo_helper
+    def _get_seo_kw(kw, pname=""): return _get_seo_helper(kw, pname).get("combined", [])
     _SEO_TITLE_AVAILABLE = True
 except ImportError:
     def _get_seo_kw(kw, pname=""): return []

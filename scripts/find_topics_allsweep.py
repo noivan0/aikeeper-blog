@@ -52,7 +52,7 @@ AVOID_TOPICS = [
 import sys as _sys_seo, os as _os_seo
 _sys_seo.path.insert(0, _os_seo.path.dirname(_os_seo.path.abspath(__file__)))
 try:
-    from seo_keywords import get_seo_keywords as _get_seo_kws
+    from seo_title_helper import get_seo_keywords as _get_seo_kws
     def _gac(kw, lang="ko"): return _get_seo_kws(kw).get("google", [])
     _SEO_NEWS_AVAIL = True
 except ImportError:
