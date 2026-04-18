@@ -249,6 +249,7 @@ async def publish(
     product_info: dict | None = None,  # P005 brand_card fallback용 상품 정보
     shorten_url_override: str | None = None,  # OG카드 클릭 시 이동 URL (naver.me)
     p005_mode: bool = False,  # P005: ━━━ 링크 박스를 텍스트로 유지 (OG카드 변환 안 함)
+    autosave_blog_id: str | None = None,  # autosave용 blogId (팀블로그는 세션계정으로 autosave)
 ) -> str | None:
     """
     네이버 블로그 발행 메인 함수.
@@ -661,7 +662,8 @@ async def publish(
         print(f"  documentModel: {len(doc_str)}자, 컴포넌트 {len(final_comps)+1}개")
 
         # ── STEP 7: 자동저장 ────────────────────────────────────
-        save_result = await autosave(page, blog_id, doc_str, pop_save)
+        _autosave_bid = autosave_blog_id or blog_id
+        save_result = await autosave(page, _autosave_bid, doc_str, pop_save)
         if not save_result:
             await browser.close()
             return None
