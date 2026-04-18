@@ -15,15 +15,17 @@ from env_loader import load_env, make_anthropic_client, get_model
 load_env()
 from datetime import datetime, timezone, timedelta
 try:
-    from search_autocomplete import get_search_keywords, build_seo_title_prompt
-    def get_seo_keywords(kw, pname=""):
-        kws = get_search_keywords(kw, pname)
-        return {"combined": kws}
+    from seo_keywords import get_seo_keywords
+    def build_seo_title_prompt(kw, pname, kws, ch="ggultongmon"):
+        if not kws: return ""
+        kw_list = "\n".join(f"- {k}" for k in kws[:6])
+        return f"\n【SEO 제목 필수】실제 검색어 1~2개 반드시 포함:\n{kw_list}"
+    def get_search_keywords(kw): return get_seo_keywords(kw).get("combined", [])
     _SEO_AVAILABLE = True
 except ImportError:
+    def get_seo_keywords(kw, pname=""): return {"combined": []}
     def get_search_keywords(kw, pname=""): return []
     def build_seo_title_prompt(kw, pname, kws, ch="ggultongmon"): return ""
-    def get_seo_keywords(kw, pname=""): return {"combined": []}
     _SEO_AVAILABLE = False
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -413,16 +415,26 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
             )
         used_products_context = "\n" + "\n".join(parts)
 
-    # SEO 자동완성 키워드 수집 (네이버+구글 실제 검색어)
+    # SEO 자동완성 키워드 수집 (네이버+구글 실제 검색어) — 제목 강제력 최대화
     seo_keywords_hint = ""
     if _SEO_AVAILABLE and keyword:
         try:
             import time as _time
             _seo = get_seo_keywords(keyword, keyword)
+            naver_kws = _seo.get("naver", [])[:5]
+            google_kws = _seo.get("google", [])[:5]
             _kws = _seo.get("combined", [])[:8]
             if _kws:
-                seo_keywords_hint = "【실제 검색어 (네이버·구글 자동완성)】\n" + "\n".join(f"  - {k}" for k in _kws)
-                print(f"[SEO] 자동완성 수집: {_kws[:3]}")
+                naver_str = "\n".join(f"  - {k}" for k in naver_kws) if naver_kws else "  (없음)"
+                google_str = "\n".join(f"  - {k}" for k in google_kws) if google_kws else "  (없음)"
+                seo_keywords_hint = (
+                    f"【⚠️ SEO 필수 — 아래 검색어를 제목에 반드시 1~2개 포함】\n"
+                    f"네이버 자동완성:\n{naver_str}\n"
+                    f"구글 자동완성:\n{google_str}\n"
+                    f"→ 이 검색어들은 실제 사용자가 검색창에 입력하는 단어입니다.\n"
+                    f"→ 제목에 포함 안 하면 검색 노출이 거의 없습니다. 반드시 포함하세요."
+                )
+                print(f"[SEO] 자동완성 수집: 네이버={naver_kws[:2]}, 구글={google_kws[:2]}")
             _time.sleep(0.3)
         except Exception as _e:
             print(f"[SEO] 자동완성 실패: {_e}")

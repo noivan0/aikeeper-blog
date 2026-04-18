@@ -2032,6 +2032,24 @@ AI키퍼 블로그(신생 한국어 AI 전문 블로그)의 다음 포스트 주
     client = make_anthropic_client(timeout=180, max_retries=2)
     # 스트리밍 사용 — 큰 프롬프트에서 첫 응답까지 대기 시간 단축
     text = ""
+    # SEO 자동완성 키워드 수집 → 프롬프트 주입
+    _seo_hint_block = ""
+    if _SEO_AVAIL:
+        try:
+            _base_kw = selected_topic.get("keyword", "") if isinstance(selected_topic, dict) else ""
+            if not _base_kw and isinstance(topic_candidate, str):
+                _base_kw = topic_candidate[:30]
+            if _base_kw:
+                import time as _t
+                _seo_data = _get_seo_kws(_base_kw)
+                _kws = _seo_data.get("combined", [])[:8]
+                if _kws:
+                    _seo_hint_block = "\n\n[실제 검색 자동완성 키워드 (네이버+구글) — 제목에 1~2개 반드시 포함]\n" + "\n".join(f"  - {k}" for k in _kws)
+                _t.sleep(0.3)
+        except Exception:
+            pass
+    prompt = prompt + _seo_hint_block
+
     with client.messages.stream(
         model=ANTHROPIC_MODEL,
         max_tokens=800,

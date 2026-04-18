@@ -52,9 +52,10 @@ AVOID_TOPICS = [
 import sys as _sys_seo, os as _os_seo
 _sys_seo.path.insert(0, _os_seo.path.dirname(_os_seo.path.abspath(__file__)))
 try:
-    from search_autocomplete import google_autocomplete as _gac
+    from search_autocomplete import get_seo_keywords as _get_seo_kws, google_autocomplete as _gac
     _SEO_NEWS_AVAIL = True
 except ImportError:
+    def _get_seo_kws(kw, pname=""): return {"combined": []}
     def _gac(kw, lang="ko"): return []
     _SEO_NEWS_AVAIL = False
 
@@ -410,12 +411,12 @@ def select_best_topic(news_items, used_history, target_category=None):
             import time as _t
             _news_kws = []
             for _seed_kw in ["오늘 뉴스", "한국 이슈 오늘", preferred_cat]:
-                _kws = _gac(_seed_kw)[:4]
+                _kws = _get_seo_kws(_seed_kw).get("combined", [])[:4]
                 _news_kws.extend(_kws)
                 _t.sleep(0.1)
             _uniq = list(dict.fromkeys(_news_kws))[:8]
             if _uniq:
-                news_seo_hint = "【오늘 실시간 검색어 (구글 자동완성)】\n" + "\n".join(f"  - {k}" for k in _uniq) + "\n→ 위 검색어와 연관된 주제를 우선 선택하세요."
+                news_seo_hint = "【오늘 실시간 검색어 (네이버+구글 자동완성) — 제목에 반드시 1~2개 포함】\n" + "\n".join(f"  - {k}" for k in _uniq) + "\n→ 위 검색어를 제목에 자연스럽게 포함하면 검색 유입이 극대화됩니다. 포함하지 않으면 검색 노출이 불리합니다."
                 print(f"[SEO] 뉴스 키워드: {_uniq[:3]}")
         except Exception as _e:
             print(f"[SEO] 뉴스 자동완성 실패: {_e}")
