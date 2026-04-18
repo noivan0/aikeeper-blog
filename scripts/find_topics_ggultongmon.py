@@ -14,6 +14,17 @@ _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 from env_loader import load_env, make_anthropic_client, get_model
 load_env()
 from datetime import datetime, timezone, timedelta
+try:
+    from search_autocomplete import get_search_keywords, build_seo_title_prompt
+    def get_seo_keywords(kw, pname=""):
+        kws = get_search_keywords(kw, pname)
+        return {"combined": kws}
+    _SEO_AVAILABLE = True
+except ImportError:
+    def get_search_keywords(kw, pname=""): return []
+    def build_seo_title_prompt(kw, pname, kws, ch="ggultongmon"): return ""
+    def get_seo_keywords(kw, pname=""): return {"combined": []}
+    _SEO_AVAILABLE = False
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE_DIR, "scripts"))
@@ -402,6 +413,20 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
             )
         used_products_context = "\n" + "\n".join(parts)
 
+    # SEO 자동완성 키워드 수집 (네이버+구글 실제 검색어)
+    seo_keywords_hint = ""
+    if _SEO_AVAILABLE and keyword:
+        try:
+            import time as _time
+            _seo = get_seo_keywords(keyword, keyword)
+            _kws = _seo.get("combined", [])[:8]
+            if _kws:
+                seo_keywords_hint = "【실제 검색어 (네이버·구글 자동완성)】\n" + "\n".join(f"  - {k}" for k in _kws)
+                print(f"[SEO] 자동완성 수집: {_kws[:3]}")
+            _time.sleep(0.3)
+        except Exception as _e:
+            print(f"[SEO] 자동완성 실패: {_e}")
+
     prompt = f"""오늘은 {today}. 쿠팡 '{cat_name}' 카테고리 실시간 베스트 상품 목록입니다.
 {high_cpc_hint}{season_hint}{recent_context}{used_products_context}
 {product_summary}
@@ -445,6 +470,8 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
 
 ===TOPIC===
 포스트 제목 (50자 이내, 이모지 금지) — 반드시 위에서 선택한 상품을 기반으로 작성
+- 아래 【실제 검색어】를 1~2개 제목에 자연스럽게 포함할 것 (검색 유입 극대화)
+{seo_keywords_hint}
 - 광고 카피처럼 궁금증을 유발하거나 감정을 자극하는 문장으로 작성
 - "TOP3", "완전정리", "후회없는 선택법" 같은 진부한 표현은 피하세요
 - 대신 아래 스타일 중 하나를 상황에 맞게 적용:
