@@ -489,7 +489,10 @@ def select_best_topic(news_items, used_history, target_category=None):
 {news_seo_hint}
 
 ===TOPIC===
-SEO 최적화 주제/제목 (한국어, 구체적으로 — 위 검색어를 1개 이상 포함)
+SEO 최적화 주제/제목 (한국어, 구체적으로)
+[🔍 필수] 위 검색어 중 정확히 1개를 제목에 그대로 포함할 것 (변형 금지)
+[❌ 무효] 검색어 미포함 제목은 무효 — 반드시 재작성
+[📍 위치] 키워드는 제목 앞부분(첫 20자 이내)에 배치할 것
 ===CATEGORY===
 세계/사회/경제/IT/생활 중 하나
 ===KEYWORDS===
