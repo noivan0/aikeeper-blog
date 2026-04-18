@@ -572,16 +572,46 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
 
 
 def enrich_with_shorten(products: list) -> list:
-    """선택된 상품에서 AFFSDP 가짜 shortenUrl 제거.
-    link.coupang.com/re/AFFSDP 는 공식 shortenUrl이 아님.
-    실제 deeplink API 호출은 post_to_blogger_ggultongmon.py에서 수행.
-    여기서는 잘못된 값이 들어오지 않도록 shortenUrl 필드를 비워 둔다.
+    """선택된 상품에 coupang_cache/latest.json 캐시의 shortenUrl 주입.
+    link.coupang.com/a/... 형태의 공식 shortenUrl만 사용.
+    AFFSDP 가짜 URL은 제거하고, 캐시에서 productId 매칭으로 실제 값 주입.
     """
+    import json as _json
+    from pathlib import Path as _Path
+
+    # latest.json 로드 — productId(int) -> shortenUrl 매핑
+    cache_path = _Path(__file__).parent.parent / "coupang_cache" / "latest.json"
+    shorten_map: dict = {}
+    try:
+        cache_data = _json.loads(cache_path.read_text(encoding="utf-8"))
+        for cat_items in cache_data.get("categories", {}).values():
+            for item in cat_items:
+                pid = item.get("productId")
+                su = item.get("shortenUrl", "")
+                if pid and su and "link.coupang.com/a/" in su:
+                    shorten_map[int(pid)] = su
+    except Exception as _e:
+        print(f"[enrich] coupang_cache/latest.json 로드 실패: {_e}")
+
     for p in products:
         current = p.get("shortenUrl", "")
-        # 공식 shortenUrl(link.coupang.com/a/...) 이 아니면 제거
-        if current and "link.coupang.com/a/" not in current:
+        # 이미 공식 shortenUrl이면 유지
+        if current and "link.coupang.com/a/" in current:
+            continue
+        # AFFSDP 등 비공식 값 제거
+        if current:
             del p["shortenUrl"]
+        # latest.json 캐시에서 productId 매칭
+        try:
+            pid = int(p.get("productId", 0))
+        except (ValueError, TypeError):
+            pid = 0
+        if pid and pid in shorten_map:
+            p["shortenUrl"] = shorten_map[pid]
+            print(f"[enrich] shortenUrl 주입: {p.get('productName','')[:30]} → {shorten_map[pid]}")
+
+    matched = sum(1 for p in products if "link.coupang.com/a/" in p.get("shortenUrl", ""))
+    print(f"[enrich] shortenUrl 매칭: {matched}/{len(products)}개")
     return products
 
 
