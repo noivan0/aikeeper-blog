@@ -412,12 +412,16 @@ def select_best_topic(news_items, used_history, target_category=None):
             import time as _t
             _news_kws = []
             for _seed_kw in ["오늘 뉴스", "한국 이슈 오늘", preferred_cat]:
-                _kws = _get_seo_kws(_seed_kw).get("combined", [])[:4]
-                _news_kws.extend(_kws)
+                _kws = _get_seo_kws(_seed_kw, include_related=False).get("combined", [])[:4]
+                _news_kws.extend(_kws + _gac(_seed_kw)[:2])
                 _t.sleep(0.1)
             _uniq = list(dict.fromkeys(_news_kws))[:8]
             if _uniq:
-                news_seo_hint = "【오늘 실시간 검색어 (네이버+구글 자동완성) — 제목에 반드시 1~2개 포함】\n" + "\n".join(f"  - {k}" for k in _uniq) + "\n→ 위 검색어를 제목에 자연스럽게 포함하면 검색 유입이 극대화됩니다. 포함하지 않으면 검색 노출이 불리합니다."
+                try:
+                    from search_autocomplete import build_seo_title_prompt as _bstp_a
+                    news_seo_hint = _bstp_a(preferred_cat, preferred_cat, _uniq, "allsweep")
+                except Exception:
+                    news_seo_hint = "【오늘 실시간 검색어 (네이버+구글 자동완성) — 제목에 반드시 1개 포함】\n" + "\n".join(f"  - {k}" for k in _uniq)
                 print(f"[SEO] 뉴스 키워드: {_uniq[:3]}")
         except Exception as _e:
             print(f"[SEO] 뉴스 자동완성 실패: {_e}")

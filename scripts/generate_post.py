@@ -293,21 +293,13 @@ def generate_post(topic: str, keywords: list = None, angle: str = "") -> dict:
     seo_title_hint = ""
     if _SEO_TITLE_AVAILABLE:
         try:
-            from search_autocomplete import get_seo_keywords as _get_seo_full
-            _seo_full = _get_seo_full(topic, topic)
-            _naver_kws = _seo_full.get("naver", [])[:5]
-            _google_kws = _seo_full.get("google", [])[:5]
-            _kws = _seo_full.get("combined", [])[:8]
+            from search_autocomplete import get_seo_keywords as _get_seo_full, build_seo_title_prompt as _bstp
+            _seo_full = _get_seo_full(topic, topic, include_related=True)
+            _kws     = _seo_full.get("combined", [])[:8]
+            _rel_kws = (_seo_full.get("naver_related", []) + _seo_full.get("google_related", []))[:6]
             if _kws:
-                _naver_str = "\n".join(f"  - {k}" for k in _naver_kws) if _naver_kws else "  (없음)"
-                _google_str = "\n".join(f"  - {k}" for k in _google_kws) if _google_kws else "  (없음)"
-                seo_title_hint = (
-                    f"【⚠️ SEO 필수 — 제목에 아래 검색어 1~2개 반드시 포함】\n"
-                    f"네이버 자동완성:\n{_naver_str}\n"
-                    f"구글 자동완성:\n{_google_str}\n"
-                    f"→ 실제 사용자가 검색창에 입력하는 단어입니다.\n"
-                    f"→ 제목에 포함하지 않으면 검색 노출이 거의 없습니다."
-                )
+                seo_title_hint = _bstp(topic, topic, _kws, "aikeeper", _rel_kws)
+                print(f"[SEO] 자동완성: {_kws[:2]}, 연관: {_rel_kws[:2]}")
                 print(f"[SEO] 자동완성 수집: 네이버={_naver_kws[:2]}, 구글={_google_kws[:2]}")
         except Exception as _e:
             print(f"[SEO] 자동완성 실패: {_e}")

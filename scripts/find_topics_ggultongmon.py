@@ -15,13 +15,13 @@ from env_loader import load_env, make_anthropic_client, get_model
 load_env()
 from datetime import datetime, timezone, timedelta
 try:
-    from seo_title_helper import get_seo_keywords, build_seo_title_prompt, validate_title
-    def get_search_keywords(kw, pname=""): return get_seo_keywords(kw, pname).get("combined", [])
+    from search_autocomplete import get_seo_keywords, build_seo_title_prompt, get_search_keywords
+    def validate_title(t, kws): return True
     _SEO_AVAILABLE = True
 except ImportError:
-    def get_seo_keywords(kw, pname=""): return {"combined": []}
+    def get_seo_keywords(kw, pname="", include_related=False): return {"combined": [], "naver_related": [], "google_related": []}
     def get_search_keywords(kw, pname=""): return []
-    def build_seo_title_prompt(pn, sk="", ch="ggultongmon"): return ("", [])
+    def build_seo_title_prompt(bk, pn, kws, ch="ggultongmon", rel=None): return ""
     def validate_title(t, kws): return True
     _SEO_AVAILABLE = False
 
@@ -417,21 +417,12 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
     if _SEO_AVAILABLE and keyword:
         try:
             import time as _time
-            _seo = get_seo_keywords(keyword, keyword)
-            naver_kws = _seo.get("naver", [])[:5]
-            google_kws = _seo.get("google", [])[:5]
-            _kws = _seo.get("combined", [])[:8]
+            _seo = get_seo_keywords(keyword, keyword, include_related=True)
+            _kws     = _seo.get("combined", [])[:8]
+            _rel_kws = (_seo.get("naver_related", []) + _seo.get("google_related", []))[:6]
             if _kws:
-                naver_str = "\n".join(f"  - {k}" for k in naver_kws) if naver_kws else "  (없음)"
-                google_str = "\n".join(f"  - {k}" for k in google_kws) if google_kws else "  (없음)"
-                seo_keywords_hint = (
-                    f"【⚠️ SEO 필수 — 아래 검색어를 제목에 반드시 1~2개 포함】\n"
-                    f"네이버 자동완성:\n{naver_str}\n"
-                    f"구글 자동완성:\n{google_str}\n"
-                    f"→ 이 검색어들은 실제 사용자가 검색창에 입력하는 단어입니다.\n"
-                    f"→ 제목에 포함 안 하면 검색 노출이 거의 없습니다. 반드시 포함하세요."
-                )
-                print(f"[SEO] 자동완성 수집: 네이버={naver_kws[:2]}, 구글={google_kws[:2]}")
+                seo_keywords_hint = build_seo_title_prompt(keyword, keyword, _kws, "ggultongmon", _rel_kws)
+                print(f"[SEO] 자동완성: {_kws[:2]}, 연관: {_rel_kws[:2]}")
             _time.sleep(0.3)
         except Exception as _e:
             print(f"[SEO] 자동완성 실패: {_e}")

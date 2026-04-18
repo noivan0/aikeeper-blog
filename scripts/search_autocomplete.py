@@ -73,55 +73,31 @@ def build_seo_title_prompt(
     base_keyword: str,
     product_name: str,
     search_keywords: list[str],
-    channel: str = "ggultongmon"
+    channel: str = "ggultongmon",
+    related_keywords: list[str] = None,
 ) -> str:
     """
-    검색 자동완성 기반 제목 생성 프롬프트 블록 반환.
-    각 채널의 Claude 프롬프트에 삽입용.
+    검색 자동완성 + 연관검색어 기반 제목 생성 프롬프트 블록 반환.
+    대장 지시: 전 파이프라인 동일 문구 적용.
     """
-    kw_list = "\n".join(f"  - {kw}" for kw in search_keywords[:10])
-
-    if channel == "ggultongmon":
-        style = "쇼핑 비교/후기 (감정 자극, 경험담, 궁금증 유발)"
-        example = '"9천원짜리가 2만원짜리보다 낫다고요" / "이거 모르고 사면 두 번 삽니다"'
-    elif channel == "aikeeper":
-        style = "AI/기술 정보 (실용성, 최신성, 핵심 전달)"
-        example = '"코딩 없이 10분 만에" / "2026년 최신 기준으로 정리했습니다"'
-    elif channel == "allsweep":
-        style = "뉴스/정보 요약 (핵심, 오늘, 지금)"
-        example = '"오늘 꼭 알아야 할" / "지금 바로 확인하세요"'
-    else:  # p005
-        style = "브랜드커넥트 상품 후기 (솔직, 직접 경험, 구체적)"
-        example = '"직접 써봤습니다" / "솔직 후기" / "2주 써본 결과"'
+    auto_list = "\n".join(f"  - {kw}" for kw in search_keywords[:8]) or "  (수집 실패)"
+    related_list = ""
+    if related_keywords:
+        related_list = "\n연관 검색어:\n" + "\n".join(f"  - {kw}" for kw in related_keywords[:6])
 
     return f"""
-[SEO 제목 최적화 — 검색 자동완성 기반]
-상품/주제: {base_keyword}
-검색 유입 극대화를 위해 아래 실제 검색어를 제목에 반드시 반영하세요:
+[🔍 SEO 제목 필수 규칙 — 반드시 준수]
+아래는 실제 사용자가 검색하는 키워드입니다 (네이버+구글 자동완성+연관검색어):
 
-{kw_list}
+검색 자동완성:
+{auto_list}{related_list}
 
-제목 작성 원칙 (필수 준수):
-1. ⭐ 위 검색어 중 최소 1개를 제목 앞부분에 반드시 포함 — 이게 검색 유입의 핵심
-   예) "에어프라이어 추천" 키워드 있으면 → "에어프라이어 추천, 이 제품이 달랐습니다"
-2. 채널 스타일({style}) 유지
-3. 예시: {example}
+제목 작성 규칙:
+1. 위 키워드 중 정확히 1개를 제목에 그대로 포함할 것 (변형 금지)
+2. 포함하지 않은 제목은 무효 — 반드시 재작성
+3. 키워드는 제목 앞부분(첫 20자 이내)에 배치할 것 (검색 노출 최적화)
 4. 50자 이내, 이모지 금지, em dash(—) 금지
-5. 검색 의도 매칭: 구매 전 비교/후기 탐색 단계 타겟
-6. ❌ 금지: 검색어와 무관한 창의적 제목 (검색 유입 0에 수렴)
-7. ✅ 필수: 검색어가 제목에 그대로 또는 변형 없이 포함되어야 함
 """
-
-
-if __name__ == "__main__":
-    import sys
-    kw = sys.argv[1] if len(sys.argv) > 1 else "에어프라이어"
-    print(f"[{kw}] 검색 자동완성 키워드:")
-    keywords = get_search_keywords(kw)
-    for k in keywords:
-        print(f"  {k}")
-    print()
-    print(build_seo_title_prompt(kw, kw, keywords, "ggultongmon"))
 
 def naver_autocomplete(keyword: str) -> list[str]:
     """네이버 자동완성 API."""
@@ -148,26 +124,106 @@ def naver_autocomplete(keyword: str) -> list[str]:
         return []
 
 
-def get_seo_keywords(keyword: str, product_name: str = "") -> dict:
-    """네이버+구글 자동완성 통합 반환."""
+def get_seo_keywords(keyword: str, product_name: str = "",
+                      include_related: bool = True) -> dict:
+    """
+    네이버+구글 자동완성 + 연관검색어(suffix 변형) 통합 반환.
+
+    반환:
+        naver:          네이버 자동완성
+        google:         구글 자동완성
+        naver_related:  네이버 suffix 연관검색어
+        google_related: 구글 suffix 연관검색어
+        combined:       전체 통합 (중복제거, 상위 15개)
+    """
     query = product_name if product_name else keyword
-    # 상품명이 길면 앞 2~3단어로 단축 (자동완성 결과 품질 향상)
+    # 상품명이 길면 앞 2단어로 단축 (자동완성 품질 향상)
     words = query.split()
     short_query = " ".join(words[:2]) if len(words) > 2 else query
-    naver_kws = naver_autocomplete(short_query)
-    if not naver_kws and short_query != keyword:
-        naver_kws = naver_autocomplete(keyword)
-    google_kws = google_autocomplete(short_query)
-    if not google_kws and short_query != keyword:
-        google_kws = google_autocomplete(keyword)
+
+    naver_kws  = naver_autocomplete(short_query) or naver_autocomplete(keyword)
+    google_kws = google_autocomplete(short_query) or google_autocomplete(keyword)
+
+    # 연관검색어 (suffix 변형)
+    naver_related, google_related = [], []
+    if include_related:
+        try:
+            rel = get_related_keywords(short_query)
+            naver_related  = rel.get("naver_related", [])
+            google_related = rel.get("google_related", [])
+        except Exception:
+            pass
+
+    # 통합 (자동완성 우선, 연관검색어 후)
     seen, combined = set(), []
-    for kw in naver_kws + google_kws:
+    for kw in naver_kws + google_kws + naver_related + google_related:
         k = kw.lower().strip()
         if k and k not in seen:
             seen.add(k)
             combined.append(kw)
-    return {"naver": naver_kws[:8], "google": google_kws[:8], "combined": combined[:10]}
+
+    return {
+        "naver":          naver_kws[:8],
+        "google":         google_kws[:8],
+        "naver_related":  naver_related[:8],
+        "google_related": google_related[:8],
+        "combined":       combined[:15],
+    }
 
 
 # 모듈 정상 로드 플래그
 _SEO_AVAILABLE = True
+
+
+# ── 연관검색어 수집 (suffix 변형 방식) ────────────────────────────────────
+_RELATED_SUFFIXES = ["추천", "후기", "단점", "비교", "가격"]
+
+def _google_autocomplete_chrome(keyword: str) -> list[str]:
+    """구글 chrome client — firefox보다 많은 결과 반환."""
+    q = urllib.parse.quote(keyword)
+    url = f"https://suggestqueries.google.com/complete/search?client=chrome&q={q}&hl=ko"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read())
+            return data[1][:10] if len(data) > 1 else []
+    except Exception:
+        return []
+
+
+def get_related_keywords(keyword: str, max_per_suffix: int = 3) -> dict[str, list[str]]:
+    """
+    suffix 변형으로 연관검색어 효과 구현.
+    네이버/구글 검색창 연관검색어 HTML 파싱은 봇 차단이 심해
+    자동완성 suffix 변형으로 동등한 효과를 얻음.
+
+    반환: {"naver_related": [...], "google_related": [...]}
+    """
+    words = keyword.split()
+    base = " ".join(words[:2]) if len(words) > 2 else keyword
+
+    naver_related, google_related = [], []
+    seen_n, seen_g = set(), set()
+
+    for suf in _RELATED_SUFFIXES:
+        query = f"{base} {suf}"
+        # 네이버
+        n_kws = naver_autocomplete(query)[:max_per_suffix]
+        for kw in n_kws:
+            k = kw.lower().strip()
+            if k not in seen_n and k != base.lower():
+                seen_n.add(k)
+                naver_related.append(kw)
+        # 구글
+        g_kws = _google_autocomplete_chrome(query)[:max_per_suffix]
+        for kw in g_kws:
+            k = kw.lower().strip()
+            if k not in seen_g and k != base.lower():
+                seen_g.add(k)
+                google_related.append(kw)
+        time.sleep(0.15)
+
+    return {
+        "naver_related": naver_related[:10],
+        "google_related": google_related[:10],
+    }
