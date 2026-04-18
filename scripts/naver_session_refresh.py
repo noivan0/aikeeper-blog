@@ -99,6 +99,19 @@ async def do_login(page, context) -> bool:
         await page.keyboard.type(c); await asyncio.sleep(0.12)
     await page.wait_for_timeout(1500)
 
+    # "로그인 상태 유지" 체크박스 클릭 → NID_AUT 영구쿠키화 (세션 장기 유지 핵심)
+    try:
+        keep = await page.query_selector("#keep")
+        if keep:
+            is_checked = await keep.is_checked()
+            if not is_checked:
+                await keep.click()
+                print("  ✅ '로그인 상태 유지' 체크 완료 → NID_AUT 영구쿠키 발급")
+            else:
+                print("  '로그인 상태 유지' 이미 체크됨")
+    except Exception as e:
+        print(f"  keep 체크 스킵: {e}")
+
     btn = await page.query_selector(".btn_login")
     if btn: await btn.click()
     await page.wait_for_timeout(7000)
@@ -177,8 +190,12 @@ async def main():
     print("=== 네이버 세션 상태 확인 ===")
 
     async def _run(p):
+        import os as _os
+        _is_ci = not _os.environ.get('DISPLAY') or _os.environ.get('CI')
         browser = await p.chromium.launch(
-            headless=False, executable_path=CHROME_PATH, args=LAUNCH_ARGS
+            headless=bool(_is_ci),
+            executable_path=CHROME_PATH if not _is_ci else None,
+            args=LAUNCH_ARGS
         )
         ctx_kwargs = {
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "

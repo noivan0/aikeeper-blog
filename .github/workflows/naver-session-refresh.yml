@@ -1,0 +1,63 @@
+name: Naver Session Refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 매일 3회 갱신 (KST 08:00/14:00/20:00 = UTC 23:00/05:00/11:00)
+    - cron: '0 23 * * *'
+    - cron: '0 5 * * *'
+    - cron: '0 11 * * *'
+
+jobs:
+  refresh:
+    # GitHub-hosted runner 사용 (다른 IP → CAPTCHA 없음)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python dependencies
+        run: |
+          pip install playwright playwright-stealth 2>/dev/null || pip install playwright
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Refresh Naver Session
+        env:
+          NAVER_ID: ${{ secrets.NAVER_PROSWEEP_ID }}
+          NAVER_PW: ${{ secrets.NAVER_PROSWEEP_PW }}
+          CI: "true"
+        run: |
+          python3 scripts/naver_session_refresh.py
+
+      - name: Verify session
+        run: |
+          python3 -c "
+          import json, sys
+          try:
+              s = json.load(open('naver_session.json'))
+              cookies = s.get('cookies', [])
+              nid = any(c['name'] == 'NID_SES' for c in cookies)
+              print(f'쿠키 수: {len(cookies)}개 | NID_SES: {nid}')
+              if len(cookies) < 5 or not nid:
+                  print('❌ 세션 불충분')
+                  sys.exit(1)
+              print('✅ 세션 정상')
+          except Exception as e:
+              print(f'❌ 오류: {e}')
+              sys.exit(1)
+          "
+
+      - name: Commit and push session
+        run: |
+          git config user.name 'naver-session-bot'
+          git config user.email 'bot@noreply.github.com'
+          git add naver_session.json
+          if git diff --staged --quiet; then
+            echo "변경 없음 — 세션 유지 중"
+          else
+            git commit -m "chore: naver session refresh $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+            echo "✅ 세션 파일 push 완료"
+          fi
