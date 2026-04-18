@@ -48,6 +48,16 @@ AVOID_TOPICS = [
     "정치", "선거", "연예", "스포츠 경기 결과",
 ]
 
+# SEO 자동완성 (뉴스 주제 기반)
+import sys as _sys_seo, os as _os_seo
+_sys_seo.path.insert(0, _os_seo.path.dirname(_os_seo.path.abspath(__file__)))
+try:
+    from search_autocomplete import google_autocomplete as _gac
+    _SEO_NEWS_AVAIL = True
+except ImportError:
+    def _gac(kw, lang="ko"): return []
+    _SEO_NEWS_AVAIL = False
+
 # PREFERRED_TOPICS 키워드 → CPC 판별에 사용할 확장 키워드
 PREFERRED_KEYWORDS = [
     "재테크", "투자", "적금", "예금", "주식", "펀드", "ETF", "ISA",
@@ -393,6 +403,23 @@ def select_best_topic(news_items, used_history, target_category=None):
     preferred_topics_text  = "\n".join(f"- {t}" for t in PREFERRED_TOPICS)
     avoid_topics_text      = "\n".join(f"- {t}" for t in AVOID_TOPICS)
 
+    # SEO: 실시간 검색어 기반 뉴스 힌트
+    news_seo_hint = ""
+    if _SEO_NEWS_AVAIL:
+        try:
+            import time as _t
+            _news_kws = []
+            for _seed_kw in ["오늘 뉴스", "한국 이슈 오늘", preferred_cat]:
+                _kws = _gac(_seed_kw)[:4]
+                _news_kws.extend(_kws)
+                _t.sleep(0.1)
+            _uniq = list(dict.fromkeys(_news_kws))[:8]
+            if _uniq:
+                news_seo_hint = "【오늘 실시간 검색어 (구글 자동완성)】\n" + "\n".join(f"  - {k}" for k in _uniq) + "\n→ 위 검색어와 연관된 주제를 우선 선택하세요."
+                print(f"[SEO] 뉴스 키워드: {_uniq[:3]}")
+        except Exception as _e:
+            print(f"[SEO] 뉴스 자동완성 실패: {_e}")
+
     prompt = f"""오늘은 {today_str}입니다.
 
 당신은 구글/네이버 SEO 전문가이자 "모든정보 쓸어담기" 블로그 에디터입니다.
@@ -452,8 +479,11 @@ def select_best_topic(news_items, used_history, target_category=None):
 - "봄철 황사 공기청정기 필터 교체 시기 — 제조사별 교체 주기 실제 비교" (생활)
 
 형식:
+[SEO 제목 최적화]
+{news_seo_hint}
+
 ===TOPIC===
-블로그 주제 (한국어, 구체적으로)
+SEO 최적화 주제/제목 (한국어, 구체적으로 — 위 검색어를 1개 이상 포함)
 ===CATEGORY===
 세계/사회/경제/IT/생활 중 하나
 ===KEYWORDS===

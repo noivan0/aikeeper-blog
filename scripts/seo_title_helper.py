@@ -1,147 +1,101 @@
 #!/usr/bin/env python3
 """
-seo_title_helper.py — 네이버·구글 자동완성 기반 SEO 제목 생성 헬퍼
+seo_title_helper.py — 검색 자동완성 기반 SEO 제목 최적화 헬퍼
+P004/P005 모든 채널 공용
 
-사용법:
-    from seo_title_helper import get_seo_keywords, build_seo_title_prompt
-
-핵심 기능:
-    1. 네이버/구글 자동완성 수집 → 실제 검색어 파악
-    2. 검색량 높은 키워드 조합 → Claude 프롬프트에 주입
-    3. 제목 길이/형식 검증
+주요 함수:
+  get_seo_keywords(keyword, product_name="") → {"combined": [키워드 리스트]}
+  build_seo_title_prompt(product_name, search_keyword, channel="p005") → (prompt, keywords)
+  validate_title(title, keywords) → bool
 """
-import re
-import time
-import requests
+import os
+import sys
 
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+sys.path.insert(0, os.path.dirname(__file__))
 
-
-def naver_autocomplete(keyword: str, max_results: int = 8) -> list[str]:
-    """네이버 자동완성 API"""
-    try:
-        url = (
-            f"https://ac.search.naver.com/nx/ac"
-            f"?q={requests.utils.quote(keyword)}&st=100&r_format=json"
-            f"&r_enc=UTF-8&l_enc=UTF-8&c=1&q_enc=UTF-8&t_koreng=1"
-        )
-        r = requests.get(url, headers={"User-Agent": UA}, timeout=5)
-        if r.status_code == 200:
-            data = r.json()
-            items = data.get("items", [[]])[0] if data.get("items") else []
-            return [item[0] for item in items[:max_results] if item]
-    except Exception:
-        pass
-    return []
+try:
+    from search_autocomplete import get_search_keywords, google_autocomplete
+    _AVAIL = True
+except ImportError:
+    _AVAIL = False
+    def get_search_keywords(kw, pname=""): return []
+    def google_autocomplete(kw, lang="ko"): return []
 
 
-def google_autocomplete(keyword: str, max_results: int = 8) -> list[str]:
-    """구글 자동완성 API"""
-    try:
-        url = (
-            f"https://suggestqueries.google.com/complete/search"
-            f"?client=firefox&hl=ko&q={requests.utils.quote(keyword)}"
-        )
-        r = requests.get(url, headers={"User-Agent": UA}, timeout=5)
-        if r.status_code == 200:
-            return r.json()[1][:max_results]
-    except Exception:
-        pass
-    return []
-
-
-def get_seo_keywords(product_name: str, search_keyword: str = "") -> dict:
+def get_seo_keywords(keyword: str, product_name: str = "") -> dict:
     """
-    상품명 / 검색 키워드 기반으로 네이버+구글 자동완성 수집.
-    반환: {
-        "naver": [...],
-        "google": [...],
-        "combined": [...]   # 중복 제거 통합
-    }
+    키워드 기반 SEO 검색어 수집.
+    반환: {"combined": [키워드 리스트], "google": [...], "naver": [...]}
     """
-    base = search_keyword or product_name
-
-    # 핵심 키워드 추출 (브랜드+모델 2~3단어)
-    words = re.sub(r'\[[^\]]*\]', '', base).split()
-    short = " ".join(words[:3])
-
-    naver_kws = naver_autocomplete(short)
-    time.sleep(0.3)
-    google_kws = google_autocomplete(short)
-
-    # 상품명 전체로도 추가 조회
-    if len(words) > 3:
-        full_kws = naver_autocomplete(" ".join(words[:4]))
-        naver_kws = list(dict.fromkeys(naver_kws + full_kws))[:10]
-
-    combined = list(dict.fromkeys(naver_kws + [g for g in google_kws if g not in naver_kws]))[:12]
-
+    if not _AVAIL:
+        return {"combined": [], "google": [], "naver": []}
+    
+    keywords = get_search_keywords(keyword, product_name)
     return {
-        "base_keyword": short,
-        "naver": naver_kws,
-        "google": google_kws,
-        "combined": combined,
+        "combined": keywords,
+        "google": keywords,
+        "naver": [],  # 네이버 자동완성은 서버 차단으로 비활성
     }
 
 
 def build_seo_title_prompt(
     product_name: str,
     search_keyword: str = "",
-    price: int = 0,
-    discount_rate: float = 0,
-    blog_type: str = "ggultongmon",  # ggultongmon | aikeeper | allsweep | naver
-    max_len: int = 30,
-) -> tuple[str, list[str]]:
+    channel: str = "p005"
+) -> tuple[str, list]:
     """
-    SEO 최적화 제목 생성용 프롬프트 반환.
-    반환: (prompt_text, seo_keywords_list)
+    SEO 최적화 제목 생성 프롬프트 + 수집된 키워드 반환.
+    
+    반환: (prompt_text, keywords_list)
     """
-    seo = get_seo_keywords(product_name, search_keyword)
-    kws = seo["combined"]
-
-    price_str = f"{price:,}원" if price else ""
-    disc_str = f" ({int(discount_rate)}% 할인)" if discount_rate >= 5 else ""
-
-    # 블로그별 제목 스타일 가이드
-    style_guides = {
-        "ggultongmon": "쿠팡 파트너스 실생활 비교 블로그. 1인칭 경험담, 가격 비교, 감정 자극형.",
-        "aikeeper": "AI·테크 정보 블로그. 검색 의도 중심, 정보성, 롱테일 키워드.",
-        "allsweep": "생활용품·리뷰 블로그. 솔직 후기, 가성비 중심.",
-        "naver": "네이버 블로그. 친근한 어투, 정보성 + 구매 유도.",
+    kw = search_keyword or product_name
+    keywords = get_search_keywords(kw, product_name)[:10]
+    
+    if not keywords:
+        return "", []
+    
+    kw_list = "\n".join(f"  - {k}" for k in keywords)
+    
+    channel_style = {
+        "p005": ("상품 솔직 후기/비교 (직접 사용, 구체적, 신뢰)", '"직접 써봤습니다" / "솔직 후기" / "2주 사용 결과"'),
+        "ggultongmon": ("쇼핑 감정 자극/비교 (궁금증, 경험담)", '"이거 모르고 사면 두 번 삽니다" / "9천원짜리가 낫다고요"'),
+        "aikeeper": ("AI/기술 실용 정보 (최신, 핵심, 5분 요약)", '"코딩 없이 10분" / "2026년 최신 기준"'),
+        "allsweep": ("뉴스 요약 (오늘, 핵심, 지금)", '"오늘 꼭 알아야 할" / "지금 확인하세요"'),
     }
-    style = style_guides.get(blog_type, style_guides["ggultongmon"])
+    style, example = channel_style.get(channel, channel_style["p005"])
+    
+    prompt = f"""[SEO 제목 최적화 — 검색 자동완성 기반]
+상품/주제: {product_name}
 
-    prompt = f"""다음 상품의 블로그 포스트 제목을 SEO 최적화하여 생성하세요.
+아래는 실제 사용자가 검색하는 구글 자동완성 키워드입니다:
+{kw_list}
 
-【상품 정보】
-- 상품명: {product_name}
-- 가격: {price_str}{disc_str}
-- 블로그 스타일: {style}
-
-【네이버·구글 실제 자동완성 검색어 (사람들이 실제로 검색하는 키워드)】
-{chr(10).join(f"  - {kw}" for kw in kws[:10])}
-
-【제목 생성 규칙】
-1. 위 자동완성 검색어 중 1~2개를 제목에 자연스럽게 포함 (검색 유입 극대화)
-2. 제목 길이: {max_len}자 이내 (네이버 검색 결과 잘림 방지)
-3. 이모지·em dash(—) 사용 금지
-4. 아래 스타일 중 상황에 맞는 것 선택:
-   - 후기형: "{kws[0] if kws else product_name[:10]} 직접 써봤습니다"
-   - 비교형: "비슷한 가격대 중 이게 달랐습니다"
-   - 정보형: "{kws[1] if len(kws)>1 else ''} 고를 때 이것만 보세요"
-   - 구매가이드형: "사기 전 꼭 확인해야 할 것들"
-5. 검색자의 구매 의도가 담긴 구체적 표현 사용
-
-제목만 1줄로 출력하세요. 다른 설명 불필요."""
-
-    return prompt, kws
+제목 작성 필수 규칙:
+1. 위 검색어 중 1~2개를 제목에 자연스럽게 포함 (검색 유입 직결 — 가장 중요)
+2. 채널 스타일: {style}
+3. 예시: {example}
+4. 40자 이내, 이모지 금지
+5. 검색 의도: 구매 전 비교/후기 탐색 단계 타겟
+"""
+    return prompt, keywords
 
 
-def validate_title(title: str, max_len: int = 30) -> dict:
-    """제목 유효성 검사"""
-    return {
-        "ok": len(title) <= max_len and title.strip(),
-        "length": len(title),
-        "has_emoji": bool(re.search(r'[^\x00-\x7F\u3131-\u318E\uAC00-\uD7A3\s\w.,!?%\-()]', title)),
-        "has_emdash": "—" in title,
-    }
+def validate_title(title: str, keywords: list) -> bool:
+    """
+    제목에 SEO 키워드가 포함됐는지 검증.
+    최소 1개 키워드 포함 시 True.
+    """
+    if not keywords:
+        return True  # 키워드 없으면 검증 스킵
+    title_lower = title.lower()
+    return any(kw.lower()[:8] in title_lower for kw in keywords[:5])
+
+
+if __name__ == "__main__":
+    kw = sys.argv[1] if len(sys.argv) > 1 else "에어프라이어"
+    result = get_seo_keywords(kw)
+    print(f"[{kw}] 검색 키워드:")
+    for k in result["combined"]:
+        print(f"  {k}")
+    prompt, kws = build_seo_title_prompt(kw, kw, "p005")
+    print(f"\n프롬프트:\n{prompt}")
