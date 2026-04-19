@@ -414,14 +414,15 @@ def generate_topic_with_claude(cat_id: int, cat_name: str, products: list,
 
     # SEO 자동완성 키워드 수집 (네이버+구글 실제 검색어) — 제목 강제력 최대화
     seo_keywords_hint = ""
-    if _SEO_AVAILABLE and keyword:
+    _seo_keyword = cat_name  # cat_name 기반 SEO 수집
+    if _SEO_AVAILABLE and _seo_keyword:
         try:
             import time as _time
-            _seo = get_seo_keywords(keyword, keyword, include_related=True)
+            _seo = get_seo_keywords(_seo_keyword, _seo_keyword, include_related=True)
             _kws     = _seo.get("combined", [])[:8]
             _rel_kws = (_seo.get("naver_related", []) + _seo.get("google_related", []))[:6]
             if _kws:
-                seo_keywords_hint = build_seo_title_prompt(keyword, keyword, _kws, "ggultongmon", _rel_kws)
+                seo_keywords_hint = build_seo_title_prompt(_seo_keyword, _seo_keyword, _kws, "ggultongmon", _rel_kws)
                 print(f"[SEO] 자동완성: {_kws[:2]}, 연관: {_rel_kws[:2]}")
             _time.sleep(0.3)
         except Exception as _e:
