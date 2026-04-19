@@ -20,3 +20,17 @@ results/test_post_data.json
 
 # 폰트 생성 캐시
 scripts/fonts/*.png
+
+# 런타임 자동생성 파일 (commit 제외)
+used_topics.jsonl
+coupang_cache/local_cache.json
+results/naver_homefeed_posts.jsonl
+results/naver_simple_posts.jsonl
+results/naver_homefeed_tried.jsonl
+scripts/naver_lib/session.py
+scripts/naver_session_refresh.py
+naver_session.json.before_fix
+docs/eeat-improvement-2026-04.md
+.github/workflows/add-notice-to-posts.yml
+scripts/add_notice_to_posts.py
+scripts/seo_keywords.py
