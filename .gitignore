@@ -34,3 +34,6 @@ docs/eeat-improvement-2026-04.md
 .github/workflows/add-notice-to-posts.yml
 scripts/add_notice_to_posts.py
 scripts/seo_keywords.py
+results/naver_posts.jsonl
+scripts/naver_cron_runner.py
+scripts/post_to_naver_prosweep.py
