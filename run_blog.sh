@@ -168,7 +168,10 @@ if [ -n "$GITHUB_REPO" ]; then
     git diff --staged --quiet || git commit -m "auto[$BLOG_ID]: AI 포스트 $(date '+%Y-%m-%d %H:%M KST')"
     # PAT를 git URL에 직접 노출하지 않도록 insteadOf 설정 사용 (ps aux 노출 방지)
     git config url."https://${GITHUB_PAT}@github.com/".insteadOf "https://github.com/"
+    # unstaged 변경사항 임시 보관 후 pull --rebase (naver_session.json 등 런타임 파일 충돌 방지)
+    git stash 2>&1 | tee -a "$LOG_FILE" || true
     git pull --rebase https://github.com/${GITHUB_REPO}.git ${GITHUB_BRANCH} 2>&1 | tee -a "$LOG_FILE" || true
+    git stash pop 2>&1 | tee -a "$LOG_FILE" || true
     git push https://github.com/${GITHUB_REPO}.git ${GITHUB_BRANCH} 2>&1 | tee -a "$LOG_FILE" || true
     # 사용 후 insteadOf 설정 제거 (로컬 설정 오염 방지)
     git config --unset url."https://${GITHUB_PAT}@github.com/".insteadOf 2>/dev/null || true
